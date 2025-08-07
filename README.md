@@ -4,6 +4,39 @@ A lightweight, Git-native PLM (Product Lifecycle Management) system built for si
 
 ---
 
+
+## ⚡ Quickstart
+
+Get up and running with smallfactory inventory management in a few simple steps:
+
+```sh
+# 1. Initialize a new PLM data repository
+$ python3 sf.py create
+
+# 2. Add inventory items (sku, name, quantity, location are required)
+$ python3 sf.py inventory-add sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
+$ python3 sf.py inventory-add sku=prop-001 name="Carbon Fiber Propeller" quantity=20 location="Shelf B2" notes="High-performance racing prop"
+
+# 3. View your inventory
+$ python3 sf.py inventory-list
+
+# 4. View details of a specific item
+$ python3 sf.py inventory-view motor-001
+
+# 5. Adjust inventory when using parts
+$ python3 sf.py inventory-adjust motor-001 -2
+
+# 6. Update item details
+$ python3 sf.py inventory-update prop-001 location "Shelf C1"
+
+# 7. Check updated inventory status
+$ python3 sf.py inventory-list
+
+# Note: All changes are automatically committed to git!
+```
+
+---
+
 ## 🧠 Philosophy
 
 Every decision in smallfactory is guided by this rule:
@@ -86,46 +119,17 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ## 🔍 What You Can Do
 
-- Define and manage parts with part numbers, revisions, and descriptions
-- Build and update BOMs with tracked dependencies
-- Record releases tied to specific sets of parts and BOMs
-- View and diff changes using Git
-- Validate structure and rules (e.g. no unapproved parts in a release)
-- Write your own tools or scripts that interact with the data via the API
+- **Inventory Management**: Add, view, update, and delete inventory items with SKU tracking
+- **Stock Control**: Adjust inventory quantities for usage and restocking
+- **Data Organization**: Store inventory data in human-readable YAML files
+- **Version Control**: Track all inventory changes using Git
+- **Flexible Fields**: Add custom fields beyond the required sku, name, quantity, and location
+- **Multiple Output Formats**: View data in human-readable tables, JSON, or YAML formats
+- **Git Integration**: Automatic commits with detailed metadata for inventory changes
 
 ---
 
-## ⚡ Quickstart
 
-Get up and running with smallfactory in a few simple steps:
-
-```sh
-# 1. Initialize a new PLM data repository
-$ python3 sf.py create
-
-# 2. Add a new part
-$ python3 sf.py part new motor-001 --rev A --desc "BLDC Motor 2205"
-
-# 3. Add inventory for the part (sku, name, quantity, location are required)
-$ python3 sf.py inventory-add sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
-
-# 4. Create or edit a Bill of Materials (BOM)
-$ python3 sf.py bom edit quadcopter-001
-
-# 5. Adjust inventory when using parts
-$ python3 sf.py inventory-adjust motor-001 -2
-
-# 6. Create a release
-$ python3 sf.py release create quadcopter-001-v1.0
-
-# 7. View your inventory status
-$ python3 sf.py inventory-list
-
-# 8. Commit your changes to git
-$ git commit -am "Release: quadcopter-001 v1.0"
-```
-
----
 
 ## 📦 Inventory Management
 
