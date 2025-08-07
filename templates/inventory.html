@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory - smallfactory{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="fas fa-boxes me-2"></i>Inventory Management
+    </h2>
+    <a href="{{ url_for('add_inventory') }}" class="btn btn-success">
+        <i class="fas fa-plus me-1"></i>Add New Item
+    </a>
+</div>
+
+{% if items %}
+<div class="card">
+    <div class="card-header">
+        <div class="row align-items-center">
+            <div class="col">
+                <h5 class="mb-0">Inventory Items ({{ items|length }})</h5>
+            </div>
+            <div class="col-auto">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search items...">
+                    <span class="input-group-text">
+                        <i class="fas fa-search"></i>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0" id="inventoryTable">
+                <thead class="table-light">
+                    <tr>
+                        <th>SKU</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Location</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <tr>
+                        <td>
+                            <strong>{{ item.sku }}</strong>
+                        </td>
+                        <td>{{ item.name }}</td>
+                        <td>
+                            <span class="badge bg-{% if item.quantity|int <= 5 %}danger{% elif item.quantity|int <= 10 %}warning{% else %}success{% endif %}">
+                                {{ item.quantity }}
+                            </span>
+                        </td>
+                        <td>
+                            <i class="fas fa-map-marker-alt me-1 text-muted"></i>
+                            {{ item.location }}
+                        </td>
+                        <td>
+                            {% if item.notes %}
+                                <span class="text-muted">{{ item.notes[:50] }}{% if item.notes|length > 50 %}...{% endif %}</span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <a href="{{ url_for('view_inventory', sku=item.sku) }}" 
+                                   class="btn btn-outline-primary" title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('edit_inventory', sku=item.sku) }}" 
+                                   class="btn btn-outline-secondary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <button type="button" class="btn btn-outline-info" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#adjustModal"
+                                        data-sku="{{ item.sku }}"
+                                        data-name="{{ item.name }}"
+                                        data-quantity="{{ item.quantity }}"
+                                        title="Adjust Quantity">
+                                    <i class="fas fa-plus-minus"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#deleteModal"
+                                        data-sku="{{ item.sku }}"
+                                        data-name="{{ item.name }}"
+                                        title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="fas fa-boxes fa-5x text-muted mb-3"></i>
+    <h4 class="text-muted">No inventory items found</h4>
+    <p class="text-muted">Get started by adding your first inventory item.</p>
+    <a href="{{ url_for('add_inventory') }}" class="btn btn-success btn-lg">
+        <i class="fas fa-plus me-2"></i>Add First Item
+    </a>
+</div>
+{% endif %}
+
+<!-- Adjust Quantity Modal -->
+<div class="modal fade" id="adjustModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Adjust Quantity</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="adjustForm">
+                <div class="modal-body">
+                    <p>Adjusting quantity for: <strong id="adjustItemName"></strong></p>
+                    <p>Current quantity: <span class="badge bg-info" id="currentQuantity"></span></p>
+                    
+                    <div class="mb-3">
+                        <label for="delta" class="form-label">Adjustment (+/-)</label>
+                        <input type="number" class="form-control" id="delta" name="delta" required
+                               placeholder="Enter positive or negative number">
+                        <div class="form-text">
+                            Use positive numbers to add stock, negative to remove stock
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-6">
+                            <button type="button" class="btn btn-outline-success w-100" onclick="setDelta(1)">
+                                <i class="fas fa-plus me-1"></i>Add 1
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button type="button" class="btn btn-outline-danger w-100" onclick="setDelta(-1)">
+                                <i class="fas fa-minus me-1"></i>Remove 1
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Apply Adjustment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="deleteForm">
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Warning:</strong> This action cannot be undone.
+                    </div>
+                    <p>Are you sure you want to delete this inventory item?</p>
+                    <p><strong id="deleteItemName"></strong></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Search functionality
+document.getElementById('searchInput').addEventListener('keyup', function() {
+    const searchTerm = this.value.toLowerCase();
+    const table = document.getElementById('inventoryTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(searchTerm) ? '' : 'none';
+    }
+});
+
+// Modal handlers
+document.addEventListener('DOMContentLoaded', function() {
+    const adjustModal = document.getElementById('adjustModal');
+    const deleteModal = document.getElementById('deleteModal');
+    
+    adjustModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const sku = button.getAttribute('data-sku');
+        const name = button.getAttribute('data-name');
+        const quantity = button.getAttribute('data-quantity');
+        
+        document.getElementById('adjustItemName').textContent = name;
+        document.getElementById('currentQuantity').textContent = quantity;
+        document.getElementById('adjustForm').action = `/inventory/${sku}/adjust`;
+        document.getElementById('delta').value = '';
+    });
+    
+    deleteModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const sku = button.getAttribute('data-sku');
+        const name = button.getAttribute('data-name');
+        
+        document.getElementById('deleteItemName').textContent = name;
+        document.getElementById('deleteForm').action = `/inventory/${sku}/delete`;
+    });
+});
+
+function setDelta(value) {
+    document.getElementById('delta').value = value;
+}
+</script>
+{% endblock %}

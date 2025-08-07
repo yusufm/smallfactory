@@ -1,0 +1,203 @@
+/* smallfactory Web Interface Styles */
+
+:root {
+    --sf-primary: #2c3e50;
+    --sf-secondary: #34495e;
+    --sf-success: #27ae60;
+    --sf-warning: #f39c12;
+    --sf-danger: #e74c3c;
+    --sf-info: #3498db;
+    --sf-light: #ecf0f1;
+    --sf-dark: #2c3e50;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.25rem;
+}
+
+.jumbotron {
+    background: linear-gradient(135deg, var(--sf-primary), var(--sf-secondary));
+    border: none;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    background-color: var(--sf-light);
+    border-bottom: 1px solid #dee2e6;
+    font-weight: 600;
+}
+
+.btn {
+    border-radius: 0.375rem;
+    font-weight: 500;
+    transition: all 0.15s ease-in-out;
+}
+
+.btn-primary {
+    background-color: var(--sf-primary);
+    border-color: var(--sf-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--sf-secondary);
+    border-color: var(--sf-secondary);
+}
+
+.btn-success {
+    background-color: var(--sf-success);
+    border-color: var(--sf-success);
+}
+
+.btn-warning {
+    background-color: var(--sf-warning);
+    border-color: var(--sf-warning);
+}
+
+.btn-danger {
+    background-color: var(--sf-danger);
+    border-color: var(--sf-danger);
+}
+
+.btn-info {
+    background-color: var(--sf-info);
+    border-color: var(--sf-info);
+}
+
+.table {
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+    color: var(--sf-dark);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.025);
+}
+
+.badge {
+    font-size: 0.75em;
+    font-weight: 500;
+}
+
+.alert {
+    border: none;
+    border-radius: 0.5rem;
+}
+
+.form-control {
+    border-radius: 0.375rem;
+    border: 1px solid #ced4da;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.form-control:focus {
+    border-color: var(--sf-primary);
+    box-shadow: 0 0 0 0.2rem rgba(44, 62, 80, 0.25);
+}
+
+.modal-content {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+    border-bottom: 1px solid #dee2e6;
+    background-color: var(--sf-light);
+}
+
+.modal-footer {
+    border-top: 1px solid #dee2e6;
+}
+
+/* Custom utility classes */
+.text-sf-primary {
+    color: var(--sf-primary) !important;
+}
+
+.bg-sf-primary {
+    background-color: var(--sf-primary) !important;
+}
+
+.border-sf-primary {
+    border-color: var(--sf-primary) !important;
+}
+
+/* Loading states */
+.loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.loading::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid var(--sf-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .jumbotron {
+        padding: 2rem 1rem;
+    }
+    
+    .jumbotron h1 {
+        font-size: 2rem;
+    }
+    
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    .navbar,
+    .btn,
+    .modal,
+    footer {
+        display: none !important;
+    }
+    
+    .card {
+        border: 1px solid #dee2e6 !important;
+        box-shadow: none !important;
+    }
+}

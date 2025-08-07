@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ item.name }} - smallfactory{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-edit me-2"></i>Edit Inventory Item
+                </h4>
+                <small class="text-muted">SKU: {{ sku }}</small>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="name" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="name" name="name" 
+                                   value="{{ item.name }}" placeholder="Leave empty to keep current value">
+                            <div class="form-text">Current: {{ item.name }}</div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="quantity" class="form-label">Quantity</label>
+                            <input type="number" class="form-control" id="quantity" name="quantity" 
+                                   min="0" placeholder="Leave empty to keep current value">
+                            <div class="form-text">Current: {{ item.quantity }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="location" class="form-label">Location</label>
+                        <input type="text" class="form-control" id="location" name="location" 
+                               value="{{ item.location }}" placeholder="Leave empty to keep current value">
+                        <div class="form-text">Current: {{ item.location }}</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3"
+                                  placeholder="Leave empty to keep current value">{{ item.notes or '' }}</textarea>
+                        <div class="form-text">
+                            {% if item.notes %}
+                                Current: {{ item.notes }}
+                            {% else %}
+                                Current: No notes
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> Only fields with values will be updated. Leave fields empty to keep current values.
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('view_inventory', sku=sku) }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Cancel
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save me-1"></i>Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-history me-2"></i>Current Item Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">SKU:</dt>
+                            <dd class="col-sm-8"><code>{{ item.sku }}</code></dd>
+                            
+                            <dt class="col-sm-4">Name:</dt>
+                            <dd class="col-sm-8">{{ item.name }}</dd>
+                            
+                            <dt class="col-sm-4">Quantity:</dt>
+                            <dd class="col-sm-8">
+                                <span class="badge bg-{% if item.quantity|int <= 5 %}danger{% elif item.quantity|int <= 10 %}warning{% else %}success{% endif %}">
+                                    {{ item.quantity }}
+                                </span>
+                            </dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">Location:</dt>
+                            <dd class="col-sm-8">
+                                <i class="fas fa-map-marker-alt me-1 text-muted"></i>
+                                {{ item.location }}
+                            </dd>
+                            
+                            <dt class="col-sm-4">Notes:</dt>
+                            <dd class="col-sm-8">
+                                {% if item.notes %}
+                                    {{ item.notes }}
+                                {% else %}
+                                    <em class="text-muted">No notes</em>
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+                
+                <!-- Display any additional custom fields -->
+                {% set custom_fields = [] %}
+                {% for key, value in item.items() %}
+                    {% if key not in ['sku', 'name', 'quantity', 'location', 'notes'] %}
+                        {% set _ = custom_fields.append((key, value)) %}
+                    {% endif %}
+                {% endfor %}
+                
+                {% if custom_fields %}
+                    <hr>
+                    <h6>Custom Fields:</h6>
+                    <div class="row">
+                        {% for key, value in custom_fields %}
+                            <div class="col-md-6">
+                                <dl class="row">
+                                    <dt class="col-sm-4">{{ key.title() }}:</dt>
+                                    <dd class="col-sm-8">{{ value }}</dd>
+                                </dl>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Note:</strong> Custom fields can only be edited via CLI or API.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Form validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    const quantity = document.getElementById('quantity').value.trim();
+    
+    // If quantity is provided, validate it
+    if (quantity && parseInt(quantity) < 0) {
+        e.preventDefault();
+        alert('Quantity cannot be negative.');
+        return false;
+    }
+    
+    // Check if at least one field has a value
+    const name = document.getElementById('name').value.trim();
+    const location = document.getElementById('location').value.trim();
+    const notes = document.getElementById('notes').value.trim();
+    
+    if (!name && !quantity && !location && !notes) {
+        e.preventDefault();
+        alert('Please provide at least one field to update.');
+        return false;
+    }
+});
+
+// Auto-clear placeholders when user starts typing
+document.querySelectorAll('input, textarea').forEach(function(element) {
+    element.addEventListener('focus', function() {
+        if (this.placeholder.includes('Leave empty')) {
+            this.placeholder = '';
+        }
+    });
+});
+</script>
+{% endblock %}

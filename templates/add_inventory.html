@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Add Item - smallfactory{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="fas fa-plus me-2"></i>Add New Inventory Item
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="sku" class="form-label">
+                                SKU <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="sku" name="sku" required
+                                   placeholder="e.g., MOTOR-001">
+                            <div class="form-text">Unique identifier for this item</div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="name" class="form-label">
+                                Name <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="name" name="name" required
+                                   placeholder="e.g., BLDC Motor 2205">
+                            <div class="form-text">Descriptive name for this item</div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="quantity" class="form-label">
+                                Quantity <span class="text-danger">*</span>
+                            </label>
+                            <input type="number" class="form-control" id="quantity" name="quantity" required
+                                   min="0" placeholder="e.g., 10">
+                            <div class="form-text">Current stock quantity</div>
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="location" class="form-label">
+                                Location <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" class="form-control" id="location" name="location" required
+                                   placeholder="e.g., Shelf A1">
+                            <div class="form-text">Where this item is stored</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3"
+                                  placeholder="Optional notes about this item..."></textarea>
+                        <div class="form-text">Additional information (optional)</div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> This item will be automatically committed to your Git repository.
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('inventory_list') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Back to Inventory
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-plus me-1"></i>Add Item
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>Tips
+                </h5>
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li><strong>SKU:</strong> Use a consistent naming convention (e.g., CATEGORY-NUMBER)</li>
+                    <li><strong>Location:</strong> Be specific to make finding items easier</li>
+                    <li><strong>Notes:</strong> Include part numbers, specifications, or supplier info</li>
+                    <li><strong>Custom Fields:</strong> You can add custom fields via the API or CLI</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-generate SKU suggestion based on name
+document.getElementById('name').addEventListener('input', function() {
+    const name = this.value;
+    const skuField = document.getElementById('sku');
+    
+    // Only suggest if SKU is empty
+    if (!skuField.value && name.length > 3) {
+        // Simple SKU generation: take first word and add -001
+        const firstWord = name.split(' ')[0].toUpperCase();
+        const suggestion = firstWord + '-001';
+        skuField.placeholder = `Suggestion: ${suggestion}`;
+    }
+});
+
+// Form validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    const sku = document.getElementById('sku').value.trim();
+    const name = document.getElementById('name').value.trim();
+    const quantity = document.getElementById('quantity').value.trim();
+    const location = document.getElementById('location').value.trim();
+    
+    if (!sku || !name || !quantity || !location) {
+        e.preventDefault();
+        alert('Please fill in all required fields.');
+        return false;
+    }
+    
+    if (parseInt(quantity) < 0) {
+        e.preventDefault();
+        alert('Quantity cannot be negative.');
+        return false;
+    }
+});
+</script>
+{% endblock %}
