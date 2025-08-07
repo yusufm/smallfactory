@@ -132,10 +132,10 @@ def main():
 
     # inventory-add
     add_parser = subparsers.add_parser("inventory-add", help="Add a new inventory item")
-    add_parser.add_argument("sku", help="Stock Keeping Unit (unique id)")
-    add_parser.add_argument("name", help="Item name")
-    add_parser.add_argument("quantity", type=int, help="Initial quantity")
-    add_parser.add_argument("location", help="Storage location")
+    add_parser.add_argument(
+        "fields", nargs='+',
+        help="Inventory item fields as key=value pairs. Required: sku, name, quantity, location. Example: sku=001 name=Widget quantity=5 location='Aisle 2' color=red"
+    )
     add_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     # inventory-list
@@ -231,20 +231,44 @@ def main():
     def cmd_inventory_add(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
-        item_file = inventory_dir / f"{args.sku}.yml"
-        if item_file.exists():
-            print(f"[smallfactory] Error: Inventory item with SKU '{args.sku}' already exists.")
+        # Parse all fields from key=value pairs
+        item = {}
+        invalid_pairs = []
+        for pair in args.fields:
+            if '=' in pair:
+                key, value = pair.split('=', 1)
+                item[key.strip()] = value.strip()
+            else:
+                invalid_pairs.append(pair)
+        if invalid_pairs:
+            print("[smallfactory] Error: All fields must be in key=value format.")
+            print(f"Invalid field(s): {', '.join(invalid_pairs)}")
+            print("Usage: sf inventory-add sku=12345 name=test_item quantity=10 location=warehouse_a [other=val ...]")
             sys.exit(1)
-        item = {
-            "sku": args.sku,
-            "name": args.name,
-            "quantity": args.quantity,
-            "location": args.location
-        }
+        # Required fields
+        required = ["sku", "name", "quantity", "location"]
+        missing = [f for f in required if f not in item]
+        if missing:
+            print(f"[smallfactory] Error: Missing required field(s): {', '.join(missing)}")
+            print("Usage: sf inventory-add sku=12345 name=test_item quantity=10 location=warehouse_a [other=val ...]")
+            sys.exit(1)
+        # Convert quantity to int if possible
+        try:
+            item["quantity"] = int(item["quantity"])
+        except Exception:
+            print("[smallfactory] Error: quantity must be an integer.")
+            sys.exit(1)
+        item_file = inventory_dir / f"{item['sku']}.yml"
+        if item_file.exists():
+            print(f"[smallfactory] Error: Inventory item with SKU '{item['sku']}' already exists.")
+            sys.exit(1)
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
-        commit_msg = (f"[smallfactory] Added inventory item {args.sku} ({args.name})\n"
-                      f"::sf-action::add\n::sf-sku::{args.sku}\n::sf-name::{args.name}\n::sf-quantity::{args.quantity}\n::sf-location::{args.location}")
+        # Compose commit message with all fields
+        commit_msg = [f"[smallfactory] Added inventory item {item['sku']} ({item['name']})", "::sf-action::add", f"::sf-sku::{item['sku']}"]
+        for k, v in item.items():
+            commit_msg.append(f"::sf-field::{k}={v}")
+        commit_msg = "\n".join(commit_msg)
         git_commit_and_push(datarepo_path, item_file, commit_msg)
         # Output
         if args.output == "json":
@@ -252,7 +276,7 @@ def main():
         elif args.output == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Added inventory item '{args.sku}' to datarepo at {datarepo_path}")
+            print(f"[smallfactory] Added inventory item '{item['sku']}' to datarepo at {datarepo_path}")
 
     def cmd_inventory_list(args):
         datarepo_path = get_datarepo_path()
@@ -274,10 +298,26 @@ def main():
             if not items:
                 print("[smallfactory] No inventory items found.")
                 sys.exit(0)
-            print(f"SKU       | Name                 | Quantity | Location")
-            print("-"*60)
+            # Dynamically determine all fields
+            required = ["sku", "name", "quantity", "location"]
+            extra_fields = set()
             for item in items:
-                print(f"{item['sku']:<9} | {item['name'][:20]:<20} | {item['quantity']:^8} | {item['location']}")
+                extra_fields.update(item.keys())
+            extra_fields = [f for f in sorted(extra_fields) if f not in required]
+            fields = required + extra_fields
+            # Print header
+            header = " | ".join(f"{f.title():<15}" for f in fields)
+            print(header)
+            print("-" * len(header))
+            # Print rows
+            for item in items:
+                row = []
+                for f in fields:
+                    val = item.get(f, "")
+                    if f == "name":
+                        val = str(val)[:20]
+                    row.append(f"{str(val):<15}")
+                print(" | ".join(row))
 
     def cmd_inventory_view(args):
         datarepo_path = get_datarepo_path()
