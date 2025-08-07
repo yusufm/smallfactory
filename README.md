@@ -103,3 +103,56 @@ $ sf part new motor-001 --rev A --desc "BLDC Motor 2205"
 $ sf bom edit quadcopter-001
 $ sf release create quadcopter-001-v1.0
 $ git commit -am "Release: quadcopter-001 v1.0"
+```
+
+---
+
+## 📦 Inventory Management
+
+smallfactory lets you track and manage inventory directly in your datarepo. Each inventory item is stored as a YAML file in the `inventory/` directory.
+
+### Add a New Inventory Item
+
+```sh
+$ sf inventory-add sku=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
+```
+Add a new item. All fields should be specified as key=value pairs. The SKU is used as the filename (e.g. `mot-001.yml`).
+
+### Update a Field on an Inventory Item
+
+```sh
+$ sf inventory-update mot-001 quantity 120
+```
+Update a single field (e.g. `quantity`) for an existing item by SKU.
+
+### Adjust Quantity
+
+```sh
+$ sf inventory-adjust mot-001 -5
+```
+Increment or decrement the quantity by a delta (e.g. -5 for usage, +10 for restock).
+
+### View an Inventory Item
+
+```sh
+$ sf inventory-view mot-001
+```
+Display all fields for a given SKU. Use `--output json` or `--output yaml` for machine-readable formats.
+
+### List All Inventory Items
+
+```sh
+$ sf inventory-list
+```
+Show a table of all inventory items. Use `--output json` or `--output yaml` for machine-readable formats.
+
+### Delete an Inventory Item
+
+```sh
+$ sf inventory-delete mot-001
+```
+Remove an inventory item by SKU. Prompts for confirmation in human mode.
+
+---
+
+See `python sf.py --help` for full CLI options and argument details.
