@@ -170,19 +170,34 @@ def main():
     ensure_config()
 
     def cmd_create(args):
-        # Step 1: Ask for GitHub URL
-        github_url = input("Paste the GitHub repository URL to clone (or leave blank to create a new repo): ").strip()
-        default_dir = "smallfactorydatarepo"
-        local_dir = input(f"Enter the local directory for the datarepo [{default_dir}]: ").strip() or default_dir
-        if os.path.exists(local_dir) and os.listdir(local_dir):
-            print(f"[smallfactory] Error: Directory '{local_dir}' already exists and is not empty.")
-            sys.exit(1)
-        if github_url:
-            subprocess.run(["git", "clone", github_url, local_dir], check=True)
-            print(f"[smallfactory] Cloned {github_url} into {local_dir}")
-            repo_path = pathlib.Path(local_dir).expanduser().resolve()
+        github_url = input("Paste the GitHub repository URL to clone/use (or leave blank for a new local-only repo): ").strip()
+
+        if args.path:
+            target_path = pathlib.Path(args.path)
         else:
-            repo_path = pathlib.Path(local_dir).expanduser().resolve()
+            datarepos_dir = pathlib.Path('datarepos')
+            datarepos_dir.mkdir(exist_ok=True)
+            if github_url:
+                # derive name from URL
+                repo_name = github_url.split('/')[-1].replace('.git', '')
+            else:
+                # if no URL, ask for a name
+                repo_name = input("Enter a name for the new local datarepo: ").strip()
+                if not repo_name:
+                    print("[smallfactory] Error: datarepo name cannot be empty.")
+                    sys.exit(1)
+            target_path = datarepos_dir / repo_name
+
+        if target_path.exists() and os.listdir(str(target_path)):
+            print(f"[smallfactory] Error: Target directory '{target_path}' already exists and is not empty.")
+            sys.exit(1)
+
+        if github_url:
+            subprocess.run(["git", "clone", github_url, str(target_path)], check=True)
+            print(f"[smallfactory] Cloned {github_url} into {target_path}")
+            repo_path = target_path.expanduser().resolve()
+        else:
+            repo_path = target_path.expanduser().resolve()
             repo_path.mkdir(parents=True, exist_ok=True)
             subprocess.run(["git", "init"], cwd=repo_path)
             print(f"[smallfactory] Initialized git repository at {repo_path}")
