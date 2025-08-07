@@ -95,13 +95,24 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ---
 
-## 🧪 Example Workflow
+## ⚡ Quickstart
+
+Get up and running with smallfactory in a few simple steps:
 
 ```sh
-$ sf init
-$ sf part new motor-001 --rev A --desc "BLDC Motor 2205"
-$ sf bom edit quadcopter-001
-$ sf release create quadcopter-001-v1.0
+# 1. Initialize a new PLM data repository (in the current directory)
+$ python3 sf.py init
+
+# 2. Add a new part
+$ python3 sf.py part new motor-001 --rev A --desc "BLDC Motor 2205"
+
+# 3. Create or edit a Bill of Materials (BOM)
+$ python3 sf.py bom edit quadcopter-001
+
+# 4. Create a release
+$ python3 sf.py release create quadcopter-001-v1.0
+
+# 5. Commit your changes to git
 $ git commit -am "Release: quadcopter-001 v1.0"
 ```
 
