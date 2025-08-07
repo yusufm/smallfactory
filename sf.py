@@ -172,12 +172,14 @@ def main():
 
     ensure_config()
 
-    if args.command == "create":
+    def cmd_create(args):
         create_datarepo(args.path)
         create_inventory_dir(pathlib.Path(args.path).expanduser().resolve())
-    elif args.command == "inventory-init":
+
+    def cmd_inventory_init(args):
         create_inventory_dir(get_datarepo_path())
-    elif args.command == "inventory-add":
+
+    def cmd_inventory_add(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         item_file = inventory_dir / f"{args.sku}.yml"
@@ -203,7 +205,7 @@ def main():
         else:
             print(f"[smallfactory] Added inventory item '{args.sku}' to datarepo at {datarepo_path}")
 
-    elif args.command == "inventory-list":
+    def cmd_inventory_list(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         if not inventory_dir.exists():
@@ -228,7 +230,7 @@ def main():
             for item in items:
                 print(f"{item['sku']:<9} | {item['name'][:20]:<20} | {item['quantity']:^8} | {item['location']}")
 
-    elif args.command == "inventory-view":
+    def cmd_inventory_view(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         item_file = inventory_dir / f"{args.sku}.yml"
@@ -244,7 +246,7 @@ def main():
         else:
             print(yaml.safe_dump(item, sort_keys=False))
 
-    elif args.command == "inventory-update":
+    def cmd_inventory_update(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         item_file = inventory_dir / f"{args.sku}.yml"
@@ -278,7 +280,7 @@ def main():
         else:
             print(f"[smallfactory] Updated '{args.field}' for inventory item '{args.sku}' in datarepo at {datarepo_path}")
 
-    elif args.command == "inventory-delete":
+    def cmd_inventory_delete(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         item_file = inventory_dir / f"{args.sku}.yml"
@@ -305,7 +307,7 @@ def main():
         else:
             print(f"[smallfactory] Deleted inventory item '{args.sku}' from datarepo at {datarepo_path}")
 
-    elif args.command == "inventory-adjust":
+    def cmd_inventory_adjust(args):
         datarepo_path = get_datarepo_path()
         inventory_dir = datarepo_path / "inventory"
         item_file = inventory_dir / f"{args.sku}.yml"
@@ -331,6 +333,20 @@ def main():
             print(yaml.safe_dump(item, sort_keys=False))
         else:
             print(f"[smallfactory] Adjusted quantity for inventory item '{args.sku}' by {args.delta} in datarepo at {datarepo_path}")
+
+    COMMANDS = {
+        "create": cmd_create,
+        "inventory-init": cmd_inventory_init,
+        "inventory-add": cmd_inventory_add,
+        "inventory-list": cmd_inventory_list,
+        "inventory-view": cmd_inventory_view,
+        "inventory-update": cmd_inventory_update,
+        "inventory-delete": cmd_inventory_delete,
+        "inventory-adjust": cmd_inventory_adjust,
+    }
+
+    if args.command in COMMANDS:
+        COMMANDS[args.command](args)
     else:
         parser.print_help()
 
