@@ -120,7 +120,7 @@ $ git commit -am "Release: quadcopter-001 v1.0"
 
 ## 📦 Inventory Management
 
-smallfactory lets you track and manage inventory directly in your datarepo. Each inventory item is stored as a YAML file in the `inventory/` directory.
+smallfactory lets you track and manage inventory. 
 
 ### Add a New Inventory Item
 
@@ -128,6 +128,10 @@ smallfactory lets you track and manage inventory directly in your datarepo. Each
 $ sf inventory-add sku=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
 ```
 Add a new item. All fields should be specified as key=value pairs. The SKU is used as the filename (e.g. `mot-001.yml`).
+
+> **Required fields:** `sku`, `name`, and `quantity` must be provided for each inventory item.
+> **Additional fields:** You may add any other fields you like (e.g. `location`, `supplier`, `notes`) to suit your workflow. These extra fields will be stored and displayed alongside the required fields.
+
 
 ### Update a Field on an Inventory Item
 
