@@ -58,7 +58,7 @@ smallfactory is designed for global usability with minimal friction. Our approac
 - **Plain Python (≥3.7):** Runs anywhere Python is available—no special environment or package manager required.
 - **requirements.txt:** All dependencies are listed in a single, standard file. Install everything with one command: `pip install -r requirements.txt`.
 - **YAML for data:** Human-friendly, easy to edit, and readable in any text editor. JSON is supported for machine-readability if needed.
-- **Single-file CLI:** The main tool is a single Python script (`sf.py`), runnable directly (`python sf.py ...`) or made executable (`./sf`). No build steps or complex install required.
+- **Single-file CLI:** The main tool is a single Python script (`sf.py`), runnable directly (`python3 sf.py ...`) or made executable (`./sf`). No build steps or complex install required.
 - **Zero infrastructure:** No databases, servers, or cloud dependencies—just files in your Git repo.
 - **Optional dev tools:** Linting and testing tools (like `pytest`, `flake8`) are included for contributors, but not required for end users.
 
@@ -155,4 +155,4 @@ Remove an inventory item by SKU. Prompts for confirmation in human mode.
 
 ---
 
-See `python sf.py --help` for full CLI options and argument details.
+See `python3 sf.py --help` for full CLI options and argument details.
