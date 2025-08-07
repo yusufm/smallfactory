@@ -100,7 +100,7 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 Get up and running with smallfactory in a few simple steps:
 
 ```sh
-# 1. Initialize a new PLM data repository (in the current directory)
+# 1. Initialize a new PLM data repository
 $ python3 sf.py create
 
 # 2. Add a new part
