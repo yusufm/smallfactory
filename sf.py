@@ -18,6 +18,21 @@ CONFIG_FILENAME = ".smallfactory.yml"
 DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
 
+def git_commit_and_push(repo_path, file_path, message):
+    """
+    Stage file_path, commit with message, and push if origin exists.
+    """
+    try:
+        subprocess.run(["git", "add", str(file_path)], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "commit", "-m", message], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Check if origin exists
+        remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
+        if "origin" in remotes.stdout.split():
+            subprocess.run(["git", "push", "origin", "HEAD"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        print("[smallfactory] Warning: Failed to commit or push changes to git.")
+
+
 def ensure_config():
     """Checks for a local .smallfactory.yml config file; creates one if missing."""
     config_path = pathlib.Path(CONFIG_FILENAME)
@@ -177,6 +192,7 @@ def main():
         }
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
+        git_commit_and_push(datarepo_path, item_file, f"Add inventory item {args.sku}")
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -249,6 +265,7 @@ def main():
             item[args.field] = args.value
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
+        git_commit_and_push(datarepo_path, item_file, f"Update {args.field} for inventory item {args.sku}")
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -273,6 +290,7 @@ def main():
                 print("[smallfactory] Delete cancelled.")
                 sys.exit(0)
         item_file.unlink()
+        git_commit_and_push(datarepo_path, item_file, f"Delete inventory item {args.sku}")
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -297,6 +315,7 @@ def main():
             sys.exit(1)
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
+        git_commit_and_push(datarepo_path, item_file, f"Adjust quantity for inventory item {args.sku} by {args.delta}")
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
