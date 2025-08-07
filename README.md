@@ -101,7 +101,7 @@ Get up and running with smallfactory in a few simple steps:
 
 ```sh
 # 1. Initialize a new PLM data repository (in the current directory)
-$ python3 sf.py init
+$ python3 sf.py create
 
 # 2. Add a new part
 $ python3 sf.py part new motor-001 --rev A --desc "BLDC Motor 2205"
