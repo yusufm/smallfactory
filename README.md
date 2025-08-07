@@ -106,13 +106,22 @@ $ python3 sf.py create
 # 2. Add a new part
 $ python3 sf.py part new motor-001 --rev A --desc "BLDC Motor 2205"
 
-# 3. Create or edit a Bill of Materials (BOM)
+# 3. Add inventory for the part (sku, name, quantity, location are required)
+$ python3 sf.py inventory-add sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
+
+# 4. Create or edit a Bill of Materials (BOM)
 $ python3 sf.py bom edit quadcopter-001
 
-# 4. Create a release
+# 5. Adjust inventory when using parts
+$ python3 sf.py inventory-adjust motor-001 -2
+
+# 6. Create a release
 $ python3 sf.py release create quadcopter-001-v1.0
 
-# 5. Commit your changes to git
+# 7. View your inventory status
+$ python3 sf.py inventory-list
+
+# 8. Commit your changes to git
 $ git commit -am "Release: quadcopter-001 v1.0"
 ```
 
@@ -125,46 +134,46 @@ smallfactory lets you track and manage inventory.
 ### Add a New Inventory Item
 
 ```sh
-$ sf inventory-add sku=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
+$ python3 sf.py inventory-add sku=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
 ```
 Add a new item. All fields should be specified as key=value pairs. The SKU is used as the filename (e.g. `mot-001.yml`).
 
-> **Required fields:** `sku`, `name`, and `quantity` must be provided for each inventory item.
-> **Additional fields:** You may add any other fields you like (e.g. `location`, `supplier`, `notes`) to suit your workflow. These extra fields will be stored and displayed alongside the required fields.
+> **Required fields:** `sku`, `name`, `quantity`, and `location` must be provided for each inventory item.
+> **Additional fields:** You may add any other fields you like (e.g. `supplier`, `notes`, `color`) to suit your workflow. These extra fields will be stored and displayed alongside the required fields.
 
 
 ### Update a Field on an Inventory Item
 
 ```sh
-$ sf inventory-update mot-001 quantity 120
+$ python3 sf.py inventory-update mot-001 quantity 120
 ```
 Update a single field (e.g. `quantity`) for an existing item by SKU.
 
 ### Adjust Quantity
 
 ```sh
-$ sf inventory-adjust mot-001 -5
+$ python3 sf.py inventory-adjust mot-001 -5
 ```
 Increment or decrement the quantity by a delta (e.g. -5 for usage, +10 for restock).
 
 ### View an Inventory Item
 
 ```sh
-$ sf inventory-view mot-001
+$ python3 sf.py inventory-view mot-001
 ```
 Display all fields for a given SKU. Use `--output json` or `--output yaml` for machine-readable formats.
 
 ### List All Inventory Items
 
 ```sh
-$ sf inventory-list
+$ python3 sf.py inventory-list
 ```
 Show a table of all inventory items. Use `--output json` or `--output yaml` for machine-readable formats.
 
 ### Delete an Inventory Item
 
 ```sh
-$ sf inventory-delete mot-001
+$ python3 sf.py inventory-delete mot-001
 ```
 Remove an inventory item by SKU. Prompts for confirmation in human mode.
 
