@@ -51,6 +51,21 @@ The tooling pulls from and pushes to your Git remote automatically (if connected
 
 ---
 
+## 🚀 Portability & Minimal Setup
+
+smallfactory is designed for global usability with minimal friction. Our approach:
+
+- **Plain Python (≥3.7):** Runs anywhere Python is available—no special environment or package manager required.
+- **requirements.txt:** All dependencies are listed in a single, standard file. Install everything with one command: `pip install -r requirements.txt`.
+- **YAML for data:** Human-friendly, easy to edit, and readable in any text editor. JSON is supported for machine-readability if needed.
+- **Single-file CLI:** The main tool is a single Python script (`sf.py`), runnable directly (`python sf.py ...`) or made executable (`./sf`). No build steps or complex install required.
+- **Zero infrastructure:** No databases, servers, or cloud dependencies—just files in your Git repo.
+- **Optional dev tools:** Linting and testing tools (like `pytest`, `flake8`) are included for contributors, but not required for end users.
+
+This means anyone, anywhere, can get started in seconds—clone, install, run. No virtualenvs or extra setup unless you want them.
+
+---
+
 ## 🧱 How It Works
 
 ### 1. The `smallfactory` Core Repository (this one)
