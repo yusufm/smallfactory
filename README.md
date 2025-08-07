@@ -112,7 +112,7 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ### 2. Your PLM Data Repository
 - A normal Git repo (public or private)
-- Initialized with `sf init`
+- Initialized with `python3 sf.py create`
 - Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
 
 - As new capabilities (like inventory management, procurement, etc.) are added, they are always introduced as new **top-level directories** in the datarepo.
