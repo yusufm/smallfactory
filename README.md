@@ -14,8 +14,11 @@ Get up and running with smallfactory inventory management in a few simple steps:
 $ python3 sf.py create
 
 # 2. Add inventory items (sku, name, quantity, location are required)
-$ python3 sf.py inventory-add sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
-$ python3 sf.py inventory-add sku=prop-001 name="Carbon Fiber Propeller" quantity=20 location="Shelf B2" notes="High-performance racing prop"
+$ python3 sf.py inventory-add \
+    sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
+$ python3 sf.py inventory-add \
+    sku=prop-001 name="Carbon Fiber Propeller" quantity=20 \
+    location="Shelf B2" notes="High-performance racing prop"  # custom user fields like 'notes' are supported and optional
 
 # 3. View your inventory
 $ python3 sf.py inventory-list
