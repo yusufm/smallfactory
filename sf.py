@@ -192,7 +192,9 @@ def main():
         }
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
-        git_commit_and_push(datarepo_path, item_file, f"Add inventory item {args.sku}")
+        commit_msg = (f"[smallfactory] Added inventory item {args.sku} ({args.name})\n"
+                      f"::sf-action::add\n::sf-sku::{args.sku}\n::sf-name::{args.name}\n::sf-quantity::{args.quantity}\n::sf-location::{args.location}")
+        git_commit_and_push(datarepo_path, item_file, commit_msg)
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -265,7 +267,9 @@ def main():
             item[args.field] = args.value
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
-        git_commit_and_push(datarepo_path, item_file, f"Update {args.field} for inventory item {args.sku}")
+        commit_msg = (f"[smallfactory] Updated {args.field} for inventory item {args.sku}\n"
+                      f"::sf-action::update\n::sf-sku::{args.sku}\n::sf-field::{args.field}\n::sf-value::{item[args.field]}")
+        git_commit_and_push(datarepo_path, item_file, commit_msg)
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -290,7 +294,9 @@ def main():
                 print("[smallfactory] Delete cancelled.")
                 sys.exit(0)
         item_file.unlink()
-        git_commit_and_push(datarepo_path, item_file, f"Delete inventory item {args.sku}")
+        commit_msg = (f"[smallfactory] Deleted inventory item {args.sku} ({item.get('name','')})\n"
+                      f"::sf-action::delete\n::sf-sku::{args.sku}")
+        git_commit_and_push(datarepo_path, item_file, commit_msg)
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
@@ -315,7 +321,9 @@ def main():
             sys.exit(1)
         with open(item_file, "w") as f:
             yaml.safe_dump(item, f)
-        git_commit_and_push(datarepo_path, item_file, f"Adjust quantity for inventory item {args.sku} by {args.delta}")
+        commit_msg = (f"[smallfactory] Adjusted quantity for inventory item {args.sku} by {args.delta}\n"
+                      f"::sf-action::adjust\n::sf-sku::{args.sku}\n::sf-delta::{args.delta}\n::sf-new-quantity::{item['quantity']}")
+        git_commit_and_push(datarepo_path, item_file, commit_msg)
         # Output
         if args.output == "json":
             print(json.dumps(item, indent=2))
