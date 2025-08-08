@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ item.name }} - Inventory - Smallfactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+    <!-- Header -->
+    <div class="mb-8">
+        <nav class="flex" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-4">
+                <li>
+                    <a href="{{ url_for('inventory_list') }}" class="text-gray-400 hover:text-gray-500">
+                        <i class="fas fa-boxes mr-1"></i>Inventory
+                    </a>
+                </li>
+                <li>
+                    <div class="flex items-center">
+                        <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+                        <a href="{{ url_for('inventory_view', item_id=item.id) }}" class="text-gray-400 hover:text-gray-500">{{ item.id }}</a>
+                    </div>
+                </li>
+                <li>
+                    <div class="flex items-center">
+                        <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+                        <span class="text-gray-900 font-medium">Edit</span>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+        <h1 class="text-3xl font-bold text-gray-900 mt-2">Edit {{ item.name }}</h1>
+        <p class="mt-2 text-gray-600">Update metadata fields for this inventory item</p>
+    </div>
+
+    <div class="max-w-2xl">
+        <!-- Current Values Display -->
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <h3 class="text-sm font-medium text-blue-900 mb-2">Current Item Details</h3>
+            <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div>
+                    <dt class="text-blue-700 font-medium">ID:</dt>
+                    <dd class="text-blue-900 font-mono">{{ item.id }}</dd>
+                </div>
+                <div>
+                    <dt class="text-blue-700 font-medium">Name:</dt>
+                    <dd class="text-blue-900">{{ item.name }}</dd>
+                </div>
+                <div>
+                    <dt class="text-blue-700 font-medium">Total Quantity:</dt>
+                    <dd class="text-blue-900 font-medium">{{ item.quantity }}</dd>
+                </div>
+                <div>
+                    <dt class="text-blue-700 font-medium">Locations:</dt>
+                    <dd class="text-blue-900">{{ item.locations|length if item.locations else 0 }}</dd>
+                </div>
+            </dl>
+        </div>
+
+        <!-- Edit Form -->
+        <form method="POST" class="space-y-6">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-6">Update Field</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="field" class="block text-sm font-medium text-gray-700">
+                            Field to Update <span class="text-red-500">*</span>
+                        </label>
+                        <select name="field" id="field" required 
+                                class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Select a field to update</option>
+                            {% for field_name, field_spec in field_specs.items() %}
+                                {% if field_name not in ['quantity', 'location', 'locations'] %}
+                                <option value="{{ field_name }}" data-description="{{ field_spec.description }}">
+                                    {{ field_name.replace('_', ' ').title() }}
+                                    {% if field_spec.required %} (Required){% endif %}
+                                </option>
+                                {% endif %}
+                            {% endfor %}
+                            <option value="custom_field" data-description="Add a new custom field">
+                                Custom Field
+                            </option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500">
+                            Note: Quantity and location changes must be done through the "Adjust Quantity" feature.
+                        </p>
+                    </div>
+
+                    <div id="custom-field-name" class="hidden">
+                        <label for="custom_field_name_input" class="block text-sm font-medium text-gray-700">
+                            Custom Field Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="custom_field_name_input" 
+                               class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="e.g., serial_number, color, weight">
+                        <p class="mt-1 text-xs text-gray-500">
+                            Use lowercase with underscores for multi-word field names.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label for="value" class="block text-sm font-medium text-gray-700">
+                            New Value <span class="text-red-500">*</span>
+                        </label>
+                        <div id="value-input-container">
+                            <input type="text" name="value" id="value" required
+                                   class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Enter the new value">
+                        </div>
+                        <p id="field-description" class="mt-1 text-xs text-gray-500">
+                            Select a field above to see its description and current value.
+                        </p>
+                    </div>
+
+                    <div id="current-value" class="hidden bg-gray-50 border border-gray-200 rounded-md p-3">
+                        <p class="text-sm font-medium text-gray-700 mb-1">Current Value:</p>
+                        <p id="current-value-display" class="text-sm text-gray-900 font-mono bg-white px-2 py-1 rounded border"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex justify-end space-x-3">
+                <a href="{{ url_for('inventory_view', item_id=item.id) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Cancel
+                </a>
+                <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <i class="fas fa-save mr-2"></i>Update Field
+                </button>
+            </div>
+        </form>
+
+        <!-- Quick Edit Buttons for Common Fields -->
+        <div class="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Edit Common Fields</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {% for field_name in ['name', 'description', 'category', 'manufacturer'] %}
+                    {% if field_name in field_specs %}
+                    <button onclick="quickEdit('{{ field_name }}', '{{ item.get(field_name, '') }}')" 
+                            class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">{{ field_name.replace('_', ' ').title() }}</p>
+                            <p class="text-xs text-gray-500 truncate">
+                                {% if item.get(field_name) %}
+                                    {{ item[field_name] }}
+                                {% else %}
+                                    <em>Not set</em>
+                                {% endif %}
+                            </p>
+                        </div>
+                        <i class="fas fa-edit text-gray-400"></i>
+                    </button>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const itemData = {{ item | tojson }};
+
+// Handle field selection
+document.getElementById('field').addEventListener('change', function() {
+    const selectedField = this.value;
+    const customFieldDiv = document.getElementById('custom-field-name');
+    const currentValueDiv = document.getElementById('current-value');
+    const currentValueDisplay = document.getElementById('current-value-display');
+    const fieldDescription = document.getElementById('field-description');
+    const valueInput = document.getElementById('value');
+    const valueContainer = document.getElementById('value-input-container');
+    
+    if (selectedField === 'custom_field') {
+        customFieldDiv.classList.remove('hidden');
+        currentValueDiv.classList.add('hidden');
+        fieldDescription.textContent = 'Enter a name for your custom field and its value.';
+        valueInput.placeholder = 'Enter the value for your custom field';
+    } else if (selectedField) {
+        customFieldDiv.classList.add('hidden');
+        
+        // Show current value
+        const currentValue = itemData[selectedField] || '';
+        if (currentValue) {
+            currentValueDisplay.textContent = currentValue;
+            currentValueDiv.classList.remove('hidden');
+        } else {
+            currentValueDiv.classList.add('hidden');
+        }
+        
+        // Update description
+        const option = this.querySelector(`option[value="${selectedField}"]`);
+        const description = option ? option.dataset.description : '';
+        fieldDescription.textContent = description || 'Update this field with a new value.';
+        
+        // Update input based on field type
+        if (selectedField === 'description' || selectedField === 'notes') {
+            // Replace input with textarea for long text fields
+            valueContainer.innerHTML = `
+                <textarea name="value" id="value" required rows="3"
+                          class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="Enter the new ${selectedField}">${currentValue}</textarea>
+            `;
+        } else {
+            // Use regular input
+            valueContainer.innerHTML = `
+                <input type="text" name="value" id="value" required
+                       class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                       placeholder="Enter the new ${selectedField}" value="${currentValue}">
+            `;
+        }
+    } else {
+        customFieldDiv.classList.add('hidden');
+        currentValueDiv.classList.add('hidden');
+        fieldDescription.textContent = 'Select a field above to see its description and current value.';
+        valueInput.value = '';
+        valueInput.placeholder = 'Enter the new value';
+    }
+});
+
+// Handle form submission for custom fields
+document.querySelector('form').addEventListener('submit', function(e) {
+    const fieldSelect = document.getElementById('field');
+    const customFieldNameInput = document.getElementById('custom_field_name_input');
+    
+    if (fieldSelect.value === 'custom_field') {
+        const customFieldName = customFieldNameInput.value.trim();
+        if (!customFieldName) {
+            e.preventDefault();
+            alert('Please enter a name for the custom field.');
+            customFieldNameInput.focus();
+            return;
+        }
+        
+        // Update the field select value to the custom field name
+        fieldSelect.value = customFieldName.toLowerCase().replace(/\s+/g, '_');
+        
+        // Create a hidden input with the custom field name
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'field';
+        hiddenInput.value = customFieldName.toLowerCase().replace(/\s+/g, '_');
+        this.appendChild(hiddenInput);
+    }
+});
+
+// Quick edit function
+function quickEdit(fieldName, currentValue) {
+    document.getElementById('field').value = fieldName;
+    document.getElementById('field').dispatchEvent(new Event('change'));
+    
+    // Focus on the value input after a short delay to allow the change event to process
+    setTimeout(() => {
+        const valueInput = document.getElementById('value');
+        if (valueInput) {
+            valueInput.focus();
+            valueInput.select();
+        }
+    }, 100);
+}
+
+// Auto-focus field select on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('field').focus();
+});
+</script>
+{% endblock %}

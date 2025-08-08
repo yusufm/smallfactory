@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Error - Smallfactory{% endblock %}
+
+{% block content %}
+<div class="fade-in">
+    <div class="max-w-md mx-auto text-center py-16">
+        <div class="mx-auto w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mb-8">
+            <i class="fas fa-exclamation-triangle text-red-600 text-3xl"></i>
+        </div>
+        
+        <h1 class="text-2xl font-bold text-gray-900 mb-4">Something went wrong</h1>
+        
+        {% if error %}
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-left">
+            <h3 class="text-sm font-medium text-red-800 mb-2">Error Details:</h3>
+            <p class="text-sm text-red-700 font-mono">{{ error }}</p>
+        </div>
+        {% endif %}
+        
+        <p class="text-gray-600 mb-8">
+            We encountered an error while processing your request. This might be due to:
+        </p>
+        
+        <ul class="text-left text-sm text-gray-600 mb-8 space-y-2">
+            <li class="flex items-start">
+                <i class="fas fa-circle text-gray-400 text-xs mt-2 mr-3"></i>
+                No data repository configured or accessible
+            </li>
+            <li class="flex items-start">
+                <i class="fas fa-circle text-gray-400 text-xs mt-2 mr-3"></i>
+                Invalid item ID or missing inventory data
+            </li>
+            <li class="flex items-start">
+                <i class="fas fa-circle text-gray-400 text-xs mt-2 mr-3"></i>
+                Permission issues with the data repository
+            </li>
+            <li class="flex items-start">
+                <i class="fas fa-circle text-gray-400 text-xs mt-2 mr-3"></i>
+                Git repository synchronization problems
+            </li>
+        </ul>
+        
+        <div class="space-y-3">
+            <a href="{{ url_for('index') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+                <i class="fas fa-home mr-2"></i>
+                Go to Dashboard
+            </a>
+            
+            <div class="text-center">
+                <button onclick="window.history.back()" class="text-sm text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-arrow-left mr-1"></i>
+                    Go back to previous page
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

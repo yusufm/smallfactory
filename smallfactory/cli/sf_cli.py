@@ -62,6 +62,12 @@ def main():
     adjust_parser.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
     adjust_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
+    # web command
+    web_parser = subparsers.add_parser("web", help="Start the web UI server")
+    web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
+    web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
+    web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
+
     args = parser.parse_args()
 
     ensure_config()
@@ -257,6 +263,48 @@ def main():
             loc = f" at '{args.location}'" if args.location else ""
             print(f"[smallfactory] Adjusted quantity for inventory item '{args.id}'{loc} by {args.delta} in datarepo at {datarepo_path}")
 
+    def cmd_web(args):
+        try:
+            # Import Flask app here to avoid import issues if Flask isn't installed
+            import sys
+            from pathlib import Path
+            
+            # Add the project root to Python path for web imports
+            project_root = Path(__file__).parent.parent.parent
+            sys.path.insert(0, str(project_root))
+            
+            from web.app import app
+            
+            print("🏭 Starting Smallfactory Web UI...")
+            print(f"📍 Access the interface at: http://localhost:{args.port}")
+            print("🔧 Git-native PLM for 1-2 person teams")
+            print("=" * 50)
+            
+            try:
+                app.run(
+                    debug=args.debug,
+                    host=args.host,
+                    port=args.port,
+                    use_reloader=args.debug
+                )
+            except KeyboardInterrupt:
+                print("\n👋 Shutting down Smallfactory Web UI...")
+            except Exception as e:
+                if "Address already in use" in str(e):
+                    print(f"❌ Error: Port {args.port} is already in use.")
+                    print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
+                else:
+                    print(f"❌ Error starting web server: {e}")
+                sys.exit(1)
+                
+        except ImportError as e:
+            print("❌ Error: Flask is not installed.")
+            print("   Install web dependencies: pip install -r web/requirements.txt")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Error starting web UI: {e}")
+            sys.exit(1)
+
     COMMANDS = {
         "create": cmd_create,
         "inventory-add": cmd_inventory_add,
@@ -265,6 +313,7 @@ def main():
         "inventory-update": cmd_inventory_update,
         "inventory-delete": cmd_inventory_delete,
         "inventory-adjust": cmd_inventory_adjust,
+        "web": cmd_web,
     }
 
     if args.command in COMMANDS:

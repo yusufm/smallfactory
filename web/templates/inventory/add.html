@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Add Item - Inventory - Smallfactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+    <!-- Header -->
+    <div class="mb-8">
+        <nav class="flex" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-4">
+                <li>
+                    <a href="{{ url_for('inventory_list') }}" class="text-gray-400 hover:text-gray-500">
+                        <i class="fas fa-boxes mr-1"></i>Inventory
+                    </a>
+                </li>
+                <li>
+                    <div class="flex items-center">
+                        <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+                        <span class="text-gray-900 font-medium">Add Item</span>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+        <h1 class="text-3xl font-bold text-gray-900 mt-2">Add Inventory Item</h1>
+        <p class="mt-2 text-gray-600">Create a new inventory item with location and quantity</p>
+    </div>
+
+    <div class="max-w-2xl">
+        <form method="POST" class="space-y-6">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-6">Required Information</h2>
+                
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <!-- Required fields -->
+                    {% for field_name, field_spec in field_specs.items() %}
+                        {% if field_spec.required %}
+                        <div class="{% if field_name in ['description'] %}sm:col-span-2{% endif %}">
+                            <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
+                                {{ field_name.replace('_', ' ').title() }}
+                                <span class="text-red-500">*</span>
+                            </label>
+                            {% if field_name == 'description' %}
+                                <textarea name="{{ field_name }}" id="{{ field_name }}" rows="3" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="{{ field_spec.description }}" required>{{ form_data.get(field_name, '') }}</textarea>
+                            {% elif field_name == 'quantity' %}
+                                <input type="number" name="{{ field_name }}" id="{{ field_name }}" min="0" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="{{ field_spec.description }}" value="{{ form_data.get(field_name, '') }}" required>
+                            {% elif field_name == 'id' %}
+                                <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="e.g. PART-001, resistor_10k, sensor.temp" value="{{ form_data.get(field_name, '') }}" required>
+                            {% else %}
+                                <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="{{ field_spec.description }}" value="{{ form_data.get(field_name, '') }}" required>
+                            {% endif %}
+                            {% if field_spec.description %}
+                            <p class="mt-1 text-xs text-gray-500">{{ field_spec.description }}</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-6">Optional Information</h2>
+                
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <!-- Optional fields -->
+                    {% for field_name, field_spec in field_specs.items() %}
+                        {% if not field_spec.required %}
+                        <div class="{% if field_name in ['description', 'notes'] %}sm:col-span-2{% endif %}">
+                            <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
+                                {{ field_name.replace('_', ' ').title() }}
+                            </label>
+                            {% if field_name == 'description' %}
+                                <textarea name="{{ field_name }}" id="{{ field_name }}" rows="3" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="{{ field_spec.description }}">{{ form_data.get(field_name, '') }}</textarea>
+                            {% else %}
+                                <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
+                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="{{ field_spec.description }}" value="{{ form_data.get(field_name, '') }}">
+                            {% endif %}
+                            {% if field_spec.description %}
+                            <p class="mt-1 text-xs text-gray-500">{{ field_spec.description }}</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Custom Fields Section -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-lg font-semibold text-gray-900">Custom Fields</h2>
+                    <button type="button" onclick="addCustomField()" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
+                        <i class="fas fa-plus mr-1"></i>Add Field
+                    </button>
+                </div>
+                
+                <div id="custom-fields" class="space-y-4">
+                    <!-- Custom fields will be added here dynamically -->
+                </div>
+                
+                <p class="text-xs text-gray-500 mt-4">
+                    Add any additional fields specific to your inventory needs. These will be stored alongside the standard fields.
+                </p>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="flex justify-end space-x-3">
+                <a href="{{ url_for('inventory_list') }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    Cancel
+                </a>
+                <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    <i class="fas fa-plus mr-2"></i>Add Item
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addCustomField() {
+    const container = document.getElementById('custom-fields');
+    const fieldCount = container.children.length;
+    
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'grid grid-cols-2 gap-4';
+    fieldDiv.id = `custom-field-${fieldCount}`;
+    fieldDiv.innerHTML = `
+        <div>
+            <input type="text" name="custom_field_name_${fieldCount}" placeholder="Field name" 
+                class="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="flex gap-2">
+            <input type="text" name="custom_field_value_${fieldCount}" placeholder="Field value" 
+                class="flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+            <button type="button" onclick="this.parentElement.parentElement.remove()" 
+                class="px-3 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+    container.appendChild(fieldDiv);
+}
+
+// Add real-time validation for ID field
+document.addEventListener('DOMContentLoaded', function() {
+    const idField = document.getElementById('id');
+    if (idField) {
+        idField.addEventListener('input', function() {
+            const value = this.value;
+            const isValid = /^[A-Za-z0-9._-]*$/.test(value);
+            
+            if (value && !isValid) {
+                this.classList.add('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+                this.classList.remove('border-gray-300', 'focus:ring-blue-500', 'focus:border-blue-500');
+            } else {
+                this.classList.remove('border-red-500', 'focus:ring-red-500', 'focus:border-red-500');
+                this.classList.add('border-gray-300', 'focus:ring-blue-500', 'focus:border-blue-500');
+            }
+        });
+    }
+});
+
+// Form submission handler to process custom fields
+document.querySelector('form').addEventListener('submit', function(e) {
+    // Process custom fields before submission
+    const customFields = document.querySelectorAll('[id^="custom-field-"]');
+    
+    customFields.forEach(fieldDiv => {
+        const nameInput = fieldDiv.querySelector('[name^="custom_field_name_"]');
+        const valueInput = fieldDiv.querySelector('[name^="custom_field_value_"]');
+        
+        if (nameInput && valueInput && nameInput.value.trim() && valueInput.value.trim()) {
+            // Create a hidden input with the custom field name and value
+            const hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = nameInput.value.trim().toLowerCase().replace(/\s+/g, '_');
+            hiddenInput.value = valueInput.value.trim();
+            this.appendChild(hiddenInput);
+        }
+    });
+    
+    // Remove the custom field inputs to avoid confusion
+    customFields.forEach(fieldDiv => {
+        const nameInput = fieldDiv.querySelector('[name^="custom_field_name_"]');
+        const valueInput = fieldDiv.querySelector('[name^="custom_field_value_"]');
+        if (nameInput) nameInput.name = '';
+        if (valueInput) valueInput.name = '';
+    });
+});
+
+// Auto-focus first input
+document.addEventListener('DOMContentLoaded', function() {
+    const firstInput = document.querySelector('input[required]');
+    if (firstInput) {
+        firstInput.focus();
+    }
+});
+
+// Form validation feedback
+document.querySelectorAll('input[required], textarea[required]').forEach(input => {
+    input.addEventListener('blur', function() {
+        if (this.value.trim() === '') {
+            this.classList.add('border-red-300');
+            this.classList.remove('border-gray-300');
+        } else {
+            this.classList.remove('border-red-300');
+            this.classList.add('border-gray-300');
+        }
+    });
+    
+    input.addEventListener('input', function() {
+        if (this.value.trim() !== '') {
+            this.classList.remove('border-red-300');
+            this.classList.add('border-gray-300');
+        }
+    });
+});
+</script>
+{% endblock %}

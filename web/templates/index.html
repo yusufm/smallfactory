@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Smallfactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p class="mt-2 text-gray-600">Overview of your PLM system</p>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-blue-100">
+                    <i class="fas fa-boxes text-blue-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-600">Total Items</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_items }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-green-100">
+                    <i class="fas fa-cubes text-green-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-600">Total Quantity</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ total_quantity }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-purple-100">
+                    <i class="fas fa-database text-purple-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-600">Data Repository</p>
+                    <p class="text-sm font-bold text-gray-900 truncate" title="{{ datarepo_path }}">
+                        {{ datarepo_path.split('/')[-1] if '/' in datarepo_path else datarepo_path }}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <a href="{{ url_for('inventory_add') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
+                <div class="p-2 rounded-md bg-blue-100 group-hover:bg-blue-200 transition-colors">
+                    <i class="fas fa-plus text-blue-600"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-900">Add Item</p>
+                    <p class="text-xs text-gray-500">Create new inventory</p>
+                </div>
+            </a>
+
+            <a href="{{ url_for('inventory_list') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
+                <div class="p-2 rounded-md bg-green-100 group-hover:bg-green-200 transition-colors">
+                    <i class="fas fa-list text-green-600"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-900">View All</p>
+                    <p class="text-xs text-gray-500">Browse inventory</p>
+                </div>
+            </a>
+
+            <a href="{{ url_for('inventory_list') }}#search" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
+                <div class="p-2 rounded-md bg-yellow-100 group-hover:bg-yellow-200 transition-colors">
+                    <i class="fas fa-search text-yellow-600"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-900">Search</p>
+                    <p class="text-xs text-gray-500">Find items</p>
+                </div>
+            </a>
+
+            <div class="flex items-center p-4 border border-gray-200 rounded-lg bg-gray-50 opacity-50">
+                <div class="p-2 rounded-md bg-gray-100">
+                    <i class="fas fa-chart-bar text-gray-400"></i>
+                </div>
+                <div class="ml-3">
+                    <p class="text-sm font-medium text-gray-500">Reports</p>
+                    <p class="text-xs text-gray-400">Coming soon</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Items -->
+    {% if recent_items %}
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Recent Items</h2>
+        </div>
+        <div class="overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Locations</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for item in recent_items %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {{ item.id }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {{ item.name }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {{ item.quantity }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {% if item.locations %}
+                                {% if item.locations is mapping %}
+                                    {% for location, qty in item.locations.items() %}
+                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 mr-1">
+                                            {{ location }}: {{ qty }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    {% for location in item.locations %}
+                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 mr-1">
+                                            {{ location }}
+                                        </span>
+                                    {% endfor %}
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400">No locations</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <a href="{{ url_for('inventory_view', item_id=item.id) }}" class="text-blue-600 hover:text-blue-900 mr-3">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            <a href="{{ url_for('inventory_edit', item_id=item.id) }}" class="text-yellow-600 hover:text-yellow-900">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="px-6 py-3 bg-gray-50 text-right">
+            <a href="{{ url_for('inventory_list') }}" class="text-sm text-blue-600 hover:text-blue-900 font-medium">
+                View all items <i class="fas fa-arrow-right ml-1"></i>
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+        <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+            <i class="fas fa-boxes text-gray-400 text-3xl"></i>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">No inventory items yet</h3>
+        <p class="text-gray-500 mb-6">Get started by adding your first inventory item.</p>
+        <a href="{{ url_for('inventory_add') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+            <i class="fas fa-plus mr-2"></i>
+            Add First Item
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

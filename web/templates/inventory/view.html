@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.name }} - Inventory - Smallfactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <a href="{{ url_for('inventory_list') }}" class="text-gray-400 hover:text-gray-500">
+                            <i class="fas fa-boxes mr-1"></i>Inventory
+                        </a>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+                            <span class="text-gray-900 font-medium">{{ item.id }}</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h1 class="text-3xl font-bold text-gray-900 mt-2">{{ item.name }}</h1>
+        </div>
+        <div class="flex space-x-3">
+            <a href="{{ url_for('inventory_edit', item_id=item.id) }}" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+                <i class="fas fa-edit mr-2"></i>Edit
+            </a>
+            <button onclick="deleteItem('{{ item.id }}')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+                <i class="fas fa-trash mr-2"></i>Delete
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Main Information -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Basic Info Card -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h2 class="text-lg font-semibold text-gray-900">Basic Information</h2>
+                </div>
+                <div class="px-6 py-4">
+                    <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">ID</dt>
+                            <dd class="mt-1 text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">{{ item.id }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-gray-500">Name</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ item.name }}</dd>
+                        </div>
+                        {% if item.description %}
+                        <div class="sm:col-span-2">
+                            <dt class="text-sm font-medium text-gray-500">Description</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ item.description }}</dd>
+                        </div>
+                        {% endif %}
+                        {% for field_name, field_spec in field_specs.items() %}
+                            {% if field_name not in ['id', 'name', 'description', 'quantity', 'location'] and field_name in item and item[field_name] %}
+                            <div>
+                                <dt class="text-sm font-medium text-gray-500">{{ field_name.replace('_', ' ').title() }}</dt>
+                                <dd class="mt-1 text-sm text-gray-900">{{ item[field_name] }}</dd>
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Locations Card -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+                <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                    <h2 class="text-lg font-semibold text-gray-900">Locations & Quantities</h2>
+                    <button onclick="showAdjustModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors inline-flex items-center">
+                        <i class="fas fa-plus-minus mr-1"></i>Adjust
+                    </button>
+                </div>
+                <div class="px-6 py-4">
+                    {% if item.locations %}
+                        <div class="space-y-4">
+                            {% for location, quantity in item.locations.items() %}
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                                <div class="flex items-center">
+                                    <div class="p-2 bg-blue-100 rounded-lg mr-3">
+                                        <i class="fas fa-map-marker-alt text-blue-600"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-sm font-medium text-gray-900">{{ location }}</h3>
+                                        <p class="text-xs text-gray-500">Storage Location</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3">
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                        {{ quantity }} units
+                                    </span>
+                                    <button onclick="showAdjustModal('{{ location }}')" class="text-blue-600 hover:text-blue-900 text-sm">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-8">
+                            <div class="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                <i class="fas fa-map-marker-alt text-gray-400 text-xl"></i>
+                            </div>
+                            <h3 class="text-sm font-medium text-gray-900 mb-2">No locations assigned</h3>
+                            <p class="text-xs text-gray-500 mb-4">Add a location to track quantities</p>
+                            <button onclick="showAdjustModal()" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
+                                <i class="fas fa-plus mr-1"></i>Add Location
+                            </button>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="space-y-6">
+            <!-- Quick Stats -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-500">Total Quantity</span>
+                        <span class="text-lg font-bold {% if item.quantity > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                            {{ item.quantity }}
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-500">Locations</span>
+                        <span class="text-lg font-bold text-gray-900">
+                            {{ item.locations|length if item.locations else 0 }}
+                        </span>
+                    </div>
+                    {% if item.category %}
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-500">Category</span>
+                        <span class="text-sm font-medium text-gray-900 bg-gray-100 px-2 py-1 rounded">
+                            {{ item.category }}
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+                <div class="space-y-3">
+                    <button onclick="showAdjustModal()" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                        <i class="fas fa-plus-minus mr-2"></i>Adjust Quantity
+                    </button>
+                    <a href="{{ url_for('inventory_edit', item_id=item.id) }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                        <i class="fas fa-edit mr-2"></i>Edit Details
+                    </a>
+                    <a href="{{ url_for('inventory_list') }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                        <i class="fas fa-list mr-2"></i>Back to List
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Adjust Quantity Modal -->
+<div id="adjust-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
+                <i class="fas fa-plus-minus text-blue-600"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 text-center mb-4">Adjust Quantity</h3>
+            <form id="adjust-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.id) }}">
+                <div class="space-y-4">
+                    {% if item.locations and item.locations|length > 1 %}
+                    <div>
+                        <label for="location" class="block text-sm font-medium text-gray-700">Location</label>
+                        <select name="location" id="location" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                            {% for location in item.locations.keys() %}
+                            <option value="{{ location }}">{{ location }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% elif item.locations and item.locations|length == 1 %}
+                    <input type="hidden" name="location" value="{{ item.locations.keys()|first }}">
+                    <div class="text-sm text-gray-600">
+                        Location: <span class="font-medium">{{ item.locations.keys()|first }}</span>
+                    </div>
+                    {% else %}
+                    <div>
+                        <label for="new-location" class="block text-sm font-medium text-gray-700">New Location</label>
+                        <input type="text" name="location" id="new-location" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter location name" required>
+                    </div>
+                    {% endif %}
+                    
+                    <div>
+                        <label for="delta" class="block text-sm font-medium text-gray-700">Adjustment</label>
+                        <div class="mt-1 flex">
+                            <button type="button" onclick="adjustDelta(-1)" class="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md hover:bg-gray-100">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" name="delta" id="delta" class="block w-full border-t border-b border-gray-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" value="0" required>
+                            <button type="button" onclick="adjustDelta(1)" class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-r-md hover:bg-gray-100">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Use negative numbers to decrease quantity</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center justify-end space-x-3 mt-6">
+                    <button type="button" onclick="hideAdjustModal()" class="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        Adjust
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="delete-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div class="mt-3 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                <i class="fas fa-exclamation-triangle text-red-600"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 mt-4">Delete Inventory Item</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500">
+                    Are you sure you want to delete "{{ item.name }}"? This action cannot be undone.
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <button id="confirm-delete" class="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-24 mr-2 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300">
+                    Delete
+                </button>
+                <button id="cancel-delete" class="px-4 py-2 bg-gray-300 text-gray-900 text-base font-medium rounded-md w-24 hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Adjust quantity modal
+function showAdjustModal(location = null) {
+    if (location) {
+        document.getElementById('location').value = location;
+    }
+    document.getElementById('adjust-modal').classList.remove('hidden');
+    document.getElementById('delta').focus();
+}
+
+function hideAdjustModal() {
+    document.getElementById('adjust-modal').classList.add('hidden');
+    document.getElementById('delta').value = 0;
+}
+
+function adjustDelta(change) {
+    const deltaInput = document.getElementById('delta');
+    const currentValue = parseInt(deltaInput.value) || 0;
+    deltaInput.value = currentValue + change;
+}
+
+// Delete functionality
+function deleteItem(itemId) {
+    document.getElementById('delete-modal').classList.remove('hidden');
+}
+
+document.getElementById('confirm-delete').addEventListener('click', function() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{ url_for("inventory_delete", item_id=item.id) }}';
+    document.body.appendChild(form);
+    form.submit();
+});
+
+document.getElementById('cancel-delete').addEventListener('click', function() {
+    document.getElementById('delete-modal').classList.add('hidden');
+});
+
+// Close modals when clicking outside
+document.getElementById('adjust-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideAdjustModal();
+    }
+});
+
+document.getElementById('delete-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        this.classList.add('hidden');
+    }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        hideAdjustModal();
+        document.getElementById('delete-modal').classList.add('hidden');
+    }
+});
+</script>
+{% endblock %}
