@@ -6,6 +6,7 @@ import re
 from typing import Optional, List, Dict
 
 from .gitutils import git_commit_and_push, git_commit_paths
+from .config import get_inventory_field_specs
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -56,11 +57,21 @@ def _write_yaml(p: Path, data: dict) -> None:
 
 
 def add_item(datarepo_path: Path, item: dict) -> dict:
-    # Required fields for creation
-    required = ["id", "name", "quantity", "location"]
+    # Load field specs from config (.smallfactory.yml)
+    specs = get_inventory_field_specs()
+    required = [fname for fname, meta in specs.items() if meta.get("required")]
     missing = [f for f in required if f not in item]
     if missing:
         raise ValueError(f"Missing required field(s): {', '.join(missing)}")
+
+    # Regex-validate known fields (unknown/custom fields are allowed)
+    for k, v in item.items():
+        if k in specs:
+            pattern = specs[k].get("regex")
+            if pattern is not None:
+                sval = "" if v is None else str(v)
+                if re.fullmatch(pattern, sval) is None:
+                    raise ValueError(f"Field '{k}' does not match expected format")
     # Parse and validate
     id = str(item["id"]).strip()
     name = str(item["name"]).strip()
@@ -84,8 +95,8 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
             raise FileExistsError(
                 f"Location '{location}' already exists for ID '{id}'. Use inventory-adjust to modify its quantity."
             )
-        # Optionally merge any extra metadata fields provided (drop any legacy 'sku')
-        extras = {k: v for k, v in item.items() if k not in {"id", "sku", "name", "quantity", "location"}}
+        # Optionally merge any extra metadata fields provided
+        extras = {k: v for k, v in item.items() if k not in {"id", "name", "quantity", "location"}}
         paths_to_commit = []
         if extras:
             meta.update(extras)
@@ -111,10 +122,10 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
 
         # Write files
         meta = {"id": id, "name": name}
-        # include any extra fields except quantity/location (drop any legacy 'sku')
-        for k, v in item.items():
-            if k not in {"id", "sku", "name", "quantity", "location"}:
-                meta[k] = v
+        # include any extra fields except quantity/location
+        extras = {k: v for k, v in item.items() if k not in {"id", "name", "quantity", "location"}}
+        if extras:
+            meta.update(extras)
         _write_yaml(meta_path, meta)
         _write_yaml(loc_path, {"location": location, "quantity": quantity})
 
@@ -152,7 +163,7 @@ def list_items(datarepo_path: Path) -> list[dict]:
             total_qty += qty
             locname = lf.stem
             locations.append(locname)
-        # derive id from metadata or directory name (no legacy 'sku' support)
+        # derive id from metadata or directory name (no legacy '' support)
         _id = meta.get("id") or pdir.name
         items.append({
             "id": _id,
@@ -161,8 +172,8 @@ def list_items(datarepo_path: Path) -> list[dict]:
             # For human output, show multiple or single location name
             "location": locations[0] if len(locations) == 1 else ("multiple" if locations else ""),
             "locations": locations,
-            # do not surface legacy 'sku' in extras
-            **{k: v for k, v in meta.items() if k not in {"id", "sku", "name"}},
+            # include all extra metadata fields
+            **{k: v for k, v in meta.items() if k not in {"id", "name"}},
         })
     return items
 
@@ -173,7 +184,7 @@ def view_item(datarepo_path: Path, id: str) -> dict:
     if not meta_path.exists():
         raise FileNotFoundError(f"Inventory item '{id}' not found")
     meta = _read_yaml(meta_path)
-    # Normalize output to always include 'id' (no legacy 'sku' support)
+    # Normalize output to always include 'id'
     out_id = meta.get("id") or id
     locations: Dict[str, int] = {}
     total_qty = 0
@@ -185,8 +196,8 @@ def view_item(datarepo_path: Path, id: str) -> dict:
         locname = lf.stem
         locations[locname] = qty
         total_qty += qty
-    # Exclude legacy 'sku' from top-level output to present 'id' everywhere
-    base = {k: v for k, v in meta.items() if k != "sku"}
+    # Include all metadata fields present in part.yml
+    base = {k: v for k, v in meta.items()}
     return {**base, "id": out_id, "quantity": total_qty, "locations": locations}
 
 
@@ -199,6 +210,15 @@ def update_item(datarepo_path: Path, id: str, field: str, value: str) -> dict:
     item = _read_yaml(meta_path)
     if field in {"quantity", "location", "locations"}:
         raise ValueError("Use inventory-adjust to change quantities; location files are managed per-location")
+
+    # Validate against configured specs if known
+    specs = get_inventory_field_specs()
+    if field in specs:
+        pattern = specs[field].get("regex")
+        if pattern is not None:
+            sval = "" if value is None else str(value)
+            if re.fullmatch(pattern, sval) is None:
+                raise ValueError(f"Field '{field}' does not match expected format")
     item[field] = value
     _write_yaml(meta_path, item)
     commit_msg = (
