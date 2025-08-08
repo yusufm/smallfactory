@@ -13,12 +13,12 @@ Get up and running with smallfactory inventory management in a few simple steps:
 # 1. Initialize a new PLM data repository
 $ python3 sf.py create
 
-# 2. Add inventory items (sku, name, quantity, location are required)
+# 2. Add inventory items (id, name, quantity, location are required)
 $ python3 sf.py inventory-add \
-    sku=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
+    id=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
  # custom user fields like 'notes' are supported and optional
 $ python3 sf.py inventory-add \
-    sku=prop-001 name="Carbon Fiber Propeller" quantity=20 \
+    id=prop-001 name="Carbon Fiber Propeller" quantity=20 \
     location="Shelf B2" notes="High-performance racing prop"
 
 # 3. View your inventory
@@ -123,11 +123,11 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ## 🔍 What You Can Do
 
-- **Inventory Management**: Add, view, update, and delete inventory items with SKU tracking
+- **Inventory Management**: Add, view, update, and delete inventory items with ID tracking
 - **Stock Control**: Adjust inventory quantities for usage and restocking
 - **Data Organization**: Store inventory data in human-readable YAML files
 - **Version Control**: Track all inventory changes using Git
-- **Flexible Fields**: Add custom fields beyond the required sku, name, quantity, and location
+- **Flexible Fields**: Add custom fields beyond the required id, name, quantity, and location
 - **Multiple Output Formats**: View data in human-readable tables, JSON, or YAML formats
 - **Git Integration**: Automatic commits with detailed metadata for inventory changes
 
@@ -142,11 +142,11 @@ smallfactory lets you track and manage inventory.
 ### Add a New Inventory Item
 
 ```sh
-$ python3 sf.py inventory-add sku=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
+$ python3 sf.py inventory-add id=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
 ```
-Add a new item. All fields should be specified as key=value pairs. The SKU is used as the filename (e.g. `mot-001.yml`).
+Add a new item. All fields should be specified as key=value pairs. The ID is used as the filename (e.g. `mot-001.yml`).
 
-> **Required fields:** `sku`, `name`, `quantity`, and `location` must be provided for each inventory item.
+> **Required fields:** `id`, `name`, `quantity`, and `location` must be provided for each inventory item.
 > **Additional fields:** You may add any other fields you like (e.g. `supplier`, `notes`, `color`) to suit your workflow. These extra fields will be stored and displayed alongside the required fields.
 
 
@@ -155,7 +155,7 @@ Add a new item. All fields should be specified as key=value pairs. The SKU is us
 ```sh
 $ python3 sf.py inventory-update mot-001 quantity 120
 ```
-Update a single field (e.g. `quantity`) for an existing item by SKU.
+Update a single field (e.g. `quantity`) for an existing item by ID.
 
 ### Adjust Quantity
 
@@ -169,7 +169,7 @@ Increment or decrement the quantity by a delta (e.g. -5 for usage, +10 for resto
 ```sh
 $ python3 sf.py inventory-view mot-001
 ```
-Display all fields for a given SKU. Use `--output json` or `--output yaml` for machine-readable formats.
+Display all fields for a given ID. Use `--output json` or `--output yaml` for machine-readable formats.
 
 ### List All Inventory Items
 
@@ -183,7 +183,7 @@ Show a table of all inventory items. Use `--output json` or `--output yaml` for 
 ```sh
 $ python3 sf.py inventory-delete mot-001
 ```
-Remove an inventory item by SKU. Prompts for confirmation in human mode.
+Remove an inventory item by ID. Prompts for confirmation in human mode.
 
 ---
 

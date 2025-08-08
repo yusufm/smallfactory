@@ -30,7 +30,7 @@ def main():
     add_parser = subparsers.add_parser("inventory-add", help="Add a new inventory item")
     add_parser.add_argument(
         "fields", nargs='+',
-        help="Inventory item fields as key=value pairs. Required: sku, name, quantity, location. Example: sku=001 name=Widget quantity=5 location='Aisle 2' color=red"
+        help="Inventory item fields as key=value pairs. Required: id, name, quantity, location. Example: id=001 name=Widget quantity=5 location='Aisle 2' color=red"
     )
     add_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
@@ -40,24 +40,24 @@ def main():
 
     # inventory-view
     view_parser = subparsers.add_parser("inventory-view", help="View details of an inventory item")
-    view_parser.add_argument("sku", help="SKU of the item to view")
+    view_parser.add_argument("id", help="ID of the item to view")
     view_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     # inventory-update
     update_parser = subparsers.add_parser("inventory-update", help="Update an inventory item's metadata (not quantity or locations)")
-    update_parser.add_argument("sku", help="SKU of the item to update")
+    update_parser.add_argument("id", help="ID of the item to update")
     update_parser.add_argument("field", help="Field to update (metadata only, e.g. name, description)")
     update_parser.add_argument("value", help="New value for the field")
     update_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     # inventory-delete
     delete_parser = subparsers.add_parser("inventory-delete", help="Delete an inventory item")
-    delete_parser.add_argument("sku", help="SKU of the item to delete")
+    delete_parser.add_argument("id", help="ID of the item to delete")
     delete_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     # inventory-adjust
     adjust_parser = subparsers.add_parser("inventory-adjust", help="Adjust the stock level of an inventory item")
-    adjust_parser.add_argument("sku", help="SKU of the item to adjust")
+    adjust_parser.add_argument("id", help="ID of the item to adjust")
     adjust_parser.add_argument("delta", type=int, help="Amount to adjust (positive or negative)")
     adjust_parser.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
     adjust_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
@@ -120,7 +120,7 @@ def main():
         if invalid_pairs:
             print("[smallfactory] Error: All fields must be in key=value format.")
             print(f"Invalid field(s): {', '.join(invalid_pairs)}")
-            print("Usage: sf inventory-add sku=12345 name=test_item quantity=10 location=warehouse_a [other=val ...]")
+            print("Usage: sf inventory-add id=12345 name=test_item quantity=10 location=warehouse_a [other=val ...]")
             sys.exit(1)
         try:
             added = add_item(datarepo_path, item)
@@ -133,7 +133,7 @@ def main():
         elif args.output == "yaml":
             print(yaml.safe_dump(added, sort_keys=False))
         else:
-            print(f"[smallfactory] Added inventory item '{added['sku']}' to datarepo at {datarepo_path}")
+            print(f"[smallfactory] Added inventory item '{added['id']}' to datarepo at {datarepo_path}")
 
     def cmd_inventory_list(args):
         datarepo_path = get_datarepo_path()
@@ -147,7 +147,7 @@ def main():
                 print("[smallfactory] No inventory items found.")
                 sys.exit(0)
             # Dynamically determine all fields
-            required = ["sku", "name", "quantity", "location"]
+            required = ["id", "name", "quantity", "location"]
             extra_fields = set()
             for item in items:
                 extra_fields.update(item.keys())
@@ -173,7 +173,7 @@ def main():
                 locs = item.get("locations", [])
                 if isinstance(locs, list) and len(locs) > 1:
                     try:
-                        details = view_item(datarepo_path, item.get("sku", ""))
+                        details = view_item(datarepo_path, item.get("id", ""))
                         loc_map = details.get("locations", {})
                     except Exception:
                         loc_map = {}
@@ -181,7 +181,7 @@ def main():
                         qty = loc_map.get(loc_name, "")
                         sub_row = []
                         for f in fields:
-                            if f == "sku" or f == "name":
+                            if f == "id" or f == "name":
                                 val = ""
                             elif f == "quantity":
                                 val = qty
@@ -195,7 +195,7 @@ def main():
     def cmd_inventory_view(args):
         datarepo_path = get_datarepo_path()
         try:
-            item = view_item(datarepo_path, args.sku)
+            item = view_item(datarepo_path, args.id)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -209,7 +209,7 @@ def main():
     def cmd_inventory_update(args):
         datarepo_path = get_datarepo_path()
         try:
-            item = update_item(datarepo_path, args.sku, args.field, args.value)
+            item = update_item(datarepo_path, args.id, args.field, args.value)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -219,17 +219,17 @@ def main():
         elif args.output == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Updated '{args.field}' for inventory item '{args.sku}' in datarepo at {datarepo_path}")
+            print(f"[smallfactory] Updated '{args.field}' for inventory item '{args.id}' in datarepo at {datarepo_path}")
 
     def cmd_inventory_delete(args):
         datarepo_path = get_datarepo_path()
         if args.output == "human":
-            confirm = input(f"Are you sure you want to delete inventory item '{args.sku}'? [y/N]: ").strip().lower()
+            confirm = input(f"Are you sure you want to delete inventory item '{args.id}'? [y/N]: ").strip().lower()
             if confirm not in ("y", "yes"):
                 print("[smallfactory] Delete cancelled.")
                 sys.exit(0)
         try:
-            item = delete_item(datarepo_path, args.sku)
+            item = delete_item(datarepo_path, args.id)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -239,12 +239,12 @@ def main():
         elif args.output == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Deleted inventory item '{args.sku}' from datarepo at {datarepo_path}")
+            print(f"[smallfactory] Deleted inventory item '{args.id}' from datarepo at {datarepo_path}")
 
     def cmd_inventory_adjust(args):
         datarepo_path = get_datarepo_path()
         try:
-            item = adjust_quantity(datarepo_path, args.sku, args.delta, location=args.location)
+            item = adjust_quantity(datarepo_path, args.id, args.delta, location=args.location)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -255,7 +255,7 @@ def main():
             print(yaml.safe_dump(item, sort_keys=False))
         else:
             loc = f" at '{args.location}'" if args.location else ""
-            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sku}'{loc} by {args.delta} in datarepo at {datarepo_path}")
+            print(f"[smallfactory] Adjusted quantity for inventory item '{args.id}'{loc} by {args.delta} in datarepo at {datarepo_path}")
 
     COMMANDS = {
         "create": cmd_create,
