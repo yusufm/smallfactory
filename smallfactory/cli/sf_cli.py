@@ -44,9 +44,9 @@ def main():
     view_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     # inventory-update
-    update_parser = subparsers.add_parser("inventory-update", help="Update an inventory item")
+    update_parser = subparsers.add_parser("inventory-update", help="Update an inventory item's metadata (not quantity or locations)")
     update_parser.add_argument("sku", help="SKU of the item to update")
-    update_parser.add_argument("field", help="Field to update (name, quantity, location)")
+    update_parser.add_argument("field", help="Field to update (metadata only, e.g. name, description)")
     update_parser.add_argument("value", help="New value for the field")
     update_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
@@ -59,6 +59,7 @@ def main():
     adjust_parser = subparsers.add_parser("inventory-adjust", help="Adjust the stock level of an inventory item")
     adjust_parser.add_argument("sku", help="SKU of the item to adjust")
     adjust_parser.add_argument("delta", type=int, help="Amount to adjust (positive or negative)")
+    adjust_parser.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
     adjust_parser.add_argument("-o", "--output", choices=["human", "json", "yaml"], default="human", help="Output format")
 
     args = parser.parse_args()
@@ -150,7 +151,8 @@ def main():
             extra_fields = set()
             for item in items:
                 extra_fields.update(item.keys())
-            extra_fields = [f for f in sorted(extra_fields) if f not in required]
+            # Do not show the raw 'locations' list column in human view
+            extra_fields = [f for f in sorted(extra_fields) if f not in required + ["locations"]]
             fields = required + extra_fields
             # Print header
             header = " | ".join(f"{f.title():<15}" for f in fields)
@@ -158,6 +160,7 @@ def main():
             print("-" * len(header))
             # Print rows
             for item in items:
+                # First, print the main summary row
                 row = []
                 for f in fields:
                     val = item.get(f, "")
@@ -165,6 +168,29 @@ def main():
                         val = str(val)[:20]
                     row.append(f"{str(val):<15}")
                 print(" | ".join(row))
+
+                # Then, if multiple locations exist, print sub-lines for each location with its quantity
+                locs = item.get("locations", [])
+                if isinstance(locs, list) and len(locs) > 1:
+                    try:
+                        details = view_item(datarepo_path, item.get("sku", ""))
+                        loc_map = details.get("locations", {})
+                    except Exception:
+                        loc_map = {}
+                    for loc_name in sorted(loc_map.keys()):
+                        qty = loc_map.get(loc_name, "")
+                        sub_row = []
+                        for f in fields:
+                            if f == "sku" or f == "name":
+                                val = ""
+                            elif f == "quantity":
+                                val = qty
+                            elif f == "location":
+                                val = loc_name
+                            else:
+                                val = ""
+                            sub_row.append(f"{str(val):<15}")
+                        print(" | ".join(sub_row))
 
     def cmd_inventory_view(args):
         datarepo_path = get_datarepo_path()
@@ -218,7 +244,7 @@ def main():
     def cmd_inventory_adjust(args):
         datarepo_path = get_datarepo_path()
         try:
-            item = adjust_quantity(datarepo_path, args.sku, args.delta)
+            item = adjust_quantity(datarepo_path, args.sku, args.delta, location=args.location)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -228,7 +254,8 @@ def main():
         elif args.output == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sku}' by {args.delta} in datarepo at {datarepo_path}")
+            loc = f" at '{args.location}'" if args.location else ""
+            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sku}'{loc} by {args.delta} in datarepo at {datarepo_path}")
 
     COMMANDS = {
         "create": cmd_create,
