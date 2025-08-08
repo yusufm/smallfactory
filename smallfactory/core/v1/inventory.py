@@ -56,10 +56,7 @@ def _write_yaml(p: Path, data: dict) -> None:
 
 
 def add_item(datarepo_path: Path, item: dict) -> dict:
-    # Required fields for creation (accept legacy 'sku' as alias for 'id')
-    if "id" not in item and "sku" in item:
-        # normalize incoming alias
-        item = {**item, "id": item.get("id") or item.get("sku")}
+    # Required fields for creation
     required = ["id", "name", "quantity", "location"]
     missing = [f for f in required if f not in item]
     if missing:
@@ -87,7 +84,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
             raise FileExistsError(
                 f"Location '{location}' already exists for ID '{id}'. Use inventory-adjust to modify its quantity."
             )
-        # Optionally merge any extra metadata fields provided
+        # Optionally merge any extra metadata fields provided (drop any legacy 'sku')
         extras = {k: v for k, v in item.items() if k not in {"id", "sku", "name", "quantity", "location"}}
         paths_to_commit = []
         if extras:
@@ -114,7 +111,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
 
         # Write files
         meta = {"id": id, "name": name}
-        # include any extra fields except quantity/location
+        # include any extra fields except quantity/location (drop any legacy 'sku')
         for k, v in item.items():
             if k not in {"id", "sku", "name", "quantity", "location"}:
                 meta[k] = v
@@ -155,8 +152,8 @@ def list_items(datarepo_path: Path) -> list[dict]:
             total_qty += qty
             locname = lf.stem
             locations.append(locname)
-        # derive id with backward-compatibility
-        _id = meta.get("id") or meta.get("sku") or pdir.name
+        # derive id from metadata or directory name (no legacy 'sku' support)
+        _id = meta.get("id") or pdir.name
         items.append({
             "id": _id,
             "name": meta.get("name"),
@@ -176,8 +173,8 @@ def view_item(datarepo_path: Path, id: str) -> dict:
     if not meta_path.exists():
         raise FileNotFoundError(f"Inventory item '{id}' not found")
     meta = _read_yaml(meta_path)
-    # Normalize output to always include 'id'
-    out_id = meta.get("id") or meta.get("sku") or id
+    # Normalize output to always include 'id' (no legacy 'sku' support)
+    out_id = meta.get("id") or id
     locations: Dict[str, int] = {}
     total_qty = 0
     for lf in sorted(pdir.glob("*.yml")):
