@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="format-detection" content="telephone=no">
+    <title>Quick Adjust - smallFactory</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script>
+        // Simple test to ensure JavaScript is working
+        console.log('Basic JavaScript test - this should appear in console');
+        
+        // Wait for the HTML5 QR code library to load
+        window.addEventListener('load', function() {
+            console.log('Window loaded, Html5Qrcode available:', typeof Html5Qrcode);
+        });
+    </script>
+    <style>
+        /* Mobile-first optimizations */
+        body {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .scan-button {
+            transition: all 0.2s ease;
+            transform: scale(1);
+        }
+        
+        .scan-button:active {
+            transform: scale(0.95);
+        }
+        
+        .quantity-btn {
+            transition: all 0.1s ease;
+            touch-action: manipulation;
+        }
+        
+        .quantity-btn:active {
+            transform: scale(0.9);
+        }
+        
+        .success-flash {
+            animation: successPulse 0.6s ease-out;
+        }
+        
+        @keyframes successPulse {
+            0% { transform: scale(1); background-color: rgb(34, 197, 94); }
+            50% { transform: scale(1.05); background-color: rgb(22, 163, 74); }
+            100% { transform: scale(1); background-color: rgb(34, 197, 94); }
+        }
+        
+        .error-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        #reader {
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .glass-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        /* iOS-specific optimizations */
+        @supports (-webkit-touch-callout: none) {
+            /* iOS Safari specific styles */
+            .scan-button, .quantity-btn {
+                -webkit-appearance: none;
+                appearance: none;
+                -webkit-tap-highlight-color: transparent;
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                user-select: none;
+            }
+            
+            /* Prevent iOS zoom on input focus */
+            input[type="text"], input[type="number"] {
+                font-size: 16px !important;
+            }
+            
+            /* Better touch targets for iOS */
+            .scan-button {
+                min-height: 60px;
+            }
+            
+            .quantity-btn {
+                min-height: 48px;
+                min-width: 48px;
+            }
+        }
+
+        
+        
+        /* Prevent iOS bounce scrolling */
+        body {
+            position: fixed;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .main-content {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <!-- Header -->
+    <div class="bg-white shadow-sm border-b">
+        <div class="px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center">
+                <a href="{{ url_for('index') }}" class="text-gray-600 mr-3">
+                    <i class="fas fa-arrow-left text-xl"></i>
+                </a>
+                <h1 class="text-lg font-semibold text-gray-900">Quick Adjust</h1>
+            </div>
+            <i class="fas fa-cube text-blue-600 text-xl"></i>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="px-4 py-6 space-y-6">
+        <!-- Status Messages -->
+        <div id="status-message" class="hidden rounded-lg p-4 text-center font-medium"></div>
+        
+        <!-- Step 1: Scan Item QR Code -->
+        <div class="glass-card rounded-xl p-6 shadow-lg">
+            <div class="text-center mb-4">
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-qrcode text-blue-600 text-2xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold text-gray-900 mb-2">Step 1: Scan Item</h2>
+                <p class="text-gray-600 text-sm">Scan the QR code on the inventory item</p>
+            </div>
+            
+            <div class="space-y-4">
+                <button id="scan-item-btn" class="scan-button w-full bg-blue-600 hover:bg-blue-700 text-white py-4 px-6 rounded-xl font-semibold text-lg flex items-center justify-center space-x-3">
+                    <i class="fas fa-camera text-xl"></i>
+                    <span>Scan Item QR Code</span>
+                </button>
+                
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div class="flex items-start space-x-2">
+                        <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
+                        <div class="text-sm text-blue-800">
+                            <strong>Camera Tips:</strong> Allow camera access when prompted. If blocked, use manual input below or try accessing via HTTPS.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center text-gray-500 text-sm">or enter manually</div>
+                
+                <input type="text" id="manual-item-id" placeholder="Enter Item ID manually" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg">
+            </div>
+            
+            <div id="item-info" class="hidden mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-check-circle text-green-600"></i>
+                    <div>
+                        <div class="font-semibold text-green-900" id="item-name"></div>
+                        <div class="text-sm text-green-700">Current quantity: <span id="item-quantity"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Scan Location QR Code (Optional) -->
+        <div class="glass-card rounded-xl p-6 shadow-lg" id="location-step" style="display: none;">
+            <div class="text-center mb-4">
+                <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-map-marker-alt text-purple-600 text-2xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold text-gray-900 mb-2">Step 2: Location (Optional)</h2>
+                <p class="text-gray-600 text-sm">Scan location QR code or skip</p>
+            </div>
+            
+            <div class="space-y-4">
+                <button id="scan-location-btn" class="scan-button w-full bg-purple-600 hover:bg-purple-700 text-white py-4 px-6 rounded-xl font-semibold text-lg flex items-center justify-center space-x-3">
+                    <i class="fas fa-camera text-xl"></i>
+                    <span>Scan Location QR Code</span>
+                </button>
+                
+                <div class="text-center text-gray-500 text-sm">or</div>
+                
+                <input type="text" id="manual-location" placeholder="Enter location manually (optional)" 
+                       class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg">
+                
+                <button id="skip-location-btn" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 px-6 rounded-xl font-medium">
+                    Skip Location
+                </button>
+            </div>
+            
+            <div id="location-info" class="hidden mt-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <div class="flex items-center space-x-3">
+                    <i class="fas fa-check-circle text-purple-600"></i>
+                    <div>
+                        <div class="font-semibold text-purple-900">Location: <span id="location-name"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Adjust Quantity -->
+        <div class="glass-card rounded-xl p-6 shadow-lg" id="quantity-step" style="display: none;">
+            <div class="text-center mb-6">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-plus-minus text-green-600 text-2xl"></i>
+                </div>
+                <h2 class="text-xl font-semibold text-gray-900 mb-2">Step 3: Adjust Quantity</h2>
+                <p class="text-gray-600 text-sm">How much do you want to add or remove?</p>
+            </div>
+            
+            <!-- Quick Adjustment Buttons -->
+            <div class="grid grid-cols-2 gap-3 mb-6">
+                <div class="space-y-2">
+                    <div class="text-sm font-medium text-gray-700 text-center">Add</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="quantity-btn bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold" data-delta="1">+1</button>
+                        <button class="quantity-btn bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold" data-delta="5">+5</button>
+                        <button class="quantity-btn bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold" data-delta="10">+10</button>
+                        <button class="quantity-btn bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold" data-delta="25">+25</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <div class="text-sm font-medium text-gray-700 text-center">Remove</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="quantity-btn bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold" data-delta="-1">-1</button>
+                        <button class="quantity-btn bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold" data-delta="-5">-5</button>
+                        <button class="quantity-btn bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold" data-delta="-10">-10</button>
+                        <button class="quantity-btn bg-red-500 hover:bg-red-600 text-white py-3 rounded-lg font-semibold" data-delta="-25">-25</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Custom Amount -->
+            <div class="space-y-4">
+                <div class="text-center text-gray-500 text-sm">or enter custom amount</div>
+                <div class="flex space-x-2">
+                    <input type="number" id="custom-delta" placeholder="±Amount" 
+                           class="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg text-center">
+                    <button id="apply-custom-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-semibold">
+                        Apply
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reset Button -->
+        <button id="reset-btn" class="w-full bg-gray-600 hover:bg-gray-700 text-white py-3 px-6 rounded-xl font-semibold">
+            <i class="fas fa-redo mr-2"></i>Start Over
+        </button>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div id="scanner-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl p-6 w-full max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold" id="scanner-title">Scan QR Code</h3>
+                    <div class="flex items-center space-x-3">
+                        <button id="switch-camera" title="Switch camera" class="text-gray-500 hover:text-gray-700 hidden">
+                            <i class="fas fa-camera-rotate text-xl"></i>
+                        </button>
+                        <button id="close-scanner" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="reader" class="w-full"></div>
+                <div class="mt-2 flex justify-center space-x-2">
+                    <button id="force-back" class="px-3 py-1 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100">Back</button>
+                    <button id="force-front" class="px-3 py-1 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-100">Front</button>
+                </div>
+                <div class="mt-4 text-center text-sm text-gray-600">
+                    Position the QR code within the frame
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('JavaScript is loading...');
+        
+        // Global variables
+        let currentItem = null;
+        let currentLocation = null;
+        let scanner = null;
+        let scanMode = null;
+        let availableCameras = [];
+        let currentCameraIndex = -1;
+        let currentCameraId = null;
+        let currentFacingMode = null; // 'environment' or 'user'
+        
+        // Start scan function
+        async function startScan(mode) {
+            console.log('startScan called with mode:', mode);
+            console.log('Html5Qrcode available:', typeof Html5Qrcode);
+            console.log('User agent:', navigator.userAgent);
+            
+            scanMode = mode;
+            const modal = document.getElementById('scanner-modal');
+            const title = document.getElementById('scanner-title');
+            
+            if (!modal || !title) {
+                console.error('Modal or title element not found!');
+                return;
+            }
+            
+            title.textContent = mode === 'item' ? 'Scan Item QR Code' : 'Scan Location QR Code';
+            modal.classList.remove('hidden');
+            console.log('Modal should now be visible');
+            
+            // Check if we're on iOS and not using HTTPS
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const isHTTPS = location.protocol === 'https:';
+            
+            if (isIOS && !isHTTPS) {
+                console.warn('iOS detected without HTTPS - camera may not work');
+                closeScannerModal();
+                showMessage('iOS requires HTTPS for camera access. Please use manual input or access via HTTPS.', 'error');
+                
+                setTimeout(() => {
+                    const inputField = mode === 'item' ? 
+                        document.getElementById('manual-item-id') : 
+                        document.getElementById('manual-location');
+                    if (inputField) inputField.focus();
+                }, 100);
+                return;
+            }
+            
+            try {
+                if (typeof Html5Qrcode === 'undefined') {
+                    throw new Error('Html5Qrcode library not loaded');
+                }
+                
+                // Enumerate cameras and prefer back/environment; allow switching
+                let cameraConfig;
+                try {
+                    availableCameras = await Html5Qrcode.getCameras();
+                } catch (e) {
+                    availableCameras = [];
+                }
+                console.log('Available cameras:', availableCameras);
+
+                // Restore prior selection within this session if present and still available
+                const savedId = sessionStorage.getItem('sf.currentCameraId');
+                const savedFacing = sessionStorage.getItem('sf.currentFacingMode');
+                if (savedId && availableCameras.some(c => c.id === savedId)) {
+                    currentCameraId = savedId;
+                    currentCameraIndex = availableCameras.findIndex(c => c.id === savedId);
+                } else if (availableCameras.length > 0) {
+                    // Prefer back/environment/rear when possible
+                    const preferredIndex = availableCameras.findIndex(d => {
+                        const label = (d.label || '').toLowerCase();
+                        return label.includes('back') || label.includes('environment') || label.includes('rear');
+                    });
+                    currentCameraIndex = preferredIndex >= 0 ? preferredIndex : 0;
+                    currentCameraId = availableCameras[currentCameraIndex].id;
+                }
+
+                // Update switch button visibility (always show on iOS)
+                const switchBtn = document.getElementById('switch-camera');
+                if (switchBtn) {
+                    if (isIOS || (availableCameras.length > 1)) {
+                        switchBtn.classList.remove('hidden');
+                    } else {
+                        switchBtn.classList.add('hidden');
+                    }
+                }
+
+                if (isIOS) {
+                    // On iOS prefer facingMode for reliable lens selection
+                    currentFacingMode = savedFacing || 'environment';
+                    cameraConfig = { facingMode: currentFacingMode };
+                } else if (currentCameraId) {
+                    cameraConfig = currentCameraId; // pass cameraId directly
+                    currentFacingMode = savedFacing || 'environment';
+                } else {
+                    // Fallback using facingMode when no deviceId is available
+                    currentFacingMode = savedFacing || 'environment';
+                    cameraConfig = { facingMode: currentFacingMode };
+                }
+                sessionStorage.setItem('sf.currentFacingMode', currentFacingMode);
+                
+                scanner = new Html5Qrcode("reader");
+                
+                // Build config; avoid conflicting constraints when using facingMode
+                let config;
+                if (isIOS || (typeof cameraConfig === 'object' && cameraConfig.facingMode)) {
+                    config = {
+                        fps: isIOS ? 5 : 10,
+                        qrbox: { width: 200, height: 200 },
+                        aspectRatio: 1.0,
+                        disableFlip: false
+                    };
+                } else {
+                    config = {
+                        fps: 10,
+                        qrbox: { width: 200, height: 200 },
+                        aspectRatio: 1.0,
+                        disableFlip: false,
+                        videoConstraints: {
+                            width: { min: 640, ideal: 1280, max: 1920 },
+                            height: { min: 480, ideal: 720, max: 1080 }
+                        }
+                    };
+                }
+                
+                console.log('Starting scanner with config:', config);
+                console.log('Camera config:', cameraConfig);
+                
+                await scanner.start(
+                    cameraConfig,
+                    config,
+                    (decodedText) => {
+                        console.log('QR code scanned:', decodedText);
+                        handleScanResult(decodedText);
+                    },
+                    (error) => {
+                        // Only log errors in development
+                        if (location.hostname === 'localhost') {
+                            console.log('Scan error (normal):', error);
+                        }
+                    }
+                );
+                
+                console.log('Scanner started successfully');
+                
+            } catch (err) {
+                console.error('Camera error:', err);
+                closeScannerModal();
+                
+                let errorMessage = 'Camera access issue. ';
+                
+                if (isIOS) {
+                    if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+                        errorMessage += 'Please allow camera access in Safari settings and try again, or use manual input below.';
+                    } else if (err.message.includes('NotReadableError') || err.message.includes('overconstrained')) {
+                        errorMessage += 'Camera is busy or not available. Close other camera apps and try again, or use manual input.';
+                    } else {
+                        errorMessage += 'Camera not available on iOS. Please use manual input below.';
+                    }
+                } else {
+                    if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+                        errorMessage += 'Please allow camera access and try again, or use manual input below.';
+                    } else if (err.message.includes('HTTPS')) {
+                        errorMessage += 'Camera requires HTTPS. Use manual input or access via https://localhost:8080';
+                    } else if (err.message.includes('No cameras found')) {
+                        errorMessage += 'No camera detected. Please use manual input.';
+                    } else {
+                        errorMessage += 'Please use manual input below.';
+                    }
+                }
+                
+                showMessage(errorMessage, 'error');
+                
+                // Auto-focus the manual input field
+                setTimeout(() => {
+                    const inputField = mode === 'item' ? 
+                        document.getElementById('manual-item-id') : 
+                        document.getElementById('manual-location');
+                    if (inputField) inputField.focus();
+                }, 100);
+            }
+        }
+        
+        async function closeScannerModal() {
+            if (scanner) {
+                try {
+                    await scanner.stop();
+                    scanner.clear();
+                } catch (err) {}
+                scanner = null;
+            }
+            document.getElementById('scanner-modal').classList.add('hidden');
+        }
+        
+        async function switchCamera() {
+            try {
+                console.log('[switchCamera] invoked');
+                // Refresh camera list in case permissions changed
+                try {
+                    availableCameras = await Html5Qrcode.getCameras();
+                } catch (e) {
+                    console.warn('[switchCamera] getCameras failed:', e);
+                }
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const multiple = availableCameras && availableCameras.length > 1;
+
+                let activeLabel = '';
+                let startSource;
+                if (multiple && !isIOS) {
+                    // Cycle deviceIds on non-iOS
+                    currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+                    currentCameraId = availableCameras[currentCameraIndex].id;
+                    sessionStorage.setItem('sf.currentCameraId', currentCameraId);
+                    activeLabel = availableCameras[currentCameraIndex].label || `Camera ${currentCameraIndex + 1}`;
+                    startSource = currentCameraId;
+                } else {
+                    // Toggle facingMode for iOS or single reported camera
+                    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+                    sessionStorage.setItem('sf.currentFacingMode', currentFacingMode);
+                    activeLabel = currentFacingMode === 'user' ? 'Front Camera' : 'Back Camera';
+                    startSource = { facingMode: currentFacingMode };
+                }
+                console.log('[switchCamera] switching to', startSource, activeLabel);
+
+                // Safely stop current stream
+                if (scanner) {
+                    try { await scanner.stop(); } catch (e) { console.warn('[switchCamera] stop failed', e); }
+                    try { scanner.clear(); } catch (e) { console.warn('[switchCamera] clear failed', e); }
+                }
+                // Recreate scanner for stability across Safari
+                scanner = new Html5Qrcode('reader');
+
+                let config;
+                if (typeof startSource === 'object' && startSource.facingMode) {
+                    config = {
+                        fps: isIOS ? 5 : 10,
+                        qrbox: { width: 200, height: 200 },
+                        aspectRatio: 1.0,
+                        disableFlip: false
+                    };
+                } else {
+                    config = {
+                        fps: isIOS ? 5 : 10,
+                        qrbox: { width: 200, height: 200 },
+                        aspectRatio: 1.0,
+                        disableFlip: false,
+                        videoConstraints: {
+                            width: { min: 640, ideal: 1280, max: 1920 },
+                            height: { min: 480, ideal: 720, max: 1080 }
+                        }
+                    };
+                }
+
+                // Temporary title feedback
+                const title = document.getElementById('scanner-title');
+                const oldTitle = title ? title.textContent : '';
+                if (title) title.textContent = `${oldTitle} • ${activeLabel}`;
+
+                await scanner.start(
+                    startSource,
+                    config,
+                    (decodedText) => { handleScanResult(decodedText); },
+                    (error) => { if (location.hostname === 'localhost') console.log('Scan error (normal):', error); }
+                );
+            } catch (e) {
+                console.warn('Failed to switch camera:', e);
+                showMessage('Could not switch camera. Try closing and reopening the scanner.', 'error');
+            }
+        }
+        
+        async function handleScanResult(decodedText) {
+            await closeScannerModal();
+            
+            if (scanMode === 'item') {
+                await handleItemScan(decodedText);
+            } else if (scanMode === 'location') {
+                handleLocationScan(decodedText);
+            }
+        }
+        
+        async function handleItemScan(itemId) {
+            try {
+                const response = await fetch(`/api/inventory/${encodeURIComponent(itemId)}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentItem = data.item;
+                    showItemInfo();
+                    showLocationStep();
+                } else {
+                    showMessage(`Item not found: ${itemId}`, 'error');
+                }
+            } catch (error) {
+                showMessage('Error loading item information', 'error');
+            }
+        }
+        
+        async function handleManualItemInput(itemId) {
+            if (itemId.trim()) {
+                await handleItemScan(itemId.trim());
+            }
+        }
+        
+        function handleLocationScan(location) {
+            currentLocation = location;
+            showLocationInfo();
+            showQuantityStep();
+        }
+        
+        function handleManualLocationInput(location) {
+            currentLocation = location.trim() || null;
+            if (location.trim()) {
+                showLocationInfo();
+            }
+        }
+        
+        function skipLocation() {
+            currentLocation = null;
+            showQuantityStep();
+        }
+        
+        function showItemInfo() {
+            const itemInfo = document.getElementById('item-info');
+            const itemName = document.getElementById('item-name');
+            const itemQuantity = document.getElementById('item-quantity');
+            
+            itemName.textContent = currentItem.name;
+            itemQuantity.textContent = currentItem.quantity;
+            itemInfo.classList.remove('hidden');
+        }
+        
+        function showLocationStep() {
+            document.getElementById('location-step').style.display = 'block';
+        }
+        
+        function showLocationInfo() {
+            const locationInfo = document.getElementById('location-info');
+            const locationName = document.getElementById('location-name');
+            
+            locationName.textContent = currentLocation;
+            locationInfo.classList.remove('hidden');
+        }
+        
+        function showQuantityStep() {
+            document.getElementById('quantity-step').style.display = 'block';
+        }
+        
+        async function adjustQuantity(delta) {
+            if (!currentItem) {
+                showMessage('Please scan an item first', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/mobile/adjust', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        item_id: currentItem.id,
+                        location: currentLocation,
+                        delta: delta
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentItem = data.item;
+                    showMessage(data.message, 'success');
+                    showItemInfo(); // Update displayed quantity
+                    
+                    // Auto-reset after successful adjustment
+                    setTimeout(() => resetPage(), 2000);
+                } else {
+                    showMessage(data.error, 'error');
+                }
+            } catch (error) {
+                showMessage('Network error occurred', 'error');
+            }
+        }
+        
+        function applyCustomQuantity() {
+            const customDelta = document.getElementById('custom-delta');
+            const delta = parseInt(customDelta.value);
+            
+            if (isNaN(delta) || delta === 0) {
+                showMessage('Please enter a valid non-zero number', 'error');
+                return;
+            }
+            
+            adjustQuantity(delta);
+            customDelta.value = '';
+        }
+        
+        function showMessage(message, type) {
+            const statusMessage = document.getElementById('status-message');
+            statusMessage.textContent = message;
+            statusMessage.className = `rounded-lg p-4 text-center font-medium ${
+                type === 'success' ? 'bg-green-100 text-green-800 success-flash' : 
+                type === 'error' ? 'bg-red-100 text-red-800 error-shake' : 
+                'bg-blue-100 text-blue-800'
+            }`;
+            statusMessage.classList.remove('hidden');
+            
+            // Auto-hide after 3 seconds
+            setTimeout(() => {
+                statusMessage.classList.add('hidden');
+            }, 3000);
+        }
+        
+        function resetPage() {
+            currentItem = null;
+            currentLocation = null;
+            
+            // Hide all steps except the first
+            document.getElementById('location-step').style.display = 'none';
+            document.getElementById('quantity-step').style.display = 'none';
+            
+            // Hide info panels
+            document.getElementById('item-info').classList.add('hidden');
+            document.getElementById('location-info').classList.add('hidden');
+            
+            // Clear inputs
+            document.getElementById('manual-item-id').value = '';
+            document.getElementById('manual-location').value = '';
+            document.getElementById('custom-delta').value = '';
+            
+            // Hide status message
+            document.getElementById('status-message').classList.add('hidden');
+        }
+        
+        // Initialize when DOM is ready
+        function initializePage() {
+            console.log('Initializing page...');
+            console.log('Html5Qrcode available:', typeof Html5Qrcode);
+            
+            // Scan buttons
+            const scanItemBtn = document.getElementById('scan-item-btn');
+            if (scanItemBtn) {
+                console.log('Adding click listener to scan item button');
+                scanItemBtn.addEventListener('click', function() {
+                    console.log('Scan item button clicked!');
+                    startScan('item');
+                });
+            } else {
+                console.error('Scan item button not found!');
+            }
+            
+            const scanLocationBtn = document.getElementById('scan-location-btn');
+            if (scanLocationBtn) {
+                scanLocationBtn.addEventListener('click', function() {
+                    console.log('Scan location button clicked!');
+                    startScan('location');
+                });
+            }
+            
+            // Manual input
+            const manualItemInput = document.getElementById('manual-item-id');
+            if (manualItemInput) {
+                manualItemInput.addEventListener('input', function(e) {
+                    handleManualItemInput(e.target.value);
+                });
+            }
+            
+            const manualLocationInput = document.getElementById('manual-location');
+            if (manualLocationInput) {
+                manualLocationInput.addEventListener('input', function(e) {
+                    handleManualLocationInput(e.target.value);
+                });
+            }
+            
+            // Skip location
+            const skipLocationBtn = document.getElementById('skip-location-btn');
+            if (skipLocationBtn) {
+                skipLocationBtn.addEventListener('click', skipLocation);
+            }
+            
+            // Quantity buttons
+            document.querySelectorAll('.quantity-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    adjustQuantity(parseInt(e.target.dataset.delta));
+                });
+            });
+            
+            // Custom quantity
+            const applyCustomBtn = document.getElementById('apply-custom-btn');
+            if (applyCustomBtn) {
+                applyCustomBtn.addEventListener('click', applyCustomQuantity);
+            }
+            
+            const customDeltaInput = document.getElementById('custom-delta');
+            if (customDeltaInput) {
+                customDeltaInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') applyCustomQuantity();
+                });
+            }
+            
+            // Reset button
+            const resetBtn = document.getElementById('reset-btn');
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function() {
+                    console.log('Reset button clicked');
+                    resetPage();
+                });
+            }
+            
+            // Scanner modal close
+            const closeScannerBtn = document.getElementById('close-scanner');
+            if (closeScannerBtn) {
+                closeScannerBtn.addEventListener('click', closeScannerModal);
+            }
+            // Switch camera
+            const switchBtn = document.getElementById('switch-camera');
+            if (switchBtn) {
+                switchBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    await switchCamera();
+                });
+            }
+            // Force Front/Back buttons
+            const forceBack = document.getElementById('force-back');
+            if (forceBack) {
+                forceBack.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    await setFacing('environment');
+                });
+            }
+            const forceFront = document.getElementById('force-front');
+            if (forceFront) {
+                forceFront.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    await setFacing('user');
+                });
+            }
+        }
+        
+        // Initialize the app when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded - initializing page');
+            try {
+                initializePage();
+                console.log('Page initialized successfully');
+            } catch (error) {
+                console.error('Error initializing page:', error);
+            }
+        });
+    </script>
+</body>
+</html>

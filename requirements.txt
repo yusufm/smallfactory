@@ -1,1 +1,4 @@
 pyyaml
+qrcode[pil]
+pillow
+pyOpenSSL

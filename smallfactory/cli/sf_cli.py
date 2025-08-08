@@ -67,6 +67,7 @@ def main():
     web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
+    web_parser.add_argument("--https", action="store_true", help="Run with HTTPS for camera access (requires pyOpenSSL)")
 
     args = parser.parse_args()
 
@@ -276,17 +277,34 @@ def main():
             from web.app import app
             
             print("🏭 Starting smallFactory Web UI...")
-            print(f"📍 Access the interface at: http://localhost:{args.port}")
+            
+            if args.https:
+                print(f"📍 Access the interface at: https://localhost:{args.port}")
+                print("🔒 Running with HTTPS for camera access")
+                print("⚠️  You may need to accept the self-signed certificate warning")
+            else:
+                print(f"📍 Access the interface at: http://localhost:{args.port}")
+                print("📷 For camera QR scanning, use --https flag or manual input")
+            
             print("🔧 Git-native PLM for 1-2 person teams")
             print("=" * 50)
             
             try:
-                app.run(
-                    debug=args.debug,
-                    host=args.host,
-                    port=args.port,
-                    use_reloader=args.debug
-                )
+                if args.https:
+                    app.run(
+                        debug=args.debug,
+                        host=args.host,
+                        port=args.port,
+                        ssl_context='adhoc',
+                        use_reloader=args.debug
+                    )
+                else:
+                    app.run(
+                        debug=args.debug,
+                        host=args.host,
+                        port=args.port,
+                        use_reloader=args.debug
+                    )
             except KeyboardInterrupt:
                 print("\n👋 Shutting down smallFactory Web UI...")
             except Exception as e:

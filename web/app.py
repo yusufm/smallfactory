@@ -171,6 +171,49 @@ def inventory_delete(item_id):
         flash(f'Error deleting item: {e}', 'error')
         return redirect(url_for('inventory_view', item_id=item_id))
 
+@app.route('/mobile/adjust')
+def mobile_adjust():
+    """Mobile-optimized page for quick inventory adjustments with QR scanning."""
+    return render_template('mobile/adjust.html')
+
+@app.route('/api/mobile/adjust', methods=['POST'])
+def api_mobile_adjust():
+    """API endpoint for mobile inventory adjustments."""
+    try:
+        data = request.get_json()
+        item_id = data.get('item_id', '').strip()
+        location = data.get('location', '').strip() or None
+        delta = int(data.get('delta', 0))
+        
+        if not item_id:
+            return jsonify({'success': False, 'error': 'Item ID is required'}), 400
+        
+        if delta == 0:
+            return jsonify({'success': False, 'error': 'Quantity change cannot be zero'}), 400
+        
+        datarepo_path = get_datarepo_path()
+        
+        # Verify item exists
+        item = view_item(datarepo_path, item_id)
+        
+        # Perform adjustment
+        adjust_quantity(datarepo_path, item_id, delta, location)
+        
+        # Get updated item data
+        updated_item = view_item(datarepo_path, item_id)
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Successfully adjusted quantity by {delta}',
+            'item': updated_item
+        })
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'Item not found'}), 404
+    except ValueError as e:
+        return jsonify({'success': False, 'error': 'Invalid quantity value'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # API endpoints for AJAX requests
 @app.route('/api/inventory')
 def api_inventory_list():
@@ -205,22 +248,45 @@ if __name__ == '__main__':
     import sys
     
     print("🏭 Starting smallFactory Web UI...")
-    print("📍 Access the interface at: http://localhost:8080")
-    print("🔧 Git-native PLM for 1-2 person teams")
-    print("=" * 50)
     
     # Check if we're in development mode
     debug_mode = os.environ.get('FLASK_ENV') == 'development' or '--debug' in sys.argv
     
+    # Check for HTTPS flag
+    use_https = '--https' in sys.argv
+    
+    if use_https:
+        print("📍 Access the interface at: https://localhost:8080")
+        print("🔒 Running with HTTPS for camera access")
+        print("⚠️  You may need to accept the self-signed certificate warning")
+    else:
+        print("📍 Access the interface at: http://localhost:8080")
+        print("📷 For camera QR scanning, use --https flag or manual input")
+    
+    print("🔧 Git-native PLM for 1-2 person teams")
+    print("=" * 50)
+    
     try:
-        app.run(
-            debug=debug_mode,
-            host='0.0.0.0',
-            port=8080,
-            use_reloader=debug_mode
-        )
+        if use_https:
+            # Use adhoc SSL context for development
+            app.run(
+                debug=debug_mode,
+                host='0.0.0.0',
+                port=8080,
+                ssl_context='adhoc',
+                use_reloader=debug_mode
+            )
+        else:
+            app.run(
+                debug=debug_mode,
+                host='0.0.0.0',
+                port=8080,
+                use_reloader=debug_mode
+            )
     except KeyboardInterrupt:
         print("\n👋 Shutting down smallFactory Web UI...")
     except Exception as e:
         print(f"❌ Error starting web server: {e}")
+        if use_https and "SSL" in str(e):
+            print("💡 Try installing pyOpenSSL: pip install pyOpenSSL")
         sys.exit(1)
