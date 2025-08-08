@@ -93,6 +93,21 @@ def inventory_add():
                     item_data[key] = value.strip()
             
             datarepo_path = get_datarepo_path()
+            # Proactively prevent duplicate IDs for better UX
+            candidate_id = item_data.get("id")
+            if candidate_id:
+                try:
+                    _ = view_item(datarepo_path, candidate_id)
+                    # If no exception, the item exists already
+                    flash(f"Inventory item '{candidate_id}' already exists. Choose a different ID.", 'error')
+                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
+                except FileNotFoundError:
+                    pass  # OK, proceed to create
+                except Exception as ve:
+                    # Unexpected error when checking existence
+                    flash(f"Error validating ID: {ve}", 'error')
+                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
+
             add_item(datarepo_path, item_data)
             flash(f'Successfully added inventory item: {item_data.get("id")}', 'success')
             return redirect(url_for('inventory_view', item_id=item_data.get("id")))

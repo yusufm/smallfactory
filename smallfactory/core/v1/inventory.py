@@ -88,33 +88,11 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
     pdir = _part_dir(datarepo_path, id)
     meta_path = _part_meta_path(pdir)
     if meta_path.exists():
-        # Part already exists: add a new location for this ID
-        meta = _read_yaml(meta_path)
-        loc_path = _location_file(pdir, location)
-        if loc_path.exists():
-            raise FileExistsError(
-                f"Location '{location}' already exists for ID '{id}'. Use inventory-adjust to modify its quantity."
-            )
-        # Optionally merge any extra metadata fields provided
-        extras = {k: v for k, v in item.items() if k not in {"id", "name", "quantity", "location"}}
-        paths_to_commit = []
-        if extras:
-            meta.update(extras)
-            _write_yaml(meta_path, meta)
-            paths_to_commit.append(meta_path)
-        # Write the new location file
-        _write_yaml(loc_path, {"location": location, "quantity": quantity})
-        paths_to_commit.append(loc_path)
-        commit_lines = [
-            f"[smallfactory] Added location '{location}' for inventory item {id} with quantity {quantity}",
-            "::sf-action::add-location",
-            f"::sf-id::{id}",
-            f"::sf-location::{location}",
-            f"::sf-quantity::{quantity}",
-        ]
-        git_commit_paths(datarepo_path, paths_to_commit, "\n".join(commit_lines))
-        # Return combined view
-        return view_item(datarepo_path, id)
+        # Explicitly disallow creating an item when the ID already exists.
+        # Users should use inventory-adjust to modify quantities or inventory-edit to update metadata.
+        raise FileExistsError(
+            f"Inventory item '{id}' already exists. Use inventory-adjust to modify quantities or inventory-edit to update metadata."
+        )
     else:
         # New part: create directory and initial location
         pdir.mkdir(parents=True, exist_ok=True)
