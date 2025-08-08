@@ -103,7 +103,8 @@
         <div class="px-6 py-4 border-b border-gray-200">
             <h2 class="text-lg font-semibold text-gray-900">Recent Items</h2>
         </div>
-        <div class="overflow-hidden">
+        <div class="overflow-x-auto w-full">
+            <div class="inline-block min-w-full align-middle">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
@@ -159,6 +160,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
         </div>
         <div class="px-6 py-3 bg-gray-50 text-right">
             <a href="{{ url_for('inventory_list') }}" class="text-sm text-blue-600 hover:text-blue-900 font-medium">
