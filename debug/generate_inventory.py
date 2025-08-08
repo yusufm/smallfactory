@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smallfactory debug tool: generate synthetic inventory entries for stress testing.
+smallFactory debug tool: generate synthetic inventory entries for stress testing.
 
 Usage examples:
   python3 debug/generate_inventory.py 10000

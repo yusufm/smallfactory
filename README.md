@@ -75,7 +75,7 @@ The tooling pulls from and pushes to your Git remote automatically (if connected
   All PLM data lives in your Git repo in readable, version-controlled files.
 
 - **🧭 Opinionated conventions**  
-  Smallfactory defines strict defaults so you don’t have to invent your own workflows or structure.
+  smallFactory defines strict defaults so you don’t have to invent your own workflows or structure.
 
 - **♻️ Backward compatible**  
   Formats and tooling evolve carefully, with minimal breaking changes.

@@ -1,6 +1,6 @@
-# Smallfactory Web UI
+# smallFactory Web UI
 
-A modern, clean web interface for the Smallfactory Git-native PLM system.
+A modern, clean web interface for the smallFactory Git-native PLM system.
 
 ## Features
 
@@ -23,7 +23,7 @@ A modern, clean web interface for the Smallfactory Git-native PLM system.
    pip install -r requirements.txt
    ```
 
-2. **Ensure Smallfactory is configured**:
+2. **Ensure smallFactory is configured**:
    ```bash
    # Make sure you have a data repository set up
    cd ..
@@ -50,7 +50,7 @@ python run.py --debug
 
 ## Architecture
 
-The web UI is built as a Flask application that uses the Smallfactory core v1 API:
+The web UI is built as a Flask application that uses the smallFactory core v1 API:
 
 - `app.py`: Main Flask application with routes
 - `templates/`: Jinja2 HTML templates
@@ -61,7 +61,7 @@ The web UI is built as a Flask application that uses the Smallfactory core v1 AP
 
 ## API Integration
 
-The web UI directly imports and uses the Smallfactory core API:
+The web UI directly imports and uses the smallFactory core API:
 
 ```python
 from smallfactory.core.v1.inventory import (

@@ -275,7 +275,7 @@ def main():
             
             from web.app import app
             
-            print("🏭 Starting Smallfactory Web UI...")
+            print("🏭 Starting smallFactory Web UI...")
             print(f"📍 Access the interface at: http://localhost:{args.port}")
             print("🔧 Git-native PLM for 1-2 person teams")
             print("=" * 50)
@@ -288,7 +288,7 @@ def main():
                     use_reloader=args.debug
                 )
             except KeyboardInterrupt:
-                print("\n👋 Shutting down Smallfactory Web UI...")
+                print("\n👋 Shutting down smallFactory Web UI...")
             except Exception as e:
                 if "Address already in use" in str(e):
                     print(f"❌ Error: Port {args.port} is already in use.")

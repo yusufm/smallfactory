@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Smallfactory{% endblock %}</title>
+    <title>{% block title %}smallFactory{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -34,7 +34,7 @@
                 <div class="flex items-center">
                     <div class="flex-shrink-0 flex items-center">
                         <i class="fas fa-cube text-blue-600 text-2xl mr-3"></i>
-                        <h1 class="text-xl font-bold text-gray-900">Smallfactory</h1>
+                        <h1 class="text-xl font-bold text-gray-900">smallFactory</h1>
                     </div>
                     <div class="hidden md:ml-6 md:flex md:space-x-8">
                         <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
@@ -93,8 +93,7 @@
     <footer class="bg-white border-t border-gray-200 mt-16">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div class="text-center text-gray-500 text-sm">
-                <p>Smallfactory - Git-native PLM System</p>
-                <p class="mt-1">Simple tools for 1-2 person teams</p>
+                <p>smallFactory - Git-native PLM System</p>
             </div>
         </div>
     </footer>

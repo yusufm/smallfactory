@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Smallfactory Web UI - Flask application providing a modern web interface
+smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
@@ -204,7 +204,7 @@ if __name__ == '__main__':
     import os
     import sys
     
-    print("🏭 Starting Smallfactory Web UI...")
+    print("🏭 Starting smallFactory Web UI...")
     print("📍 Access the interface at: http://localhost:8080")
     print("🔧 Git-native PLM for 1-2 person teams")
     print("=" * 50)
@@ -220,7 +220,7 @@ if __name__ == '__main__':
             use_reloader=debug_mode
         )
     except KeyboardInterrupt:
-        print("\n👋 Shutting down Smallfactory Web UI...")
+        print("\n👋 Shutting down smallFactory Web UI...")
     except Exception as e:
         print(f"❌ Error starting web server: {e}")
         sys.exit(1)
