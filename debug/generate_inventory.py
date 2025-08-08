@@ -7,7 +7,7 @@ Usage examples:
   python3 debug/generate_inventory.py 10000 --seed 42 --min-locations 1 --max-locations 10
   python3 debug/generate_inventory.py 500 --datarepo ./datarepos/sf1
 
-By default, the tool will try to resolve the datarepo using Smallfactory's
+By default, the tool will try to resolve the datarepo using smallFactory's
 config if available; otherwise, you can pass --datarepo explicitly.
 """
 from __future__ import annotations
