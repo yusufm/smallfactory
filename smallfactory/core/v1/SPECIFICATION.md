@@ -8,9 +8,9 @@ This document defines the Core Specification (the unbreakable tenets/conventions
 
 ---
 
-## Tenets
+## Core Philosophies
 
-- Simplicity first for 1–2 person teams.
+- Simplicity first for 1–4 person teams.
   If it’s confusing or burdensome, it doesn’t belong.
 
 - Git-native and file-based.
@@ -26,10 +26,10 @@ This document defines the Core Specification (the unbreakable tenets/conventions
   Within a major version, changes are additive and non-breaking. Breaking changes require a major version bump.
 
 - Stable identifiers.
-  Inventory item primary key is `id`.
+  Every entity MUST have a globally unique, never-reused `sfid` (smallFactory ID). Entity-specific human-friendly IDs (e.g., inventory `id`) may exist but are not globally unique and are not the canonical identifier.
 
 - Transparent Git history.
-  All mutating operations auto-commit with clear messages and metadata (including `::sf-id::` for inventory changes).
+  All mutating operations auto-commit with clear messages and metadata (including `::sfid::<SFID>` for entity-affecting changes).
 
 - Deterministic behavior.
   Given the same inputs and repository state, operations produce the same results.
@@ -42,6 +42,56 @@ This document defines the Core Specification (the unbreakable tenets/conventions
 
 - Branding consistency.
   User-facing name is "smallFactory" (lowercase "s", uppercase "F").
+
+## Technical Specifications
+
+### Global Identifiers: sfid
+
+The smallFactory ID (`sfid`) is the canonical identifier for every entity in smallFactory.
+
+- Purpose
+  - `sfid` is globally unique across all entities and never reused (temporal uniqueness).
+  - `sfid` MUST be safe as a file or directory name across Windows/macOS/Linux.
+  - Human-friendly, entity-scoped IDs (e.g., inventory `id`) may exist but are not canonical.
+
+  - Format
+    - MUST begin with a registered lowercase prefix followed by an underscore (e.g., `loc_`).
+    - After the prefix, allowed characters are: `a–z`, `0–9`, `_`, `-` (underscore, hyphen).
+    - No spaces, dots `.`, slashes `/`, backslashes `\\`, or other special characters.
+    - MUST be lowercase ASCII. Tools MUST enforce lowercase; non-lowercase inputs are invalid.
+    - Length SHOULD be between 3 and 64 characters inclusive.
+    - Regex (authoritative pattern):
+      ```regex
+      ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
+      ```
+      - Anchored; enforces total length 3–64.
+      - Requires lowercase prefix + underscore.
+      - Allows only `a–z`, `0–9`, `_`, `-` after the prefix.
+      - Disallows ending with `_` or `-`.
+      - Use ASCII character classes. Values MUST be lowercase.
+
+- Commit metadata
+  - Commits that affect an entity MUST include a machine-parsable token: `::sfid::<SFID>`.
+
+- Registry and lifecycle
+  - The data repository MUST contain a root directory `sfids/`.
+  - Each `sfid` MUST have a registry file at `sfids/<SFID>.yml` that persists forever, even if the entity is retired.
+  - The registry file provides all the metadata for the entity and enforces temporal uniqueness.
+
+  Example `sfids/loc_a1.yml`:
+
+  ```yaml
+  sfid: loc_a1
+  type: location
+  status: active # or 'retired'
+  notes: "Shelf A1 in aisle A"
+  ```
+
+  | Entity Type | Prefix | Example sfid | Notes |
+  | --- | --- | --- | --- |
+  | Location | `loc_` | `loc_a1` | Physical storage/location (e.g., shelf, bin, room) |
+
+  Additional prefixes will be added here as new entity types are defined.
 
 ---
 
