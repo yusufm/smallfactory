@@ -17,22 +17,9 @@ DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
 # Defaults used to bootstrap a fresh config file and as fallback if missing.
 INVENTORY_DEFAULT_FIELD_SPECS = {
-    # Core identifiers (required)
-    "id": {"required": True, "regex": r"^[A-Za-z0-9._-]+$", "description": "Primary key for the inventory item."},
-    "name": {"required": True, "regex": r"^.{1,200}$", "description": "Human-readable item name."},
-
-    # Operational inputs (required when creating a record/location)
-    "location": {"required": True, "regex": r"^[A-Za-z0-9 ._-]+$", "description": "Storage location name."},
-    "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "Quantity as non-negative integer (per location)."},
-
-    # Common but optional metadata (regex allows empty)
-    "description": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Freeform description (<=500 chars)."},
-    "category": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Category or family."},
-    "manufacturer": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Manufacturer name."},
-    "mpn": {"required": False, "regex": r"^[A-Za-z0-9 ._\-/#+]*$", "description": "Manufacturer Part Number."},
-    "vendor": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Preferred supplier/vendor."},
-    "spn": {"required": False, "regex": r"^[A-Za-z0-9 ._\-/#+]*$", "description": "Supplier Part Number."},
-    "notes": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Additional notes."},
+    # Only required field for inventory files per SPEC: quantity (non-negative integer).
+    # Other keys may be present and should be ignored by readers and preserved by writers.
+    "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "On-hand quantity as non-negative integer."},
 }
 
 
@@ -67,7 +54,7 @@ def get_datarepo_path() -> pathlib.Path:
     config = load_config()
     datarepo = config.get("default_datarepo")
     if not datarepo:
-        print(f"[smallfactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'create' or set it manually.")
+        print(f"[smallfactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'init' or set it manually.")
         sys.exit(1)
     return pathlib.Path(datarepo).expanduser().resolve()
 
@@ -95,3 +82,52 @@ def get_inventory_field_specs() -> dict:
     if isinstance(fields, dict) and fields:
         return fields
     return INVENTORY_DEFAULT_FIELD_SPECS
+
+
+# -------------------------------
+# Entities field schema (YAML-driven)
+# -------------------------------
+# sfdatarepo.yml may define entity field specs under:
+# entities:
+#   fields: { <field>: {required, regex, description} }           # global defaults
+#   types:
+#     p: { fields: { ... } }     # per-type overrides/additions (by sfid prefix before '_')
+#     l: { fields: { ... } }
+# If types.<key> is a dict without a 'fields' key, treat it as a fields map directly.
+
+def get_entities_specs(repo_path: pathlib.Path | None = None) -> dict:
+    """Return entities spec blocks from sfdatarepo.yml.
+
+    Shape: { 'fields': {..}, 'types': { type_key: {fields:{..}}|{..} } }
+    Missing sections are returned as empty dicts.
+    """
+    dr_cfg = load_datarepo_config(repo_path)
+    ent = dr_cfg.get("entities") or {}
+    fields = ent.get("fields")
+    types = ent.get("types")
+    return {
+        "fields": fields if isinstance(fields, dict) else {},
+        "types": types if isinstance(types, dict) else {},
+    }
+
+
+def get_entity_field_specs_for_sfid(sfid: str, repo_path: pathlib.Path | None = None) -> dict:
+    """Return merged field specs for a given entity sfid.
+
+    Merges global entities.fields with per-type fields if present, where
+    type key is derived from the prefix before the first underscore in sfid
+    (e.g. 'p' for 'p_m3x10', 'l' for 'l_a1').
+    """
+    specs = get_entities_specs(repo_path)
+    merged = dict(specs.get("fields", {}))
+    type_prefix = sfid.split("_", 1)[0] if "_" in sfid else None
+    if type_prefix:
+        t = specs.get("types", {}).get(type_prefix) or specs.get("types", {}).get(f"{type_prefix}_")
+        if isinstance(t, dict):
+            # t may be {'fields': {...}} or the fields map itself
+            tf = t.get("fields") if isinstance(t.get("fields"), dict) else None
+            if tf is None:
+                tf = t
+            if isinstance(tf, dict):
+                merged.update(tf)
+    return merged

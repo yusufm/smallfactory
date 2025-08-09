@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Entities - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-8">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('index') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-home mr-1"></i>Dashboard
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Entities</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+    <div class="flex items-center justify-between mt-2">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">Entities</h1>
+        <p class="mt-2 text-gray-600">Canonical metadata under <code>entities/&lt;SFID&gt;.yml</code></p>
+      </div>
+      <a href="{{ url_for('entities_add') }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+        <i class="fas fa-user-plus mr-2"></i>Add Entity
+      </a>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+    <div class="p-4 flex items-center justify-between">
+      <div class="relative w-full max-w-sm">
+        <input id="search" type="text" placeholder="Search by SFID or name..." class="w-full border border-gray-300 rounded-md pl-10 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+        <span class="absolute left-3 top-2.5 text-gray-400"><i class="fas fa-search"></i></span>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SFID</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="px-6 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200" id="entities-table">
+          {% for e in entities %}
+          {% set type = e.sfid.split('_', 1)[0] if '_' in e.sfid else '' %}
+          <tr class="entity-row">
+            <td class="px-6 py-4 whitespace-nowrap font-mono text-sm text-blue-700"><a href="{{ url_for('entities_view', sfid=e.sfid) }}" class="hover:underline">{{ e.sfid }}</a></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ e.get('name', '-') }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ type }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm">
+              {% if e.get('retired') %}
+                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Retired</span>
+              {% else %}
+                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Active</span>
+              {% endif %}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
+              <a href="{{ url_for('entities_view', sfid=e.sfid) }}" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+              <a href="{{ url_for('entities_edit', sfid=e.sfid) }}" class="text-gray-600 hover:text-gray-900">Edit</a>
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not entities %}
+          <tr><td colspan="5" class="px-6 py-6 text-center text-gray-500">No entities found. <a class="text-blue-600 hover:underline" href="{{ url_for('entities_add') }}">Create one</a>.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const search = document.getElementById('search');
+  const rows = document.querySelectorAll('#entities-table .entity-row');
+  search.addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    rows.forEach(r => {
+      const cells = r.querySelectorAll('td');
+      const hay = Array.from(cells).map(td => td.innerText.toLowerCase()).join(' ');
+      r.style.display = hay.includes(q) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

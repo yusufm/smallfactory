@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Entity {{ entity.sfid }} - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-8">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('entities_list') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-id-card mr-1"></i>Entities
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">{{ entity.sfid }}</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+
+    <div class="flex items-start justify-between mt-2">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">{{ entity.get('name', entity.sfid) }}</h1>
+        <p class="mt-2 text-gray-600 font-mono">SFID: {{ entity.sfid }}</p>
+        {% if entity.get('retired') %}
+          <div class="mt-2">
+            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Retired</span>
+            {% if entity.get('retired_at') %}
+              <span class="ml-2 text-xs text-gray-500">at {{ entity.get('retired_at') }}</span>
+            {% endif %}
+            {% if entity.get('retired_reason') %}
+              <div class="text-xs text-gray-500 mt-1">Reason: {{ entity.get('retired_reason') }}</div>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="mt-2">
+            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Active</span>
+          </div>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"><i class="fas fa-pen mr-2"></i>Edit</a>
+        {% if not entity.get('retired') %}
+        <form method="POST" action="{{ url_for('entities_retire', sfid=entity.sfid) }}" onsubmit="return confirmRetire();">
+          <input type="hidden" name="reason" id="retire-reason-input">
+          <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"><i class="fas fa-user-slash mr-2"></i>Retire</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Fields -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h2 class="text-lg font-semibold text-gray-900">Fields</h2>
+          <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="text-blue-600 hover:text-blue-900 text-sm">Edit</a>
+        </div>
+        <div class="divide-y divide-gray-200">
+          {% for k, v in entity.items() %}
+          <div class="px-6 py-4 grid grid-cols-3 gap-4">
+            <div class="col-span-1 text-sm font-medium text-gray-600">{{ k }}</div>
+            <div class="col-span-2 text-sm text-gray-900 break-all">{{ v }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- JSON -->
+    <div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Raw JSON</h2>
+        </div>
+        <pre class="p-4 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmRetire(){
+  const reason = prompt('Provide an optional reason for retiring this entity (or leave blank):');
+  if(reason === null) return false; // cancelled
+  document.getElementById('retire-reason-input').value = (reason||'').trim();
+  return true;
+}
+</script>
+{% endblock %}

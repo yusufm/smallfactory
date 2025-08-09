@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Add Item - Inventory - smallFactory{% endblock %}
+{% block title %}Add Stock - Inventory - smallFactory{% endblock %}
 
 {% block content %}
 <div class="content-container">
@@ -16,24 +16,58 @@
                 <li>
                     <div class="flex items-center">
                         <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
-                        <span class="text-gray-900 font-medium">Add Item</span>
+                        <span class="text-gray-900 font-medium">Add Stock</span>
                     </div>
                 </li>
             </ol>
         </nav>
-        <h1 class="text-3xl font-bold text-gray-900 mt-2">Add Inventory Item</h1>
-        <p class="mt-2 text-gray-600">Create a new inventory item with location and quantity</p>
+        <h1 class="text-3xl font-bold text-gray-900 mt-2">Add Stock</h1>
+        <p class="mt-2 text-gray-600">Add a new item and quantity.</p>
     </div>
 
     <div class="max-w-2xl">
         <form method="POST" class="space-y-6">
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-6">Required Information</h2>
+                <h2 class="text-lg font-semibold text-gray-900 mb-6">Add Stock</h2>
                 
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <!-- Required fields -->
+                    <!-- Explicitly require item, location, and quantity -->
+                    <div>
+                        <label for="sfid" class="block text-sm font-medium text-gray-700">
+                            Item SFID
+                            <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="sfid" id="sfid" 
+                            class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="e.g. p_m3x10, resistor_10k, sensor.temp" value="{{ form_data.get('sfid', '') }}" required>
+                        <p class="mt-1 text-xs text-gray-500">Enter the item's SFID (unique identifier).</p>
+                    </div>
+
+                    <div>
+                        <label for="location" class="block text-sm font-medium text-gray-700">
+                            Location SFID
+                            <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" name="location" id="location" 
+                            class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="e.g. l_a1, l_rack3" value="{{ form_data.get('location', '') }}" required>
+                        <p class="mt-1 text-xs text-gray-500">Enter a valid location SFID (must start with <code>l_</code> and exist in Entities).</p>
+                    </div>
+
+                    <div>
+                        <label for="quantity" class="block text-sm font-medium text-gray-700">
+                            Quantity
+                            <span class="text-red-500">*</span>
+                        </label>
+                        <input type="number" name="quantity" id="quantity" min="0" 
+                            class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            placeholder="Starting quantity" value="{{ form_data.get('quantity', '') }}" required>
+                        <p class="mt-1 text-xs text-gray-500">Starting on-hand quantity for this item.</p>
+                    </div>
+
+                    <!-- Render any additional required fields except sfid/quantity/location -->
                     {% for field_name, field_spec in field_specs.items() %}
-                        {% if field_spec.required %}
+                        {% if field_spec.required and field_name not in ['sfid', 'quantity', 'location'] %}
                         <div class="{% if field_name in ['description'] %}sm:col-span-2{% endif %}">
                             <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
                                 {{ field_name.replace('_', ' ').title() }}
@@ -43,14 +77,6 @@
                                 <textarea name="{{ field_name }}" id="{{ field_name }}" rows="3" 
                                     class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="{{ field_spec.description }}" required>{{ form_data.get(field_name, '') }}</textarea>
-                            {% elif field_name == 'quantity' %}
-                                <input type="number" name="{{ field_name }}" id="{{ field_name }}" min="0" 
-                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="{{ field_spec.description }}" value="{{ form_data.get(field_name, '') }}" required>
-                            {% elif field_name == 'id' %}
-                                <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
-                                    class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                    placeholder="e.g. PART-001, resistor_10k, sensor.temp" value="{{ form_data.get(field_name, '') }}" required>
                             {% else %}
                                 <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
                                     class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
@@ -71,7 +97,7 @@
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <!-- Optional fields -->
                     {% for field_name, field_spec in field_specs.items() %}
-                        {% if not field_spec.required %}
+                        {% if not field_spec.required and field_name not in ['sfid', 'quantity', 'location'] %}
                         <div class="{% if field_name in ['description', 'notes'] %}sm:col-span-2{% endif %}">
                             <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
                                 {{ field_name.replace('_', ' ').title() }}
@@ -118,7 +144,7 @@
                     Cancel
                 </a>
                 <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                    <i class="fas fa-plus mr-2"></i>Add Item
+                    <i class="fas fa-plus mr-2"></i>Add Stock
                 </button>
             </div>
         </form>
@@ -152,11 +178,11 @@ function addCustomField() {
     container.appendChild(fieldDiv);
 }
 
-// Add real-time validation for ID field
+// Add real-time validation for SFID field
 document.addEventListener('DOMContentLoaded', function() {
-    const idField = document.getElementById('id');
-    if (idField) {
-        idField.addEventListener('input', function() {
+    const sfidField = document.getElementById('sfid');
+    if (sfidField) {
+        sfidField.addEventListener('input', function() {
             const value = this.value;
             const isValid = /^[A-Za-z0-9._-]*$/.test(value);
             

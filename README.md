@@ -1,9 +1,14 @@
-# smallfactory
+# smallFactory
 
 A lightweight, Git-native PLM (Product Lifecycle Management) system built for simplicity, transparency, and extensibility.
 
 ---
 
+## 📏 Specification & Versioning
+
+- API: v1.0 (DRAFT). We use Semantic Versioning; breaking changes require a MAJOR bump.
+- Authoritative Core API Specification lives at [smallfactory/core/v1/SPECIFICATION.md](smallfactory/core/v1/SPECIFICATION.md).
+- All changes must comply with the specification; if not, update the specification and version accordingly.
 
 ## ⚡ Quickstart
 
@@ -11,30 +16,31 @@ Get up and running with smallfactory inventory management in a few simple steps:
 
 ```sh
 # 1. Initialize a new PLM data repository
-$ python3 sf.py create
+$ python3 sf.py init
 
-# 2. Add inventory items (id, name, quantity, location are required)
-$ python3 sf.py inventory-add \
-    id=motor-001 name="BLDC Motor 2205" quantity=10 location="Shelf A1"
- # custom user fields like 'notes' are supported and optional
-$ python3 sf.py inventory-add \
-    id=prop-001 name="Carbon Fiber Propeller" quantity=20 \
-    location="Shelf B2" notes="High-performance racing prop"
+# 2. (Recommended) Create canonical entities for the location and item
+$ python3 sf.py entities add l_a1 name="Shelf A1"
+$ python3 sf.py entities add p_m3x10 name="M3x10 socket cap screw"
 
-# 3. View your inventory
-$ python3 sf.py inventory-list
+# 3. Add inventory for the item at the location (sfid, location, quantity are required)
+$ python3 sf.py inventory add --sfid p_m3x10 --l_sfid l_a1 --quantity 10
+ # custom fields like 'notes' are optional
+$ python3 sf.py inventory add --sfid p_prop --l_sfid l_b2 --quantity 20 --set notes="High-performance racing prop"
 
-# 4. View details of a specific item
-$ python3 sf.py inventory-view motor-001
+# 4. View your inventory
+$ python3 sf.py inventory ls
 
-# 5. Adjust inventory when using parts
-$ python3 sf.py inventory-adjust motor-001 -2
+# 5. View details of a specific item
+$ python3 sf.py inventory show p_m3x10
 
-# 6. Update item details
-$ python3 sf.py inventory-update prop-001 location "Shelf C1"
+# 6. Adjust inventory when using parts
+$ python3 sf.py inventory adjust l_a1 p_m3x10 -2
 
-# 7. Check updated inventory status
-$ python3 sf.py inventory-list
+# 7. Update entity metadata (canonical)
+$ python3 sf.py entities set p_m3x10 name "M3x10 SHCS (DIN 912)"
+
+# 8. Check updated inventory status
+$ python3 sf.py inventory ls
 
 # Note: All changes are automatically committed to git!
 ```
@@ -112,7 +118,7 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ### 2. Your PLM Data Repository
 - A normal Git repo (public or private)
-- Initialized with `python3 sf.py create`
+- Initialized with `python3 sf.py init`
 - Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
 
 - As new capabilities (like inventory management, procurement, etc.) are added, they are always introduced as new **top-level directories** in the datarepo.
@@ -137,53 +143,46 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ## 📦 Inventory Management
 
-smallfactory lets you track and manage inventory. 
+smallFactory lets you track and manage inventory.
 
-### Add a New Inventory Item
-
-```sh
-$ python3 sf.py inventory-add id=mot-001 name="BLDC Motor 2205" quantity=100 location="bin A1"
-```
-Add a new item. All fields should be specified as key=value pairs. The ID is used as the filename (e.g. `mot-001.yml`).
-
-> **Required fields:** `id`, `name`, `quantity`, and `location` must be provided for each inventory item.
-> **Additional fields:** You may add any other fields you like (e.g. `supplier`, `notes`, `color`) to suit your workflow. These extra fields will be stored and displayed alongside the required fields.
-
-
-### Update a Field on an Inventory Item
+### Add Inventory for an Item at a Location
 
 ```sh
-$ python3 sf.py inventory-update mot-001 quantity 120
+$ python3 sf.py inventory add --sfid p_m3x10 --l_sfid l_a1 --quantity 100
 ```
-Update a single field (e.g. `quantity`) for an existing item by ID.
+Adds or stages inventory for an existing entity at a specific location. The file is stored under `inventory/<l_*>/<SFID>.yml` and holds operational quantity state (non-canonical).
+
+> **Required fields:** `sfid`, `location` (must start with `l_`), and `quantity` (integer ≥ 0).
+> **Canonical metadata:** Item names/attributes live under `entities/<SFID>.yml` and can be set via `sf entities add/set`.
+
 
 ### Adjust Quantity
 
 ```sh
-$ python3 sf.py inventory-adjust mot-001 -5
+$ python3 sf.py inventory adjust l_a1 p_m3x10 -5
 ```
-Increment or decrement the quantity by a delta (e.g. -5 for usage, +10 for restock).
+Increment or decrement the on-hand quantity at a specific location.
 
 ### View an Inventory Item
 
 ```sh
-$ python3 sf.py inventory-view mot-001
+$ python3 sf.py inventory show p_m3x10
 ```
-Display all fields for a given ID. Use `--output json` or `--output yaml` for machine-readable formats.
+Display all fields for a given `sfid`. Use `-F json` or `-F yaml` for machine-readable formats.
 
 ### List All Inventory Items
 
 ```sh
-$ python3 sf.py inventory-list
+$ python3 sf.py inventory ls
 ```
-Show a table of all inventory items. Use `--output json` or `--output yaml` for machine-readable formats.
+Show a table of all inventory items. Use `-F json` or `-F yaml` for machine-readable formats.
 
 ### Delete an Inventory Item
 
 ```sh
-$ python3 sf.py inventory-delete mot-001
+$ python3 sf.py inventory rm p_m3x10
 ```
-Remove an inventory item by ID. Prompts for confirmation in human mode.
+Remove all inventory entries for an `sfid` across all locations. Prompts for confirmation in human mode.
 
 ---
 

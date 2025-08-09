@@ -16,7 +16,7 @@
                 <li>
                     <div class="flex items-center">
                         <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
-                        <a href="{{ url_for('inventory_view', item_id=item.id) }}" class="text-gray-400 hover:text-gray-500">{{ item.id }}</a>
+                        <a href="{{ url_for('inventory_view', item_id=item.sfid) }}" class="text-gray-400 hover:text-gray-500">{{ item.sfid }}</a>
                     </div>
                 </li>
                 <li>
@@ -37,8 +37,8 @@
             <h3 class="text-sm font-medium text-blue-900 mb-2">Current Item Details</h3>
             <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <div>
-                    <dt class="text-blue-700 font-medium">ID:</dt>
-                    <dd class="text-blue-900 font-mono">{{ item.id }}</dd>
+                    <dt class="text-blue-700 font-medium">SFID:</dt>
+                    <dd class="text-blue-900 font-mono">{{ item.sfid }}</dd>
                 </div>
                 <div>
                     <dt class="text-blue-700 font-medium">Name:</dt>
@@ -120,7 +120,7 @@
 
             <!-- Form Actions -->
             <div class="flex justify-end space-x-3">
-                <a href="{{ url_for('inventory_view', item_id=item.id) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <a href="{{ url_for('inventory_view', item_id=item.sfid) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                     Cancel
                 </a>
                 <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
@@ -135,8 +135,10 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {% for field_name in ['name', 'description', 'category', 'manufacturer'] %}
                     {% if field_name in field_specs %}
-                    <button onclick="quickEdit('{{ field_name }}', '{{ item.get(field_name, '') }}')" 
-                            class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left">
+                    <button 
+                            class="quick-edit-btn flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                            data-field="{{ field_name }}" 
+                            data-current="{{ item.get(field_name, '') | e }}">
                         <div>
                             <p class="text-sm font-medium text-gray-900">{{ field_name.replace('_', ' ').title() }}</p>
                             <p class="text-xs text-gray-500 truncate">
@@ -158,8 +160,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="item-data" type="application/json">{{ item | tojson }}</script>
 <script>
-const itemData = {{ item | tojson }};
+const itemData = JSON.parse(document.getElementById('item-data').textContent);
 
 // Handle field selection
 document.getElementById('field').addEventListener('change', function() {
@@ -258,6 +261,15 @@ function quickEdit(fieldName, currentValue) {
         }
     }, 100);
 }
+
+// Bind quick edit buttons without inline JS
+document.querySelectorAll('.quick-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const field = btn.dataset.field;
+        const current = btn.dataset.current || '';
+        quickEdit(field, current);
+    });
+});
 
 // Auto-focus field select on page load
 document.addEventListener('DOMContentLoaded', function() {

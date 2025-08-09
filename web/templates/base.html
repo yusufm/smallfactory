@@ -43,12 +43,12 @@
                         <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-boxes mr-2"></i>Inventory
                         </a>
+                        <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-id-card mr-2"></i>Entities
+                        </a>
                     </div>
                 </div>
-                <div class="flex items-center space-x-4">
-                    <a href="{{ url_for('inventory_add') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
-                        <i class="fas fa-plus mr-2"></i>Add Item
-                    </a>
+                <div class="flex items-center">
                     <button id="mobile-menu-button" class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -63,6 +63,9 @@
                 </a>
                 <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-boxes mr-2"></i>Inventory
+                </a>
+                <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-id-card mr-2"></i>Entities
                 </a>
             </div>
         </div>

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ entity.sfid }} - Entities - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-8">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('entities_list') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-id-card mr-1"></i>Entities
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="text-gray-900 font-medium hover:underline">{{ entity.sfid }}</a>
+          </div>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Edit</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">Edit Entity</h1>
+    <p class="mt-2 text-gray-600">Update fields for <span class="font-mono">{{ entity.sfid }}</span>. The SFID is immutable.</p>
+  </div>
+
+  <div class="max-w-2xl">
+    <form method="POST" class="space-y-6">
+      <input type="hidden" name="sfid" value="{{ entity.sfid }}">
+
+      <div id="required-fields" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hidden">
+        <h2 class="text-lg font-semibold text-gray-900 mb-6">Required Fields</h2>
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2" id="required-fields-grid"></div>
+      </div>
+
+      <div id="optional-fields" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hidden">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-lg font-semibold text-gray-900">Optional Fields</h2>
+          <button type="button" onclick="addCustomField()" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
+            <i class="fas fa-plus mr-1"></i>Add Field
+          </button>
+        </div>
+        <div class="grid grid-cols-1 gap-6 sm:grid-cols-2" id="optional-fields-grid"></div>
+        <div id="custom-fields" class="space-y-4 mt-4"></div>
+        <p class="text-xs text-gray-500 mt-2">Blank inputs are ignored and will not overwrite existing values.</p>
+      </div>
+
+      <div class="flex justify-end space-x-3">
+        <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</a>
+        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+          <i class="fas fa-save mr-2"></i>Save Changes
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function fetchSpecsForSFID(sfid){
+  if(!sfid) return null;
+  try {
+    const res = await fetch(`/api/entities/specs/${encodeURIComponent(sfid)}`);
+    const data = await res.json();
+    if(data && data.success){ return data.specs || {}; }
+  } catch(e) { console.warn('Failed to load specs', e); }
+  return {};
+}
+
+function makeInput(name, spec, value){
+  if(name === 'sfid') return '';
+  const isTextArea = (name === 'description' || (spec && spec.multiline));
+  const required = spec && spec.required;
+  const placeholder = (spec && spec.description) ? spec.description : '';
+  const val = value == null ? '' : value;
+  const label = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const baseClasses = 'mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+  const reqMark = required ? '<span class="text-red-500">*</span>' : '';
+  if(isTextArea){
+    return `<div class="${['description','notes'].includes(name)?'sm:col-span-2':''}">
+      <label for="${name}" class="block text-sm font-medium text-gray-700">${label} ${reqMark}</label>
+      <textarea name="${name}" id="${name}" rows="3" class="${baseClasses}" placeholder="${placeholder}">${val}</textarea>
+      ${placeholder ? `<p class=\"mt-1 text-xs text-gray-500\">${placeholder}</p>`:''}
+    </div>`;
+  }
+  return `<div class="${['description','notes'].includes(name)?'sm:col-span-2':''}">
+    <label for="${name}" class="block text-sm font-medium text-gray-700">${label} ${reqMark}</label>
+    <input type="text" name="${name}" id="${name}" class="${baseClasses}" placeholder="${placeholder}" value="${val}">
+    ${placeholder ? `<p class=\"mt-1 text-xs text-gray-500\">${placeholder}</p>`:''}
+  </div>`;
+}
+
+function addCustomField(){
+  const container = document.getElementById('custom-fields');
+  const idx = container.children.length;
+  const div = document.createElement('div');
+  div.className = 'grid grid-cols-2 gap-4';
+  div.id = `custom-field-${idx}`;
+  div.innerHTML = `
+    <div>
+      <input type=\"text\" name=\"custom_field_name_${idx}\" placeholder=\"Field name\" class=\"block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500\">
+    </div>
+    <div class=\"flex gap-2\">
+      <input type=\"text\" name=\"custom_field_value_${idx}\" placeholder=\"Field value\" class=\"flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500\">
+      <button type=\"button\" onclick=\"this.parentElement.parentElement.remove()\" class=\"px-3 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md\">
+        <i class=\"fas fa-trash\"></i>
+      </button>
+    </div>`;
+  container.appendChild(div);
+}
+
+async function renderFields(){
+  const sfid = '{{ entity.sfid }}';
+  const specs = await fetchSpecsForSFID(sfid);
+  const reqGrid = document.getElementById('required-fields-grid');
+  const optGrid = document.getElementById('optional-fields-grid');
+  const reqWrap = document.getElementById('required-fields');
+  const optWrap = document.getElementById('optional-fields');
+  reqGrid.innerHTML = '';
+  optGrid.innerHTML = '';
+  const entityData = {{ entity | tojson }};
+  const entries = Object.entries(specs);
+  const required = entries.filter(([k,v]) => v && v.required);
+  const optional = entries.filter(([k,v]) => !v || !v.required);
+  if(required.length){ reqWrap.classList.remove('hidden'); } else { reqWrap.classList.add('hidden'); }
+  if(optional.length){ optWrap.classList.remove('hidden'); } else { optWrap.classList.add('hidden'); }
+  required.forEach(([name, spec]) => { reqGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, entityData[name])); });
+  optional.forEach(([name, spec]) => { optGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, entityData[name])); });
+  // Add any existing unknown fields to optional grid for visibility
+  Object.keys(entityData).forEach(k => {
+    if(k === 'sfid') return;
+    if(!specs || specs[k] == null){
+      optGrid.insertAdjacentHTML('beforeend', makeInput(k, {}, entityData[k]));
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderFields();
+});
+
+// On submit: transform custom fields into hidden inputs and ignore blanks
+const formEl = document.querySelector('form');
+formEl.addEventListener('submit', function(){
+  document.querySelectorAll('[id^="custom-field-"]').forEach(div => {
+    const nameEl = div.querySelector('[name^="custom_field_name_"]');
+    const valEl = div.querySelector('[name^="custom_field_value_"]');
+    if(nameEl && valEl && nameEl.value.trim() && valEl.value.trim()){
+      const hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = nameEl.value.trim().toLowerCase().replace(/\s+/g,'_');
+      hidden.value = valEl.value.trim();
+      formEl.appendChild(hidden);
+      nameEl.name = '';
+      valEl.name = '';
+    }
+  });
+});
+</script>
+{% endblock %}
