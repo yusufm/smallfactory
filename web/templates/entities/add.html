@@ -43,14 +43,16 @@
       </div>
 
       <div id="optional-fields" class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hidden">
-        <div class="flex justify-between items-center mb-6">
+        <div class="mb-6">
           <h2 class="text-lg font-semibold text-gray-900">Optional Fields</h2>
-          <button type="button" onclick="addCustomField()" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
-            <i class="fas fa-plus mr-1"></i>Add Field
-          </button>
         </div>
         <div class="grid grid-cols-1 gap-6 sm:grid-cols-2" id="optional-fields-grid"></div>
         <div id="custom-fields" class="space-y-4 mt-4"></div>
+        <div class="mt-4 flex justify-end">
+          <button type="button" onclick="addCustomField()" class="inline-flex items-center text-blue-600 hover:text-blue-900 text-sm font-medium">
+            <i class="fas fa-plus mr-1"></i>Add Field
+          </button>
+        </div>
       </div>
 
       <div class="flex justify-end space-x-3">
@@ -65,6 +67,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="form-data" type="application/json">{{ (form_data or {}) | tojson }}</script>
 <script>
 async function fetchSpecsForSFID(sfid){
   if(!sfid) return null;
@@ -119,14 +122,14 @@ function addCustomField(){
 
 async function renderFields(){
   const sfid = document.getElementById('sfid').value.trim();
-  const specs = await fetchSpecsForSFID(sfid);
+  const specs = await fetchSpecsForSFID(sfid) || {};
   const reqGrid = document.getElementById('required-fields-grid');
   const optGrid = document.getElementById('optional-fields-grid');
   const reqWrap = document.getElementById('required-fields');
   const optWrap = document.getElementById('optional-fields');
   reqGrid.innerHTML = '';
   optGrid.innerHTML = '';
-  const formData = {{ (form_data or {}) | tojson }};
+  const formData = JSON.parse(document.getElementById('form-data').textContent || '{}');
   // Split specs into required vs optional
   const entries = Object.entries(specs);
   const required = entries.filter(([k,v]) => v && v.required);
