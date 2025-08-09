@@ -4,6 +4,7 @@ import yaml
 import json
 import re
 from typing import Optional, List, Dict
+from collections import defaultdict
 
 from .gitutils import git_commit_and_push, git_commit_paths
 from .config import get_inventory_field_specs
@@ -16,34 +17,53 @@ def ensure_inventory_dir(datarepo_path: Path) -> Path:
 
 
 # -------------------------------
-# Helpers for new storage layout
-# inventory/{sfid}/part.yml
-# inventory/{sfid}/{location}.yml
+# Helpers for SPEC v1 layout
+# inventory/<l_*>/<SFID>.yml
 # -------------------------------
 
-def _part_dir(datarepo_path: Path, sfid: str) -> Path:
-    return ensure_inventory_dir(datarepo_path) / sfid
+def _entities_dir(datarepo_path: Path) -> Path:
+    p = datarepo_path / "entities"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
-def _part_meta_path(part_dir: Path) -> Path:
-    return part_dir / "part.yml"
+def _entity_file(datarepo_path: Path, sfid: str) -> Path:
+    return _entities_dir(datarepo_path) / f"{sfid}.yml"
 
 
-def _validate_location_name(location: str) -> None:
-    """Ensure location is a safe file name without slugifying.
+def _entity_exists(datarepo_path: Path, sfid: str) -> bool:
+    return _entity_file(datarepo_path, sfid).exists()
+
+
+def _validate_location_name(name: str) -> None:
+    """Ensure name is a safe file name without slugifying.
 
     Allowed: A-Z a-z 0-9 . _ - (no path separators)."""
-    if not location or location in {".", ".."}:
-        raise ValueError("location must be a non-empty name")
-    if "/" in location or "\\" in location:
-        raise ValueError("location cannot contain path separators")
-    if not re.fullmatch(r"[A-Za-z0-9 ._-]+", location):
-        raise ValueError("location contains invalid characters; allowed: letters, numbers, space, . _ -")
+    if not name or name in {".", ".."}:
+        raise ValueError("name must be a non-empty value")
+    if "/" in name or "\\" in name:
+        raise ValueError("name cannot contain path separators")
+    if not re.fullmatch(r"[A-Za-z0-9 ._-]+", name):
+        raise ValueError("name contains invalid characters; allowed: letters, numbers, space, . _ -")
 
 
-def _location_file(part_dir: Path, location: str) -> Path:
-    _validate_location_name(location)
-    return part_dir / f"{location}.yml"
+def _validate_location_sfid(location_sfid: str) -> None:
+    """Validate that a location identifier is a proper location sfid and safe as a directory name."""
+    _validate_location_name(location_sfid)
+    if not location_sfid.startswith("l_"):
+        raise ValueError("location must be a valid location sfid starting with 'l_'")
+
+
+def _location_dir(datarepo_path: Path, location_sfid: str) -> Path:
+    _validate_location_sfid(location_sfid)
+    return ensure_inventory_dir(datarepo_path) / location_sfid
+
+
+def _inventory_file(datarepo_path: Path, location_sfid: str, sfid: str) -> Path:
+    # sfid must be safe as a filename; rely on global sfid rules, but enforce no path separators
+    if "/" in sfid or "\\" in sfid:
+        raise ValueError("sfid cannot contain path separators")
+    return _location_dir(datarepo_path, location_sfid) / f"{sfid}.yml"
 
 
 def _read_yaml(p: Path) -> dict:
@@ -57,200 +77,217 @@ def _write_yaml(p: Path, data: dict) -> None:
 
 
 def add_item(datarepo_path: Path, item: dict) -> dict:
-    # Load field specs from config (.smallfactory.yml)
-    specs = get_inventory_field_specs()
-    required = [fname for fname, meta in specs.items() if meta.get("required")]
-    missing = [f for f in required if f not in item]
-    if missing:
-        raise ValueError(f"Missing required field(s): {', '.join(missing)}")
+    """Create or stage inventory for an entity at a specific location per SPEC.
 
-    # Regex-validate known fields (unknown/custom fields are allowed)
-    for k, v in item.items():
-        if k in specs:
-            pattern = specs[k].get("regex")
-            if pattern is not None:
-                sval = "" if v is None else str(v)
-                if re.fullmatch(pattern, sval) is None:
-                    raise ValueError(f"Field '{k}' does not match expected format")
-    # Parse and validate
-    sfid = str(item["sfid"]).strip()
-    name = str(item["name"]).strip()
-    location = str(item["location"]).strip()
+    Required inputs:
+      - item['sfid']: entity sfid (e.g., 'p_m3x10')
+      - item['location']: location sfid (e.g., 'l_a1')
+      - item['quantity']: non-negative integer
+
+    This writes inventory/<location>/<sfid>.yml with at least {'quantity': <int>}.
+    Other keys are preserved if provided, but are non-canonical.
+    """
+    specs = get_inventory_field_specs()
+    # Validate quantity against specs if present, otherwise basic int >= 0
+    if "quantity" not in item:
+        raise ValueError("Missing required field: quantity")
     try:
         quantity = int(item["quantity"])
     except Exception:
         raise ValueError("quantity must be an integer")
     if quantity < 0:
         raise ValueError("quantity cannot be negative")
-    _validate_location_name(location)
+    # Validate presence of sfid and location
+    sfid = str(item.get("sfid", "")).strip()
+    if not sfid:
+        raise ValueError("Missing required field: sfid (entity identifier)")
+    location = str(item.get("location", "")).strip()
+    if not location:
+        raise ValueError("Missing required field: location (location sfid)")
+    _validate_location_sfid(location)
+    # Enforce existence of referenced entities
+    if not _entity_exists(datarepo_path, sfid):
+        raise FileNotFoundError(f"Entity sfid '{sfid}' does not exist under entities/")
+    if not _entity_exists(datarepo_path, location):
+        raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
 
-    # Prepare paths
-    pdir = _part_dir(datarepo_path, sfid)
-    meta_path = _part_meta_path(pdir)
-    if meta_path.exists():
-        # Explicitly disallow creating an item when the ID already exists.
-        # Users should use inventory-adjust to modify quantities or inventory-edit to update metadata.
+    # Determine inventory file path
+    inv_file = _inventory_file(datarepo_path, location, sfid)
+    if inv_file.exists():
         raise FileExistsError(
-            f"Inventory item '{id}' already exists. Use inventory-adjust to modify quantities or inventory-edit to update metadata."
+            f"Inventory file already exists for sfid '{sfid}' at location '{location}'. Use inventory adjust instead."
         )
-    else:
-        # New part: create directory and initial location
-        pdir.mkdir(parents=True, exist_ok=True)
-        loc_path = _location_file(pdir, location)
+    inv_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Write files
-        meta = {"sfid": sfid, "name": name}
-        # include any extra fields except quantity/location
-        extras = {k: v for k, v in item.items() if k not in {"sfid", "name", "quantity", "location"}}
-        if extras:
-            meta.update(extras)
-        _write_yaml(meta_path, meta)
-        _write_yaml(loc_path, {"location": location, "quantity": quantity})
+    # Compose data: required quantity + preserve provided optional keys (excluding routing keys)
+    extras = {k: v for k, v in item.items() if k not in {"sfid", "location"}}
+    data = {**extras, "quantity": quantity}
+    _write_yaml(inv_file, data)
 
-        # Commit both files together
-        commit_lines = [
-            f"[smallfactory] Added inventory item {sfid} ({name})",
-            "::sf-action::add",
-            f"::sf-sfid::{sfid}",
-            f"::sf-field::name={name}",
-            f"::sf-field::location={location}",
-            f"::sf-field::quantity={quantity}",
-        ]
-        git_commit_paths(datarepo_path, [meta_path, loc_path], "\n".join(commit_lines))
-        # Return a flattened view (for CLI compatibility)
-        result = {**meta, "quantity": quantity, "location": location}
-        return result
+    commit_lines = [
+        f"[smallfactory] Added inventory entry for {sfid} at {location} with quantity {quantity}",
+        f"::sfid::{sfid}",
+        f"::sfid::{location}",
+    ]
+    git_commit_and_push(datarepo_path, inv_file, "\n".join(commit_lines))
+
+    # Return a flattened view for CLI: include entity name if available
+    name = ""
+    ent_meta_path = _entity_file(datarepo_path, sfid)
+    try:
+        ent_meta = _read_yaml(ent_meta_path)
+        name = ent_meta.get("name", "")
+    except Exception:
+        name = ""
+    return {"sfid": sfid, "name": name, "quantity": quantity, "location": location}
 
 
 def list_items(datarepo_path: Path) -> list[dict]:
     inventory_dir = ensure_inventory_dir(datarepo_path)
-    items: List[Dict] = []
-    for pdir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
-        meta_path = _part_meta_path(pdir)
-        if not meta_path.exists():
+    # Aggregate by entity sfid across all location directories
+    totals: Dict[str, int] = defaultdict(int)
+    locs: Dict[str, List[str]] = defaultdict(list)
+
+    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
+        location = loc_dir.name
+        if not location.startswith("l_"):
+            # Skip non-compliant directories
             continue
-        meta = _read_yaml(meta_path)
-        # Aggregate quantity across all location files (any *.yml except part.yml)
-        total_qty = 0
-        locations: List[str] = []
-        for lf in sorted(pdir.glob("*.yml")):
-            if lf.name == "part.yml":
-                continue
-            data = _read_yaml(lf)
-            qty = int(data.get("quantity", 0))
-            total_qty += qty
-            locname = lf.stem
-            locations.append(locname)
-        # derive sfid from metadata or directory name (no legacy '' support)
-        _sfid = meta.get("sfid") or pdir.name
-        items.append({
-            "sfid": _sfid,
-            "name": meta.get("name"),
-            "quantity": total_qty,
-            # For human output, show multiple or single location name
+        for inv_file in sorted(loc_dir.glob("*.yml")):
+            sfid = inv_file.stem
+            try:
+                data = _read_yaml(inv_file)
+                qty = int(data.get("quantity", 0))
+            except Exception:
+                qty = 0
+            totals[sfid] += qty
+            locs[sfid].append(location)
+
+    # Compose results; include entity name from entities/<sfid>.yml if present
+    results: List[Dict] = []
+    for sfid in sorted(totals.keys()):
+        name = ""
+        ent_meta_path = _entity_file(datarepo_path, sfid)
+        if ent_meta_path.exists():
+            try:
+                name = _read_yaml(ent_meta_path).get("name", "")
+            except Exception:
+                name = ""
+        locations = sorted(set(locs[sfid]))
+        summary = {
+            "sfid": sfid,
+            "name": name,
+            "quantity": totals[sfid],
             "location": locations[0] if len(locations) == 1 else ("multiple" if locations else ""),
             "locations": locations,
-            # include all extra metadata fields
-            **{k: v for k, v in meta.items() if k not in {"sfid", "name"}},
-        })
-    return items
+        }
+        results.append(summary)
+    return results
 
 
 def view_item(datarepo_path: Path, sfid: str) -> dict:
-    pdir = _part_dir(datarepo_path, sfid)
-    meta_path = _part_meta_path(pdir)
-    if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    meta = _read_yaml(meta_path)
-    # Normalize output to always include 'sfid'
-    out_sfid = meta.get("sfid") or sfid
-    locations: Dict[str, int] = {}
+    # Aggregate across all inventory/<l_*>/<sfid>.yml files
+    inventory_dir = ensure_inventory_dir(datarepo_path)
     total_qty = 0
-    for lf in sorted(pdir.glob("*.yml")):
-        if lf.name == "part.yml":
+    locations: Dict[str, int] = {}
+    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
+        location = loc_dir.name
+        if not location.startswith("l_"):
             continue
-        data = _read_yaml(lf)
+        inv_file = loc_dir / f"{sfid}.yml"
+        if not inv_file.exists():
+            continue
+        data = _read_yaml(inv_file)
         qty = int(data.get("quantity", 0))
-        locname = lf.stem
-        locations[locname] = qty
+        locations[location] = qty
         total_qty += qty
-    # Include all metadata fields present in part.yml
-    base = {k: v for k, v in meta.items()}
-    return {**base, "sfid": out_sfid, "quantity": total_qty, "locations": locations}
-
-
-def update_item(datarepo_path: Path, sfid: str, field: str, value: str) -> dict:
-    # Update metadata in part.yml only (not quantities or locations here)
-    pdir = _part_dir(datarepo_path, sfid)
-    meta_path = _part_meta_path(pdir)
-    if not meta_path.exists():
+    if total_qty == 0 and not locations:
+        # Treat as not found in inventory context
         raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    item = _read_yaml(meta_path)
-    if field in {"quantity", "location", "locations"}:
-        raise ValueError("Use inventory-adjust to change quantities; location files are managed per-location")
-
-    # Validate against configured specs if known
-    specs = get_inventory_field_specs()
-    if field in specs:
-        pattern = specs[field].get("regex")
-        if pattern is not None:
-            sval = "" if value is None else str(value)
-            if re.fullmatch(pattern, sval) is None:
-                raise ValueError(f"Field '{field}' does not match expected format")
-    item[field] = value
-    _write_yaml(meta_path, item)
-    commit_msg = (
-        f"[smallfactory] Updated {field} for inventory item {sfid}\n"
-        f"::sf-action::update\n::sf-sfid::{sfid}\n::sf-field::{field}\n::sf-value::{item[field]}"
-    )
-    git_commit_and_push(datarepo_path, meta_path, commit_msg)
-    return item
+    name = ""
+    ent_meta_path = _entity_file(datarepo_path, sfid)
+    if ent_meta_path.exists():
+        try:
+            name = _read_yaml(ent_meta_path).get("name", "")
+        except Exception:
+            name = ""
+    return {"sfid": sfid, "name": name, "quantity": total_qty, "locations": locations}
 
 
 def delete_item(datarepo_path: Path, sfid: str) -> dict:
-    pdir = _part_dir(datarepo_path, sfid)
-    meta_path = _part_meta_path(pdir)
-    if not meta_path.exists():
+    """Remove all inventory files for the given entity across all locations.
+
+    Does NOT delete the canonical entity file under entities/.
+    """
+    inventory_dir = ensure_inventory_dir(datarepo_path)
+    to_delete: List[Path] = []
+    affected_locations: List[str] = []
+    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
+        location = loc_dir.name
+        if not location.startswith("l_"):
+            continue
+        inv_file = loc_dir / f"{sfid}.yml"
+        if inv_file.exists():
+            to_delete.append(inv_file)
+            affected_locations.append(location)
+    if not to_delete:
         raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    meta = _read_yaml(meta_path)
-    # Collect all files to remove
-    files = [fp for fp in pdir.glob("*.yml")]  # includes part.yml and all locations
-    commit_msg = (
-        f"[smallfactory] Deleted inventory item {sfid} ({meta.get('name','')})\n::sf-action::delete\n::sf-sfid::{sfid}"
-    )
-    # Stage deletions via git rm and commit
-    git_commit_paths(datarepo_path, files, commit_msg, delete=True)
-    # Remove directory if empty (ignore errors if not)
-    try:
-        pdir.rmdir()
-    except Exception:
-        pass
-    return meta
+    # Compose commit message including both sfid tokens for all locations
+    lines = [
+        f"[smallfactory] Deleted inventory entries for {sfid} across {len(affected_locations)} location(s)",
+        f"::sfid::{sfid}",
+    ] + [f"::sfid::{loc}" for loc in sorted(set(affected_locations))]
+    git_commit_paths(datarepo_path, to_delete, "\n".join(lines), delete=True)
+    # Return minimal metadata
+    name = ""
+    ent_meta_path = _entity_file(datarepo_path, sfid)
+    if ent_meta_path.exists():
+        try:
+            name = _read_yaml(ent_meta_path).get("name", "")
+        except Exception:
+            name = ""
+    return {"sfid": sfid, "name": name, "deleted_locations": sorted(set(affected_locations))}
 
 
 def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Optional[str] = None) -> dict:
-    """Adjust quantity for a specific location. If location is not provided and
-    the part has a single location, adjust that one. Otherwise, require location."""
-    pdir = _part_dir(datarepo_path, sfid)
-    meta_path = _part_meta_path(pdir)
-    if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    meta = _read_yaml(meta_path)
+    """Adjust quantity for an entity at a specific location per SPEC.
 
-    loc_files = [lf for lf in pdir.glob("*.yml") if lf.name != "part.yml"]
+    If location is omitted and the entity exists at exactly one location, adjust there.
+    Otherwise, require location.
+    """
+    # Verify entity exists
+    if not _entity_exists(datarepo_path, sfid):
+        raise FileNotFoundError(f"Entity sfid '{sfid}' does not exist under entities/")
+
+    inventory_dir = ensure_inventory_dir(datarepo_path)
+    candidate_files: List[Path] = []
+    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
+        loc_name = loc_dir.name
+        if not loc_name.startswith("l_"):
+            continue
+        inv_file = loc_dir / f"{sfid}.yml"
+        if inv_file.exists():
+            candidate_files.append(inv_file)
+
+    lf: Path
     if location is None:
-        if len(loc_files) == 1:
-            lf = loc_files[0]
-            location = lf.stem
+        if len(candidate_files) == 1:
+            lf = candidate_files[0]
+            location = lf.parent.name
+        elif len(candidate_files) == 0:
+            raise ValueError("location is required because the item doesn't exist at any location yet")
         else:
-            raise ValueError("location is required when a part has multiple locations")
+            raise ValueError("location is required when an item exists at multiple locations")
     else:
-        _validate_location_name(location)
-        lf = _location_file(pdir, location)
-
-    # If location file doesn't exist, create it with starting quantity 0
-    if not lf.exists():
-        _write_yaml(lf, {"location": location, "quantity": 0})
+        _validate_location_sfid(location)
+        # Ensure location entity exists
+        if not _entity_exists(datarepo_path, location):
+            raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
+        lf = _inventory_file(datarepo_path, location, sfid)
+        # If location file doesn't exist yet, create it with starting quantity 0
+        if not lf.exists():
+            lf.parent.mkdir(parents=True, exist_ok=True)
+            _write_yaml(lf, {"quantity": 0})
 
     data = _read_yaml(lf)
     try:
@@ -262,10 +299,8 @@ def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Option
     data["quantity"] = new_qty
     _write_yaml(lf, data)
     commit_msg = (
-        f"[smallfactory] Adjusted quantity for inventory item {sfid} at {location} by {delta}\n"
-        f"::sf-action::adjust\n::sf-sfid::{sfid}\n::sf-location::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
+        f"[smallfactory] Adjusted quantity for {sfid} at {location} by {delta}\n"
+        f"::sfid::{sfid}\n::sfid::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
     )
     git_commit_and_push(datarepo_path, lf, commit_msg)
-    # Return combined view for convenience
-    out = view_item(datarepo_path, sfid)
-    return out
+    return view_item(datarepo_path, sfid)

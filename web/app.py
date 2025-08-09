@@ -18,7 +18,6 @@ from smallfactory.core.v1.inventory import (
     list_items,
     view_item,
     add_item,
-    update_item,
     delete_item,
     adjust_quantity
 )
@@ -119,27 +118,16 @@ def inventory_add():
 
 @app.route('/inventory/<item_id>/edit', methods=['GET', 'POST'])
 def inventory_edit(item_id):
-    """Edit an existing inventory item's metadata."""
+    """Inventory no longer edits canonical entity metadata per SPEC.
+
+    Redirect users to the item view with an explanatory message.
+    """
     try:
         datarepo_path = get_datarepo_path()
-        item = view_item(datarepo_path, item_id)
-        field_specs = get_inventory_field_specs()
-        
-        if request.method == 'POST':
-            field = request.form.get('field')
-            value = request.form.get('value', '').strip()
-            
-            if not field:
-                flash('Field name is required', 'error')
-            else:
-                try:
-                    update_item(datarepo_path, item_id, field, value)
-                    flash(f'Successfully updated {field}', 'success')
-                    return redirect(url_for('inventory_view', item_id=item_id))
-                except Exception as e:
-                    flash(f'Error updating item: {e}', 'error')
-        
-        return render_template('inventory/edit.html', item=item, field_specs=field_specs)
+        # Ensure item exists for a nicer redirect target
+        _ = view_item(datarepo_path, item_id)
+        flash('Editing entity metadata is handled by the Entities module. Inventory only manages quantities per location.', 'error')
+        return redirect(url_for('inventory_view', item_id=item_id))
     except Exception as e:
         flash(f'Error loading item: {e}', 'error')
         return redirect(url_for('inventory_list'))

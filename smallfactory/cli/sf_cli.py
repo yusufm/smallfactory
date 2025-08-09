@@ -18,7 +18,6 @@ from smallfactory.core.v1.inventory import (
     add_item,
     list_items,
     view_item,
-    update_item,
     delete_item,
     adjust_quantity,
 )
@@ -65,9 +64,7 @@ def main():
     inv_show = inv_sub.add_parser("show", aliases=["view"], help="Show an inventory item")
     inv_show.add_argument("sfid", help="Item SFID")
 
-    inv_set = inv_sub.add_parser("set", help="Set metadata fields for an item")
-    inv_set.add_argument("sfid", help="Item SFID")
-    inv_set.add_argument("pairs", nargs="+", help="key=value pairs to set")
+    # NOTE: Inventory no longer supports setting entity metadata; use entities module instead.
 
     inv_rm = inv_sub.add_parser("rm", aliases=["delete"], help="Remove an inventory item")
     inv_rm.add_argument("sfid", help="Item SFID")
@@ -284,32 +281,7 @@ def main():
         else:
             print(yaml.safe_dump(item, sort_keys=False))
 
-    def cmd_inventory_update(args):
-        # Repurposed as 'inventory set' to update multiple metadata fields
-        datarepo_path = _repo_path()
-        last_item = None
-        for pair in args.pairs:
-            if "=" not in pair:
-                print(f"[smallfactory] Error: invalid key=value pair '{pair}'")
-                sys.exit(1)
-            field, value = pair.split("=", 1)
-            try:
-                last_item = update_item(datarepo_path, args.sfid, field.strip(), value.strip())
-            except Exception as e:
-                print(f"[smallfactory] Error: {e}")
-                sys.exit(1)
-        if last_item is None:
-            print("[smallfactory] Nothing to update.")
-            sys.exit(0)
-        # Output
-        fmt = _fmt()
-        if fmt == "json":
-            print(json.dumps(last_item, indent=2))
-        elif fmt == "yaml":
-            print(yaml.safe_dump(last_item, sort_keys=False))
-        else:
-            changed = ", ".join(args.pairs)
-            print(f"[smallfactory] Updated {changed} for inventory item '{args.sfid}' in datarepo at {datarepo_path}")
+    # Removed: cmd_inventory_update; inventory does not edit entity metadata per SPEC.
 
     def cmd_inventory_delete(args):
         datarepo_path = _repo_path()
@@ -410,7 +382,6 @@ def main():
         ("inventory", "add"): cmd_inventory_add,
         ("inventory", "ls"): cmd_inventory_list,
         ("inventory", "show"): cmd_inventory_view,
-        ("inventory", "set"): cmd_inventory_update,
         ("inventory", "rm"): cmd_inventory_delete,
         ("inventory", "adjust"): cmd_inventory_adjust,
     }

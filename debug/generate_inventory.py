@@ -31,16 +31,20 @@ except Exception:
     git_commit_paths = None  # type: ignore
 
 
-ALLOWED_LOCATION_CHARS = re.compile(r"[A-Za-z0-9 ._-]+$")
+LOCATION_SFID_RE = re.compile(r"^l_[a-z0-9_]+$")
 
 
-def validate_location_name(location: str) -> None:
-    if not location or location in {".", ".."}:
-        raise ValueError("location must be a non-empty name")
-    if "/" in location or "\\" in location:
-        raise ValueError("location cannot contain path separators")
-    if ALLOWED_LOCATION_CHARS.fullmatch(location) is None:
-        raise ValueError("location contains invalid characters; allowed: letters, numbers, space, . _ -")
+def validate_location_sfid(location_sfid: str) -> None:
+    """Validate that a location identifier is a proper SFID with `l_` prefix.
+
+    Examples: l_a1, l_rack_a12
+    """
+    if not location_sfid or location_sfid in {".", ".."}:
+        raise ValueError("location_sfid must be a non-empty string")
+    if "/" in location_sfid or "\\" in location_sfid:
+        raise ValueError("location_sfid cannot contain path separators")
+    if LOCATION_SFID_RE.fullmatch(location_sfid) is None:
+        raise ValueError("location_sfid must match ^l_[a-z0-9_]+$")
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -49,17 +53,28 @@ def ensure_inventory_dir(datarepo_path: Path) -> Path:
     return inv
 
 
-def part_dir(datarepo_path: Path, pid: str) -> Path:
-    return ensure_inventory_dir(datarepo_path) / pid
+def ensure_entities_dir(datarepo_path: Path) -> Path:
+    ents = datarepo_path / "entities"
+    ents.mkdir(parents=True, exist_ok=True)
+    return ents
 
 
-def part_meta_path(pdir: Path) -> Path:
-    return pdir / "part.yml"
+def entity_meta_path(datarepo_path: Path, sfid: str) -> Path:
+    return ensure_entities_dir(datarepo_path) / f"{sfid}.yml"
 
 
-def location_file(pdir: Path, location: str) -> Path:
-    validate_location_name(location)
-    return pdir / f"{location}.yml"
+def location_dir(datarepo_path: Path, location_sfid: str) -> Path:
+    validate_location_sfid(location_sfid)
+    return ensure_inventory_dir(datarepo_path) / location_sfid
+
+
+def inventory_item_file(datarepo_path: Path, location_sfid: str, sfid: str) -> Path:
+    """Path to inventory file for an entity at a location.
+
+    inventory/<location_sfid>/<sfid>.yml
+    """
+    ldir = location_dir(datarepo_path, location_sfid)
+    return ldir / f"{sfid}.yml"
 
 
 def write_yaml(p: Path, data: dict) -> None:
@@ -113,25 +128,22 @@ def generate(
 
     ensure_inventory_dir(datarepo_path)
 
-    aisles = ["A", "B", "C", "D", "E", "F", "G", "H"]
-    areas = ["Shelf", "Bin", "Rack", "Drawer", "Pallet"]
+    aisles = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    areas = ["zone", "rack", "bin", "row", "bay"]
 
     created = 0
     batches = 0
     paths_to_commit: List[Path] = []
 
     for i in range(start_index, start_index + count):
-        pid = f"{id_prefix}{i:05d}"
+        sfid = f"{id_prefix}{i:05d}"
         pname = f"{name_prefix}{i:05d}"
 
-        pdir = part_dir(datarepo_path, pid)
-        meta_path = part_meta_path(pdir)
-
-        if not pdir.exists():
-            pdir.mkdir(parents=True, exist_ok=True)
-
-        write_yaml(meta_path, {"id": pid, "name": pname})
-        paths_to_commit.append(meta_path)
+        # Create/ensure canonical entity metadata for the item under entities/<sfid>.yml
+        item_entity_path = entity_meta_path(datarepo_path, sfid)
+        if not item_entity_path.exists():
+            write_yaml(item_entity_path, {"sfid": sfid, "name": pname})
+            paths_to_commit.append(item_entity_path)
 
         nloc = random.randint(min_locations, max_locations)
         used = set()
@@ -139,16 +151,26 @@ def generate(
             area = random.choice(areas)
             aisle = random.choice(aisles)
             num = random.randint(1, 40)
-            sep = "-" if area == "Rack" else " "
-            locname = f"{area}{sep}{aisle}{num}"
-            if locname in used:
-                locname = f"{locname}-{random.randint(1,99)}"
-            used.add(locname)
+            # Build a simple l_ SFID like: l_zone_a12 or l_bin_h3
+            loc_sfid = f"l_{area}_{aisle}{num}"
+            # Normalize to lowercase and underscores only (already set above)
+            loc_sfid = loc_sfid.lower().replace(" ", "_")
+            if loc_sfid in used:
+                loc_sfid = f"{loc_sfid}_{random.randint(1,99)}"
+            validate_location_sfid(loc_sfid)
+            used.add(loc_sfid)
 
+            # Ensure a canonical entity file exists for the location SFID as well
+            loc_entity_path = entity_meta_path(datarepo_path, loc_sfid)
+            if not loc_entity_path.exists():
+                write_yaml(loc_entity_path, {"sfid": loc_sfid, "name": loc_sfid})
+                paths_to_commit.append(loc_entity_path)
+
+            # Write inventory entry for this item at this location
             qty = random.randint(min_qty, max_qty)
-            lf = location_file(pdir, locname)
-            write_yaml(lf, {"location": locname, "quantity": qty})
-            paths_to_commit.append(lf)
+            inv_fp = inventory_item_file(datarepo_path, loc_sfid, sfid)
+            write_yaml(inv_fp, {"quantity": qty})
+            paths_to_commit.append(inv_fp)
 
         created += 1
 
