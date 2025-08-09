@@ -70,7 +70,6 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
   Example `entities/loc_a1.yml`:
 
   ```yaml
-  sfid: loc_a1
   status: active # or 'retired'
   notes: "Shelf A1 in aisle A"
   ```
