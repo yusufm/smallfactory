@@ -26,7 +26,7 @@ This document defines the Core Specification (the unbreakable tenets/conventions
   Within a major version, changes are additive and non-breaking. Breaking changes require a major version bump.
 
 - Stable identifiers.
-  Every entity MUST have a globally unique, never-reused `sfid` (smallFactory ID). Entity-specific human-friendly IDs (e.g., inventory `id`) may exist but are not globally unique and are not the canonical identifier.
+  Every entity MUST have a globally unique, never-reused `sfid` (smallFactory ID).
 
 - Transparent Git history.
   All mutating operations auto-commit with clear messages and metadata (including `::sfid::<SFID>` for entity-affecting changes).
