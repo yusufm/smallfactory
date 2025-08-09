@@ -4,6 +4,11 @@ A lightweight, Git-native PLM (Product Lifecycle Management) system built for si
 
 ---
 
+## 📏 Specification & Versioning
+
+- API: v1.0 (DRAFT). We use Semantic Versioning; breaking changes require a MAJOR bump.
+- Authoritative Core API Specification lives at [smallfactory/core/v1/SPECIFICATION.md](smallfactory/core/v1/SPECIFICATION.md).
+- All changes must comply with the specification; if not, update the specification and version accordingly.
 
 ## ⚡ Quickstart
 
