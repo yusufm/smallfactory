@@ -82,7 +82,6 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 
   ```yaml
   sfid: loc_a1
-  type: location
   status: active # or 'retired'
   notes: "Shelf A1 in aisle A"
   ```
