@@ -133,9 +133,9 @@ def main():
                 repo_path = pathlib.Path(repo_override).expanduser().resolve()
                 dr_cfg = load_datarepo_config(repo_path)
             else:
-                # This may raise SystemExit if no default repo exists yet.
+                # This may raise if no default repo exists yet.
                 dr_cfg = load_datarepo_config(None)
-        except SystemExit:
+        except Exception:
             dr_cfg = {}
         fields_cfg = (dr_cfg.get("inventory", {}) or {}).get("fields") or INVENTORY_DEFAULT_FIELD_SPECS
         for fname, meta in fields_cfg.items():
@@ -195,12 +195,12 @@ def main():
                 # if no URL, ask for a name
                 repo_name = input("Enter a name for the new local datarepo: ").strip()
                 if not repo_name:
-                    print("[smallfactory] Error: datarepo name cannot be empty.")
+                    print("[smallFactory] Error: datarepo name cannot be empty.")
                     sys.exit(1)
             target_path = datarepos_dir / repo_name
 
         if target_path.exists() and os.listdir(str(target_path)):
-            print(f"[smallfactory] Error: Target directory '{target_path}' already exists and is not empty.")
+            print(f"[smallFactory] Error: Target directory '{target_path}' already exists and is not empty.")
             sys.exit(1)
 
         repo_path = repo_ops.create_or_clone(target_path, github_url or None)
@@ -237,21 +237,21 @@ def main():
                 continue
             val = getattr(args, fname.replace('-', '_'), None)
             if val is None:
-                print(f"[smallfactory] Error: missing required field '--{fname}'")
+                print(f"[smallFactory] Error: missing required field '--{fname}'")
                 sys.exit(2)
             item[fname] = val
         # Parse extra --set key=value pairs
         if args.set_pairs:
             for pair in args.set_pairs:
                 if "=" not in pair:
-                    print(f"[smallfactory] Error: invalid --set pair '{pair}', expected key=value")
+                    print(f"[smallFactory] Error: invalid --set pair '{pair}', expected key=value")
                     sys.exit(1)
                 k, v = pair.split("=", 1)
                 item[k.strip()] = v.strip()
         try:
             added = add_item(datarepo_path, item)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         # Output
         fmt = _fmt()
@@ -260,7 +260,7 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(added, sort_keys=False))
         else:
-            print(f"[smallfactory] Added inventory item '{added['sfid']}' to datarepo at {datarepo_path}")
+            print(f"[smallFactory] Added inventory item '{added['sfid']}' to datarepo at {datarepo_path}")
 
     def cmd_inventory_list(args):
         datarepo_path = _repo_path()
@@ -272,7 +272,7 @@ def main():
             print(yaml.safe_dump(items, sort_keys=False))
         else:
             if not items:
-                print("[smallfactory] No inventory items found.")
+                print("[smallFactory] No inventory items found.")
                 sys.exit(0)
             # Dynamically determine all fields
             required = ["sfid", "name", "quantity", "location"]
@@ -325,7 +325,7 @@ def main():
         try:
             item = view_item(datarepo_path, args.sfid)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
@@ -343,12 +343,12 @@ def main():
         if fmt == "human" and not getattr(args, "yes", False) and sys.stdout.isatty():
             confirm = input(f"Are you sure you want to delete inventory item '{args.sfid}'? [y/N]: ").strip().lower()
             if confirm not in ("y", "yes"):
-                print("[smallfactory] Delete cancelled.")
+                print("[smallFactory] Delete cancelled.")
                 sys.exit(0)
         try:
             item = delete_item(datarepo_path, args.sfid)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         # Output
         if fmt == "json":
@@ -356,14 +356,14 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Deleted inventory item '{args.sfid}' from datarepo at {datarepo_path}")
+            print(f"[smallFactory] Deleted inventory item '{args.sfid}' from datarepo at {datarepo_path}")
 
     def cmd_inventory_adjust(args):
         datarepo_path = _repo_path()
         try:
             item = adjust_quantity(datarepo_path, args.sfid, args.delta, location=args.location)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         # Output
         fmt = _fmt()
@@ -372,14 +372,14 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sfid}' at '{args.location}' by {args.delta} in datarepo at {datarepo_path}")
+            print(f"[smallFactory] Adjusted quantity for inventory item '{args.sfid}' at '{args.location}' by {args.delta} in datarepo at {datarepo_path}")
 
     # Entities command handlers
     def _parse_pairs(pairs_list):
         updates = {}
         for pair in pairs_list or []:
             if "=" not in pair:
-                print(f"[smallfactory] Error: invalid key=value pair '{pair}'")
+                print(f"[smallFactory] Error: invalid key=value pair '{pair}'")
                 sys.exit(1)
             k, v = pair.split("=", 1)
             updates[k.strip()] = v.strip()
@@ -391,7 +391,7 @@ def main():
         try:
             ent = ent_create_entity(datarepo_path, args.sfid, fields or None)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
@@ -399,7 +399,7 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(ent, sort_keys=False))
         else:
-            print(f"[smallfactory] Created entity '{args.sfid}' in datarepo at {datarepo_path}")
+            print(f"[smallFactory] Created entity '{args.sfid}' in datarepo at {datarepo_path}")
 
     def cmd_entities_list(args):
         datarepo_path = _repo_path()
@@ -411,7 +411,7 @@ def main():
             print(yaml.safe_dump(ents, sort_keys=False))
         else:
             if not ents:
-                print("[smallfactory] No entities found.")
+                print("[smallFactory] No entities found.")
                 return
             fields = ["sfid", "name", "retired"]
             header = " | ".join(f"{f.title():<15}" for f in fields)
@@ -426,7 +426,7 @@ def main():
         try:
             ent = ent_get_entity(datarepo_path, args.sfid)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
@@ -440,12 +440,12 @@ def main():
         datarepo_path = _repo_path()
         updates = _parse_pairs(args.pairs)
         if not updates:
-            print("[smallfactory] Error: no key=value pairs provided")
+            print("[smallFactory] Error: no key=value pairs provided")
             sys.exit(2)
         try:
             ent = ent_update_entity_fields(datarepo_path, args.sfid, updates)
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
@@ -454,14 +454,14 @@ def main():
             print(yaml.safe_dump(ent, sort_keys=False))
         else:
             changed = ", ".join(sorted(updates.keys()))
-            print(f"[smallfactory] Updated entity '{args.sfid}' fields: {changed}")
+            print(f"[smallFactory] Updated entity '{args.sfid}' fields: {changed}")
 
     def cmd_entities_retire(args):
         datarepo_path = _repo_path()
         try:
             ent = ent_retire_entity(datarepo_path, args.sfid, reason=getattr(args, "reason", None))
         except Exception as e:
-            print(f"[smallfactory] Error: {e}")
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
@@ -469,7 +469,7 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(ent, sort_keys=False))
         else:
-            print(f"[smallfactory] Retired entity '{args.sfid}'")
+            print(f"[smallFactory] Retired entity '{args.sfid}'")
 
     def cmd_web(args):
         try:

@@ -1,13 +1,11 @@
 from __future__ import annotations
 from pathlib import Path
 import yaml
-import json
-import re
 from typing import Optional, List, Dict
 from collections import defaultdict
 
 from .gitutils import git_commit_and_push, git_commit_paths
-from .config import get_inventory_field_specs
+from .config import get_inventory_field_specs, validate_sfid
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -36,20 +34,15 @@ def _entity_exists(datarepo_path: Path, sfid: str) -> bool:
 
 
 def _validate_location_name(name: str) -> None:
-    """Ensure name is a safe file name without slugifying.
-
-    Allowed: A-Z a-z 0-9 . _ - (no path separators)."""
-    if not name or name in {".", ".."}:
-        raise ValueError("name must be a non-empty value")
-    if "/" in name or "\\" in name:
-        raise ValueError("name cannot contain path separators")
-    if not re.fullmatch(r"[A-Za-z0-9 ._-]+", name):
-        raise ValueError("name contains invalid characters; allowed: letters, numbers, space, . _ -")
+    """Deprecated: location names must be valid sfids per SPEC."""
+    # Kept for backward compatibility; now delegated to validate_sfid in _validate_location_sfid
+    if not isinstance(name, str) or not name:
+        raise ValueError("location must be provided")
 
 
 def _validate_location_sfid(location_sfid: str) -> None:
-    """Validate that a location identifier is a proper location sfid and safe as a directory name."""
-    _validate_location_name(location_sfid)
+    """Validate that a location identifier is a proper location sfid per SPEC (prefix l_)."""
+    validate_sfid(location_sfid)
     if not location_sfid.startswith("l_"):
         raise ValueError("location must be a valid location sfid starting with 'l_'")
 
@@ -60,9 +53,9 @@ def _location_dir(datarepo_path: Path, location_sfid: str) -> Path:
 
 
 def _inventory_file(datarepo_path: Path, location_sfid: str, sfid: str) -> Path:
-    # sfid must be safe as a filename; rely on global sfid rules, but enforce no path separators
-    if "/" in sfid or "\\" in sfid:
-        raise ValueError("sfid cannot contain path separators")
+    # Validate identifiers per SPEC
+    _validate_location_sfid(location_sfid)
+    validate_sfid(sfid)
     return _location_dir(datarepo_path, location_sfid) / f"{sfid}.yml"
 
 
@@ -101,6 +94,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
     sfid = str(item.get("sfid", "")).strip()
     if not sfid:
         raise ValueError("Missing required field: sfid (entity identifier)")
+    validate_sfid(sfid)
     location = str(item.get("location", "")).strip()
     if not location:
         raise ValueError("Missing required field: location (location sfid)")
@@ -125,7 +119,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
     _write_yaml(inv_file, data)
 
     commit_lines = [
-        f"[smallfactory] Added inventory entry for {sfid} at {location} with quantity {quantity}",
+        f"[smallFactory] Added inventory entry for {sfid} at {location} with quantity {quantity}",
         f"::sfid::{sfid}",
         f"::sfid::{location}",
     ]
@@ -186,6 +180,7 @@ def list_items(datarepo_path: Path) -> list[dict]:
 
 
 def view_item(datarepo_path: Path, sfid: str) -> dict:
+    validate_sfid(sfid)
     # Aggregate across all inventory/<l_*>/<sfid>.yml files
     inventory_dir = ensure_inventory_dir(datarepo_path)
     total_qty = 0
@@ -219,6 +214,7 @@ def delete_item(datarepo_path: Path, sfid: str) -> dict:
 
     Does NOT delete the canonical entity file under entities/.
     """
+    validate_sfid(sfid)
     inventory_dir = ensure_inventory_dir(datarepo_path)
     to_delete: List[Path] = []
     affected_locations: List[str] = []
@@ -234,7 +230,7 @@ def delete_item(datarepo_path: Path, sfid: str) -> dict:
         raise FileNotFoundError(f"Inventory item '{sfid}' not found")
     # Compose commit message including both sfid tokens for all locations
     lines = [
-        f"[smallfactory] Deleted inventory entries for {sfid} across {len(affected_locations)} location(s)",
+        f"[smallFactory] Deleted inventory entries for {sfid} across {len(affected_locations)} location(s)",
         f"::sfid::{sfid}",
     ] + [f"::sfid::{loc}" for loc in sorted(set(affected_locations))]
     git_commit_paths(datarepo_path, to_delete, "\n".join(lines), delete=True)
@@ -255,7 +251,8 @@ def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Option
     If location is omitted and the entity exists at exactly one location, adjust there.
     Otherwise, require location.
     """
-    # Verify entity exists
+    # Validate and verify entity exists
+    validate_sfid(sfid)
     if not _entity_exists(datarepo_path, sfid):
         raise FileNotFoundError(f"Entity sfid '{sfid}' does not exist under entities/")
 
@@ -299,7 +296,7 @@ def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Option
     data["quantity"] = new_qty
     _write_yaml(lf, data)
     commit_msg = (
-        f"[smallfactory] Adjusted quantity for {sfid} at {location} by {delta}\n"
+        f"[smallFactory] Adjusted quantity for {sfid} at {location} by {delta}\n"
         f"::sfid::{sfid}\n::sfid::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
     )
     git_commit_and_push(datarepo_path, lf, commit_msg)

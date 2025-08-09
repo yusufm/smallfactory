@@ -1,6 +1,6 @@
-import sys
 import pathlib
 import yaml
+import re
 
 SF_TOOL_VERSION = "1.0"
 CONFIG_FILENAME = ".smallfactory.yml"
@@ -21,6 +21,26 @@ INVENTORY_DEFAULT_FIELD_SPECS = {
     # Other keys may be present and should be ignored by readers and preserved by writers.
     "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "On-hand quantity as non-negative integer."},
 }
+
+
+# -------------------------------
+# sfid validation (SPEC)
+# -------------------------------
+# Authoritative pattern: ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
+SFID_REGEX: str = r"^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$"
+
+
+def validate_sfid(sfid: str) -> None:
+    """Validate that an sfid conforms to SPEC and is safe as a file/dir name.
+
+    Raises ValueError if invalid.
+    """
+    if not isinstance(sfid, str) or not sfid:
+        raise ValueError("sfid is required")
+    if re.fullmatch(SFID_REGEX, sfid) is None:
+        raise ValueError(
+            "sfid must match ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$ and be lowercase"
+        )
 
 
 def ensure_config() -> pathlib.Path:
@@ -54,8 +74,9 @@ def get_datarepo_path() -> pathlib.Path:
     config = load_config()
     datarepo = config.get("default_datarepo")
     if not datarepo:
-        print(f"[smallfactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'init' or set it manually.")
-        sys.exit(1)
+        raise RuntimeError(
+            f"[smallFactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'init' or set it manually."
+        )
     return pathlib.Path(datarepo).expanduser().resolve()
 
 
