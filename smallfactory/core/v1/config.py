@@ -82,3 +82,52 @@ def get_inventory_field_specs() -> dict:
     if isinstance(fields, dict) and fields:
         return fields
     return INVENTORY_DEFAULT_FIELD_SPECS
+
+
+# -------------------------------
+# Entities field schema (YAML-driven)
+# -------------------------------
+# sfdatarepo.yml may define entity field specs under:
+# entities:
+#   fields: { <field>: {required, regex, description} }           # global defaults
+#   types:
+#     p: { fields: { ... } }     # per-type overrides/additions (by sfid prefix before '_')
+#     l: { fields: { ... } }
+# If types.<key> is a dict without a 'fields' key, treat it as a fields map directly.
+
+def get_entities_specs(repo_path: pathlib.Path | None = None) -> dict:
+    """Return entities spec blocks from sfdatarepo.yml.
+
+    Shape: { 'fields': {..}, 'types': { type_key: {fields:{..}}|{..} } }
+    Missing sections are returned as empty dicts.
+    """
+    dr_cfg = load_datarepo_config(repo_path)
+    ent = dr_cfg.get("entities") or {}
+    fields = ent.get("fields")
+    types = ent.get("types")
+    return {
+        "fields": fields if isinstance(fields, dict) else {},
+        "types": types if isinstance(types, dict) else {},
+    }
+
+
+def get_entity_field_specs_for_sfid(sfid: str, repo_path: pathlib.Path | None = None) -> dict:
+    """Return merged field specs for a given entity sfid.
+
+    Merges global entities.fields with per-type fields if present, where
+    type key is derived from the prefix before the first underscore in sfid
+    (e.g. 'p' for 'p_m3x10', 'l' for 'l_a1').
+    """
+    specs = get_entities_specs(repo_path)
+    merged = dict(specs.get("fields", {}))
+    type_prefix = sfid.split("_", 1)[0] if "_" in sfid else None
+    if type_prefix:
+        t = specs.get("types", {}).get(type_prefix) or specs.get("types", {}).get(f"{type_prefix}_")
+        if isinstance(t, dict):
+            # t may be {'fields': {...}} or the fields map itself
+            tf = t.get("fields") if isinstance(t.get("fields"), dict) else None
+            if tf is None:
+                tf = t
+            if isinstance(tf, dict):
+                merged.update(tf)
+    return merged

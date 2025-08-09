@@ -13,6 +13,51 @@ from .config import (
 )
 
 
+# Default entity field specs for part type (sfid prefix 'p_')
+PART_ENTITY_DEFAULT_FIELD_SPECS = {
+    "category": {
+        "description": "Category or family.",
+        "regex": r"^$|^.{1,500}$",
+        "required": False,
+    },
+    "description": {
+        "description": "Freeform description (<=500 chars).",
+        "regex": r"^$|^.{1,500}$",
+        "required": False,
+    },
+    "manufacturer": {
+        "description": "Manufacturer name.",
+        "regex": r"^$|^.{1,500}$",
+        "required": False,
+    },
+    "mpn": {
+        "description": "Manufacturer Part Number.",
+        "regex": r"^[A-Za-z0-9 ._\-/#+]*$",
+        "required": False,
+    },
+    "name": {
+        "description": "Human-readable item name.",
+        "regex": r"^.{1,200}$",
+        "required": True,
+    },
+    "notes": {
+        "description": "Additional notes.",
+        "regex": r"^$|^.{1,500}$",
+        "required": False,
+    },
+    "spn": {
+        "description": "Supplier Part Number.",
+        "regex": r"^[A-Za-z0-9 ._\-/#+]*$",
+        "required": False,
+    },
+    "vendor": {
+        "description": "Preferred supplier/vendor.",
+        "regex": r"^$|^.{1,500}$",
+        "required": False,
+    },
+}
+
+
 def init_local_repo(repo_path: Path) -> Path:
     repo_path = repo_path.expanduser().resolve()
     repo_path.mkdir(parents=True, exist_ok=True)
@@ -30,6 +75,14 @@ def write_datarepo_config(repo_path: Path) -> Path:
         "smallfactory_version": SF_TOOL_VERSION,
         "inventory": {
             "fields": INVENTORY_DEFAULT_FIELD_SPECS,
+        },
+        "entities": {
+            "types": {
+                # part entities (sfid prefix 'p_')
+                "p": {
+                    "fields": PART_ENTITY_DEFAULT_FIELD_SPECS,
+                }
+            }
         },
     }
     config_file = repo_path / DATAREPO_CONFIG_FILENAME

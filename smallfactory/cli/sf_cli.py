@@ -22,6 +22,15 @@ from smallfactory.core.v1.inventory import (
     adjust_quantity,
 )
 
+# Entities core API
+from smallfactory.core.v1.entities import (
+    list_entities as ent_list_entities,
+    get_entity as ent_get_entity,
+    create_entity as ent_create_entity,
+    update_entity_fields as ent_update_entity_fields,
+    retire_entity as ent_retire_entity,
+)
+
 
 class SFArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on error instead of short usage."""
@@ -75,6 +84,27 @@ def main():
     inv_adjust.add_argument("delta", type=int, help="Signed quantity delta (e.g. +5, -2)")
     inv_adjust.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
 
+    # entities group (canonical metadata operations)
+    entities_parser = subparsers.add_parser("entities", help="Entities operations")
+    ent_sub = entities_parser.add_subparsers(dest="ent_cmd", required=False, parser_class=SFArgumentParser)
+
+    ent_add = ent_sub.add_parser("add", help="Create a canonical entity")
+    ent_add.add_argument("sfid", help="Entity SFID")
+    ent_add.add_argument("pairs", nargs="*", help="key=value fields to set on creation")
+
+    ent_ls = ent_sub.add_parser("ls", aliases=["list"], help="List entities")
+
+    ent_show = ent_sub.add_parser("show", aliases=["view"], help="Show an entity")
+    ent_show.add_argument("sfid", help="Entity SFID")
+
+    ent_set = ent_sub.add_parser("set", help="Update fields for an entity")
+    ent_set.add_argument("sfid", help="Entity SFID")
+    ent_set.add_argument("pairs", nargs="+", help="key=value fields to set")
+
+    ent_retire = ent_sub.add_parser("retire", help="Retire (soft-delete) an entity")
+    ent_retire.add_argument("sfid", help="Entity SFID")
+    ent_retire.add_argument("--reason", default=None, help="Retirement reason")
+
     # web command (kept top-level)
     web_parser = subparsers.add_parser("web", help="Start the web UI server")
     web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
@@ -119,6 +149,8 @@ def main():
         cmd = getattr(args, "command", None)
         if cmd in ("inventory", "inv"):
             inventory_parser.print_help()
+        elif cmd == "entities":
+            entities_parser.print_help()
         else:
             parser.print_help()
         sys.exit(2)
@@ -321,6 +353,103 @@ def main():
             loc = f" at '{args.location}'" if args.location else ""
             print(f"[smallfactory] Adjusted quantity for inventory item '{args.sfid}'{loc} by {args.delta} in datarepo at {datarepo_path}")
 
+    # Entities command handlers
+    def _parse_pairs(pairs_list):
+        updates = {}
+        for pair in pairs_list or []:
+            if "=" not in pair:
+                print(f"[smallfactory] Error: invalid key=value pair '{pair}'")
+                sys.exit(1)
+            k, v = pair.split("=", 1)
+            updates[k.strip()] = v.strip()
+        return updates
+
+    def cmd_entities_add(args):
+        datarepo_path = _repo_path()
+        fields = _parse_pairs(args.pairs)
+        try:
+            ent = ent_create_entity(datarepo_path, args.sfid, fields or None)
+        except Exception as e:
+            print(f"[smallfactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            print(f"[smallfactory] Created entity '{args.sfid}' in datarepo at {datarepo_path}")
+
+    def cmd_entities_list(args):
+        datarepo_path = _repo_path()
+        ents = ent_list_entities(datarepo_path)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ents, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ents, sort_keys=False))
+        else:
+            if not ents:
+                print("[smallfactory] No entities found.")
+                return
+            fields = ["sfid", "name", "retired"]
+            header = " | ".join(f"{f.title():<15}" for f in fields)
+            print(header)
+            print("-" * len(header))
+            for e in ents:
+                row = [f"{str(e.get(f, '')):<15}" for f in fields]
+                print(" | ".join(row))
+
+    def cmd_entities_show(args):
+        datarepo_path = _repo_path()
+        try:
+            ent = ent_get_entity(datarepo_path, args.sfid)
+        except Exception as e:
+            print(f"[smallfactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            print(yaml.safe_dump(ent, sort_keys=False))
+
+    def cmd_entities_set(args):
+        datarepo_path = _repo_path()
+        updates = _parse_pairs(args.pairs)
+        if not updates:
+            print("[smallfactory] Error: no key=value pairs provided")
+            sys.exit(2)
+        try:
+            ent = ent_update_entity_fields(datarepo_path, args.sfid, updates)
+        except Exception as e:
+            print(f"[smallfactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            changed = ", ".join(sorted(updates.keys()))
+            print(f"[smallfactory] Updated entity '{args.sfid}' fields: {changed}")
+
+    def cmd_entities_retire(args):
+        datarepo_path = _repo_path()
+        try:
+            ent = ent_retire_entity(datarepo_path, args.sfid, reason=getattr(args, "reason", None))
+        except Exception as e:
+            print(f"[smallfactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            print(f"[smallfactory] Retired entity '{args.sfid}'")
+
     def cmd_web(args):
         try:
             # Import Flask app here to avoid import issues if Flask isn't installed
@@ -368,7 +497,13 @@ def main():
     if cmd == "inv":
         cmd = "inventory"
 
-    sub = getattr(args, "inv_cmd", None)
+    # Determine subcommand for the current group
+    if cmd == "inventory":
+        sub = getattr(args, "inv_cmd", None)
+    elif cmd == "entities":
+        sub = getattr(args, "ent_cmd", None)
+    else:
+        sub = None
     if sub in ("ls", "list"):
         sub = "ls"
     elif sub in ("show", "view"):
@@ -384,6 +519,11 @@ def main():
         ("inventory", "show"): cmd_inventory_view,
         ("inventory", "rm"): cmd_inventory_delete,
         ("inventory", "adjust"): cmd_inventory_adjust,
+        ("entities", "add"): cmd_entities_add,
+        ("entities", "ls"): cmd_entities_list,
+        ("entities", "show"): cmd_entities_show,
+        ("entities", "set"): cmd_entities_set,
+        ("entities", "retire"): cmd_entities_retire,
     }
 
     handler = DISPATCH.get((cmd, sub))
