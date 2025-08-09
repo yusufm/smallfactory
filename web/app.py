@@ -347,11 +347,13 @@ def stickers_batch():
     if request.method == 'POST':
         size_text = (request.form.get('size_in') or '2x1').strip()
         dpi_text = (request.form.get('dpi') or '300').strip()
+        text_size_text = (request.form.get('text_size') or '24').strip()
         fields_raw = (request.form.get('fields') or '').strip()
         sfids_text = (request.form.get('sfids') or '').strip()
     else:
         size_text = (request.args.get('size_in') or '2x1').strip()
         dpi_text = (request.args.get('dpi') or '300').strip()
+        text_size_text = (request.args.get('text_size') or '24').strip()
         fields_raw = (request.args.get('fields') or '').strip()
         sfids_text = (request.args.get('sfids') or '').strip()
 
@@ -362,6 +364,7 @@ def stickers_batch():
             error=None,
             size_text=size_text,
             dpi_text=dpi_text,
+            text_size_text=text_size_text,
             fields_text=fields_raw,
             sfids_text=sfids_text,
         )
@@ -372,11 +375,12 @@ def stickers_batch():
         w_s, h_s = st.split('x', 1)
         w_in, h_in = float(w_s), float(h_s)
         dpi = int(dpi_text)
-        if w_in <= 0 or h_in <= 0 or dpi <= 0:
+        tsize = int(text_size_text)
+        if w_in <= 0 or h_in <= 0 or dpi <= 0 or tsize <= 0:
             raise ValueError
         size_px = (int(round(w_in * dpi)), int(round(h_in * dpi)))
     except Exception:
-        error = 'Invalid size/DPI. Use WIDTHxHEIGHT inches (e.g., 2x1) and a positive DPI (e.g., 300)'
+        error = 'Invalid size/DPI/text size. Use WIDTHxHEIGHT inches (e.g., 2x1), positive DPI (e.g., 300), and positive text size.'
 
     # Parse SFIDs
     sfids = []
@@ -399,6 +403,7 @@ def stickers_batch():
             error=error,
             size_text=size_text,
             dpi_text=dpi_text,
+            text_size_text=text_size_text,
             fields_text=fields_raw,
             sfids_text=sfids_text,
         )
@@ -433,6 +438,7 @@ def stickers_batch():
                     fields=selected_fields or None,
                     size=size_px,
                     dpi=dpi,
+                    text_size=tsize,
                 )
             except Exception as e:
                 # Abort on first failure with a clear message
@@ -442,6 +448,7 @@ def stickers_batch():
                     error=f"Error generating sticker for SFID '{sid}': {e}",
                     size_text=size_text,
                     dpi_text=dpi_text,
+                    text_size_text=text_size_text,
                     fields_text=fields_raw,
                     sfids_text=sfids_text,
                 )
@@ -480,7 +487,7 @@ if __name__ == '__main__':
     
     print("🏭 Starting smallFactory Web UI...")
     print("📍 Access the interface at: http://localhost:8080")
-    print("🔧 Git-native PLM for 1-2 person teams")
+    print("🔧 Git-native PLM for 1-4 person teams")
     print("=" * 50)
     
     # Check if we're in development mode

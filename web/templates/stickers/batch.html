@@ -46,6 +46,11 @@
           <input type="number" min="72" step="1" name="dpi" value="{{ dpi_text }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="300">
           <p class="mt-1 text-xs text-gray-500">Dots per inch (e.g., 300 for printer-quality output)</p>
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Text size (px)</label>
+          <input type="number" min="6" step="1" name="text_size" value="{{ text_size_text }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="24">
+          <p class="mt-1 text-xs text-gray-500">Base text size in pixels for label text. Title renders ~1.2× this size.</p>
+        </div>
       </div>
 
       <div>

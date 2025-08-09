@@ -122,6 +122,93 @@ def main():
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
 
+    # stickers group (generate codes for entities)
+    stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
+    st_sub = stickers_parser.add_subparsers(dest="st_cmd", required=False, parser_class=SFArgumentParser)
+
+    # Allow using `sf stickers` directly with batch options
+    stickers_parser.add_argument(
+        "--sfids",
+        dest="sfids",
+        default=None,
+        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
+    )
+    stickers_parser.add_argument(
+        "--file",
+        dest="file",
+        default=None,
+        help="Path to a file containing SFIDs (one per line or comma-separated)",
+    )
+    stickers_parser.add_argument(
+        "--fields",
+        dest="fields",
+        default=None,
+        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
+    )
+    stickers_parser.add_argument(
+        "--size",
+        dest="size",
+        default="2x1",
+        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
+    )
+    stickers_parser.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
+    stickers_parser.add_argument(
+        "--text-size",
+        dest="text_size",
+        type=int,
+        default=24,
+        help="Base text size in pixels for label text (title ~1.2x). Default 24",
+    )
+    stickers_parser.add_argument(
+        "-o",
+        "--out",
+        dest="out",
+        default="stickers.pdf",
+        help="Output PDF filename (default: stickers.pdf)",
+    )
+
+    # stickers batch: generate multi-page PDF with one sticker per page
+    st_batch = st_sub.add_parser("batch", help="Generate a multi-page PDF of stickers (one per page)")
+    st_batch.add_argument(
+        "--sfids",
+        dest="sfids",
+        default=None,
+        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
+    )
+    st_batch.add_argument(
+        "--file",
+        dest="file",
+        default=None,
+        help="Path to a file containing SFIDs (one per line or comma-separated)",
+    )
+    st_batch.add_argument(
+        "--fields",
+        dest="fields",
+        default=None,
+        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
+    )
+    st_batch.add_argument(
+        "--size",
+        dest="size",
+        default="2x1",
+        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
+    )
+    st_batch.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
+    st_batch.add_argument(
+        "--text-size",
+        dest="text_size",
+        type=int,
+        default=24,
+        help="Base text size in pixels for label text (title ~1.2x). Default 24",
+    )
+    st_batch.add_argument(
+        "-o",
+        "--out",
+        dest="out",
+        default="stickers.pdf",
+        help="Output PDF filename (default: stickers.pdf)",
+    )
+
     # Pre-inject dynamic required flags for `inventory add` by inspecting argv
     ensure_config()
     argv = sys.argv[1:]
@@ -209,81 +296,7 @@ def main():
             print(f"[smallFactory] Error: Target directory '{target_path}' already exists and is not empty.")
             sys.exit(1)
 
-    # stickers group (generate codes for entities)
-    stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
-    st_sub = stickers_parser.add_subparsers(dest="st_cmd", required=False, parser_class=SFArgumentParser)
-
-    # Allow using `sf stickers` directly with batch options
-    stickers_parser.add_argument(
-        "--sfids",
-        dest="sfids",
-        default=None,
-        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
-    )
-    stickers_parser.add_argument(
-        "--file",
-        dest="file",
-        default=None,
-        help="Path to a file containing SFIDs (one per line or comma-separated)",
-    )
-    stickers_parser.add_argument(
-        "--fields",
-        dest="fields",
-        default=None,
-        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
-    )
-    stickers_parser.add_argument(
-        "--size",
-        dest="size",
-        default="2x1",
-        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
-    )
-    stickers_parser.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
-    stickers_parser.add_argument(
-        "-o",
-        "--out",
-        dest="out",
-        default="stickers.pdf",
-        help="Output PDF filename (default: stickers.pdf)",
-    )
-
-    # NOTE: 'batch' is the default stickers interface and can handle a single SFID too.
-
-    # stickers batch: generate multi-page PDF with one sticker per page
-    st_batch = st_sub.add_parser("batch", help="Generate a multi-page PDF of stickers (one per page)")
-    st_batch.add_argument(
-        "--sfids",
-        dest="sfids",
-        default=None,
-        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
-    )
-    st_batch.add_argument(
-        "--file",
-        dest="file",
-        default=None,
-        help="Path to a file containing SFIDs (one per line or comma-separated)",
-    )
-    st_batch.add_argument(
-        "--fields",
-        dest="fields",
-        default=None,
-        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
-    )
-    st_batch.add_argument(
-        "--size",
-        dest="size",
-        default="2x1",
-        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
-    )
-    st_batch.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
-    st_batch.add_argument(
-        "-o",
-        "--out",
-        dest="out",
-        default="stickers.pdf",
-        help="Output PDF filename (default: stickers.pdf)",
-    )
-
+    
     def _parse_size(sz: str, dpi: int):
         if not sz:
             return (600, 300)  # 2x1 inches @ 300 DPI
@@ -383,6 +396,7 @@ def main():
                     fields=fields_list,
                     size=size_px,
                     dpi=args.dpi,
+                    text_size=args.text_size,
                 )
                 png_b64 = result.get("png_base64")
                 if not png_b64:
@@ -413,6 +427,7 @@ def main():
                 "count": success,
                 "page_size_in": {"width": w_in, "height": h_in},
                 "dpi": args.dpi,
+                "text_size": args.text_size,
             }, indent=2))
         elif fmt == "yaml":
             print(yaml.safe_dump({
@@ -420,6 +435,7 @@ def main():
                 "count": success,
                 "page_size_in": {"width": w_in, "height": h_in},
                 "dpi": args.dpi,
+                "text_size": args.text_size,
             }, sort_keys=False))
         else:
             print(f"[smallFactory] Wrote {out_pdf} with {success} page(s)")
@@ -690,7 +706,7 @@ def main():
             
             print("🏭 Starting smallFactory Web UI...")
             print(f"📍 Access the interface at: http://localhost:{args.port}")
-            print("🔧 Git-native PLM for 1-2 person teams")
+            print("🔧 Git-native PLM for 1-4 person teams")
             print("=" * 50)
             
             try:

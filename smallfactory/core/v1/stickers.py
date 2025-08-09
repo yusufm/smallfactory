@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 from pathlib import Path
+import os
 from typing import Iterable, List, Optional, Tuple
 
 try:
@@ -76,6 +77,73 @@ def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, 
     return lines
 
 
+def _try_load_font(candidates: List[str], size: int):
+    """Try loading a TrueType/collection font from a list of filenames/paths.
+
+    Returns a PIL ImageFont if successful, else None.
+    """
+    for path in candidates:
+        try:
+            if not path:
+                continue
+            return ImageFont.truetype(path, size=size)
+        except Exception:
+            continue
+    return None
+
+
+def _get_fonts(base_sz: int):
+    """Load title/normal/mono fonts with the requested size, trying common locations.
+
+    Honors optional env vars:
+      - SMALLFACTORY_FONT: path or font name for proportional font
+      - SMALLFACTORY_MONO_FONT: path or font name for monospace font
+    """
+    # Common font candidates across Linux/macOS
+    proportional_candidates = [
+        os.environ.get("SMALLFACTORY_FONT"),
+        "DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Helvetica.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+    ]
+    mono_candidates = [
+        os.environ.get("SMALLFACTORY_MONO_FONT"),
+        "DejaVuSansMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Menlo.ttc",
+        "/Library/Fonts/Courier New.ttf",
+        "/System/Library/Fonts/Supplemental/Courier New.ttf",
+    ]
+
+    # Try to load proportional font
+    normal = _try_load_font(proportional_candidates, base_sz)
+    title = _try_load_font(proportional_candidates, int(round(base_sz * 1.2))) if normal is not None else None
+    # Try to load mono font; if not found, reuse proportional as fallback to keep sizing consistent
+    mono = _try_load_font(mono_candidates, base_sz) or (
+        _try_load_font(proportional_candidates, base_sz)
+    )
+
+    if normal is None or title is None or mono is None:
+        # Final fallback: bitmap default (fixed size). Text size won't scale with this font.
+        # We still return defaults to avoid crashes.
+        try:
+            if title is None:
+                title = ImageFont.load_default()
+            if normal is None:
+                normal = ImageFont.load_default()
+            if mono is None:
+                mono = ImageFont.load_default()
+        except Exception:
+            # In practice load_default() should always work if PIL is present
+            title = normal = mono = ImageFont.load_default()
+
+    return title, normal, mono
+
+
 def compose_sticker_image(
     entity: dict,
     *,
@@ -83,12 +151,14 @@ def compose_sticker_image(
     fields: Optional[Iterable[str]] = None,
     sticker_size: Tuple[int, int] = (600, 300),
     padding: int = 16,
+    text_size: int = 24,
 ) -> Image.Image:
     """Compose a printable sticker PNG for an entity.
 
     - code_type: 'qr'
     - fields: list of field names to render as human-readable text (besides SFID/name)
     - sticker_size: (width, height) in pixels (default 600x300 ≈ 2x1 in @ 300 DPI)
+    - text_size: base text size in pixels for normal/mono text. Title is ~1.2x this size.
     """
     _ensure_pillow()
     if code_type.lower() != "qr":
@@ -113,16 +183,9 @@ def compose_sticker_image(
     text_x = padding + code_max + padding
     text_w = width - text_x - padding
 
-    # Fonts
-    try:
-        # If system has a TTF, you can point to it. Fallback to default.
-        title_font = ImageFont.load_default()
-        normal_font = ImageFont.load_default()
-        mono_font = ImageFont.load_default()
-    except Exception:
-        title_font = ImageFont.load_default()
-        normal_font = ImageFont.load_default()
-        mono_font = ImageFont.load_default()
+    # Fonts (attempt TrueType from common locations; fallback to default bitmap font)
+    base_sz = max(8, int(text_size))
+    title_font, normal_font, mono_font = _get_fonts(base_sz)
 
     y = padding
 
@@ -130,12 +193,15 @@ def compose_sticker_image(
     title_lines = _wrap_text(draw, str(name), title_font, text_w)
     for ln in title_lines:
         draw.text((text_x, y), ln, fill=(0, 0, 0), font=title_font)
-        y += title_font.getbbox(ln)[3]
+        tb = draw.textbbox((0, 0), ln, font=title_font)
+        y += (tb[3] - tb[1])
 
     # SFID (monospace-ish)
     y += 4
-    draw.text((text_x, y), f"SFID: {sfid}", fill=(0, 0, 0), font=mono_font)
-    y += mono_font.getbbox("Hg")[3] + 8
+    sfid_line = f"SFID: {sfid}"
+    draw.text((text_x, y), sfid_line, fill=(0, 0, 0), font=mono_font)
+    tb = draw.textbbox((0, 0), sfid_line, font=mono_font)
+    y += (tb[3] - tb[1]) + 8
 
     # Additional fields
     if fields:
@@ -148,7 +214,8 @@ def compose_sticker_image(
             label = f"{f}: {val}"
             for ln in _wrap_text(draw, str(label), normal_font, text_w):
                 draw.text((text_x, y), ln, fill=(0, 0, 0), font=normal_font)
-                y += normal_font.getbbox(ln)[3]
+                tb = draw.textbbox((0, 0), ln, font=normal_font)
+                y += (tb[3] - tb[1])
             y += 2
 
     # Footer brand
@@ -178,6 +245,7 @@ def generate_sticker_for_entity(
     fields: Optional[Iterable[str]] = None,
     size: Tuple[int, int] = (600, 300),
     dpi: int = 300,
+    text_size: int = 24,
 ) -> dict:
     """Generate a sticker for the given entity SFID.
 
@@ -185,7 +253,7 @@ def generate_sticker_for_entity(
     Default size is 600x300 pixels (≈2x1 in @ 300 DPI).
     """
     ent = get_entity(datarepo_path, sfid)
-    img = compose_sticker_image(ent, code_type="qr", fields=fields, sticker_size=size)
+    img = compose_sticker_image(ent, code_type="qr", fields=fields, sticker_size=size, text_size=text_size)
     b64 = image_to_base64_png(img, dpi=dpi)
     fname = f"sticker_{sfid}_qr.png"
     return {
