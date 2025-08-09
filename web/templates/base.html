@@ -32,14 +32,11 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16">
                 <div class="flex items-center">
-                    <div class="flex-shrink-0 flex items-center">
+                    <a href="{{ url_for('index') }}" class="flex-shrink-0 flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                         <i class="fas fa-cube text-blue-600 text-2xl mr-3"></i>
-                        <h1 class="text-xl font-bold text-gray-900">smallFactory</h1>
-                    </div>
+                        <span class="text-xl font-bold text-gray-900">smallFactory</span>
+                    </a>
                     <div class="hidden md:ml-6 md:flex md:space-x-8">
-                        <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
-                            <i class="fas fa-home mr-2"></i>Dashboard
-                        </a>
                         <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-boxes mr-2"></i>Inventory
                         </a>
@@ -58,9 +55,6 @@
         <!-- Mobile menu -->
         <div id="mobile-menu" class="md:hidden hidden">
             <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white border-t border-gray-200">
-                <a href="{{ url_for('index') }}" class="{% if request.endpoint == 'index' %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-home mr-2"></i>Dashboard
-                </a>
                 <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-boxes mr-2"></i>Inventory
                 </a>
