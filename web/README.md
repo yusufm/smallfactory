@@ -27,7 +27,7 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
    ```bash
    # Make sure you have a data repository set up
    cd ..
-   python sf.py create
+   python sf.py init
    ```
 
 3. **Start the web server**:

@@ -21,9 +21,9 @@ def main():
     parser = argparse.ArgumentParser(description="smallfactory CLI")
     subparsers = parser.add_subparsers(dest="command")
 
-    # create command
-    create_parser = subparsers.add_parser("create", help="Create a new datarepo at the given path")
-    create_parser.add_argument("path", nargs="?", default=None, help="Target directory for new datarepo (optional)")
+    # init command
+    init_parser = subparsers.add_parser("init", help="Initialize a new datarepo at the given path")
+    init_parser.add_argument("path", nargs="?", default=None, help="Target directory for new datarepo (optional)")
 
     # inventory-add
     add_parser = subparsers.add_parser("inventory-add", help="Add a new inventory item")
@@ -71,7 +71,7 @@ def main():
 
     ensure_config()
 
-    def cmd_create(args):
+    def cmd_init(args):
         github_url = input("Paste the GitHub repository URL to clone/use (or leave blank for a new local-only repo): ").strip()
 
         if args.path:
@@ -304,7 +304,7 @@ def main():
             sys.exit(1)
 
     COMMANDS = {
-        "create": cmd_create,
+        "init": cmd_init,
         "inventory-add": cmd_inventory_add,
         "inventory-list": cmd_inventory_list,
         "inventory-view": cmd_inventory_view,

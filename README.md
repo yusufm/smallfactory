@@ -16,7 +16,7 @@ Get up and running with smallfactory inventory management in a few simple steps:
 
 ```sh
 # 1. Initialize a new PLM data repository
-$ python3 sf.py create
+$ python3 sf.py init
 
 # 2. Add inventory items (id, name, quantity, location are required)
 $ python3 sf.py inventory-add \
@@ -117,7 +117,7 @@ This means anyone, anywhere, can get started in seconds—clone, install, run. N
 
 ### 2. Your PLM Data Repository
 - A normal Git repo (public or private)
-- Initialized with `python3 sf.py create`
+- Initialized with `python3 sf.py init`
 - Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
 
 - As new capabilities (like inventory management, procurement, etc.) are added, they are always introduced as new **top-level directories** in the datarepo.

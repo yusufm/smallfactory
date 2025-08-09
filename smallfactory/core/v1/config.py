@@ -67,7 +67,7 @@ def get_datarepo_path() -> pathlib.Path:
     config = load_config()
     datarepo = config.get("default_datarepo")
     if not datarepo:
-        print(f"[smallfactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'create' or set it manually.")
+        print(f"[smallfactory] Error: default_datarepo not set in {CONFIG_FILENAME}. Run 'init' or set it manually.")
         sys.exit(1)
     return pathlib.Path(datarepo).expanduser().resolve()
 
