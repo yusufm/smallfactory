@@ -16,7 +16,7 @@ import argparse
 import random
 import re
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Set
 
 import yaml
 
@@ -101,7 +101,7 @@ def generate(
     datarepo_path: Path,
     count: int,
     *,
-    id_prefix: str = "part-",
+    id_prefix: str = "p_",
     name_prefix: str = "Part ",
     start_index: int = 1,
     min_locations: int = 1,
@@ -111,6 +111,7 @@ def generate(
     seed: Optional[int] = None,
     batch_size: int = 500,
     no_git: bool = False,
+    token_limit: int = 200,
 ) -> dict:
     if seed is not None:
         random.seed(seed)
@@ -134,6 +135,8 @@ def generate(
     created = 0
     batches = 0
     paths_to_commit: List[Path] = []
+    batch_item_sfids: Set[str] = set()
+    batch_location_sfids: Set[str] = set()
 
     for i in range(start_index, start_index + count):
         sfid = f"{id_prefix}{i:05d}"
@@ -144,6 +147,8 @@ def generate(
         if not item_entity_path.exists():
             write_yaml(item_entity_path, {"sfid": sfid, "name": pname})
             paths_to_commit.append(item_entity_path)
+            # Track item token as well
+            batch_item_sfids.add(sfid)
 
         nloc = random.randint(min_locations, max_locations)
         used = set()
@@ -165,29 +170,53 @@ def generate(
             if not loc_entity_path.exists():
                 write_yaml(loc_entity_path, {"sfid": loc_sfid, "name": loc_sfid})
                 paths_to_commit.append(loc_entity_path)
+                batch_location_sfids.add(loc_sfid)
 
             # Write inventory entry for this item at this location
             qty = random.randint(min_qty, max_qty)
             inv_fp = inventory_item_file(datarepo_path, loc_sfid, sfid)
             write_yaml(inv_fp, {"quantity": qty})
             paths_to_commit.append(inv_fp)
+            # Track tokens for commit messages per SPEC (both entity and location)
+            batch_item_sfids.add(sfid)
+            batch_location_sfids.add(loc_sfid)
 
         created += 1
 
         if not no_git and git_commit_paths and len(paths_to_commit) >= batch_size:
+            token_lines: List[str] = []
+            if batch_item_sfids:
+                for eid in sorted(batch_item_sfids)[:token_limit]:
+                    token_lines.append(f"::sfid::{eid}")
+            if batch_location_sfids:
+                for lid in sorted(batch_location_sfids)[:token_limit]:
+                    token_lines.append(f"::sfid::{lid}")
             msg = (
-                f"[smallfactory] Generated synthetic inventory batch (up to {created} items)\n"
+                f"[smallFactory] Generated synthetic inventory batch (up to {created} items)\n"
                 f"::sf-action::generate\n::sf-count::{created}"
             )
+            if token_lines:
+                msg = msg + "\n" + "\n".join(token_lines)
             git_commit_paths(datarepo_path, paths_to_commit, msg)
             batches += 1
             paths_to_commit = []
+            batch_item_sfids.clear()
+            batch_location_sfids.clear()
 
     if not no_git and git_commit_paths and paths_to_commit:
+        token_lines: List[str] = []
+        if batch_item_sfids:
+            for eid in sorted(batch_item_sfids)[:token_limit]:
+                token_lines.append(f"::sfid::{eid}")
+        if batch_location_sfids:
+            for lid in sorted(batch_location_sfids)[:token_limit]:
+                token_lines.append(f"::sfid::{lid}")
         msg = (
-            f"[smallfactory] Generated synthetic inventory final batch (total {created} items)\n"
+            f"[smallFactory] Generated synthetic inventory final batch (total {created} items)\n"
             f"::sf-action::generate\n::sf-count::{created}"
         )
+        if token_lines:
+            msg = msg + "\n" + "\n".join(token_lines)
         git_commit_paths(datarepo_path, paths_to_commit, msg)
         batches += 1
 
@@ -203,6 +232,7 @@ def generate(
         "max_qty": max_qty,
         "seed": seed,
         "git": not no_git and git_commit_paths is not None,
+        "token_limit": token_limit,
     }
 
 
@@ -210,9 +240,9 @@ def main():
     p = argparse.ArgumentParser(description="Generate synthetic inventory for stress testing")
     p.add_argument("count", type=int, help="Number of items to generate")
     p.add_argument("--datarepo", help="Path to datarepo (defaults to config or ./datarepos/sf1)")
-    p.add_argument("--id-prefix", default="part-", help="Prefix for generated IDs (default: part-)")
+    p.add_argument("--id-prefix", default="p_", help="Prefix for generated SFIDs (default: p_)")
     p.add_argument("--name-prefix", default="Part ", help="Prefix for generated names (default: 'Part ')")
-    p.add_argument("--start-index", type=int, default=1, help="Starting index for IDs (default: 1)")
+    p.add_argument("--start-index", type=int, default=1, help="Starting index for SFIDs (default: 1)")
     p.add_argument("--min-locations", type=int, default=1, help="Min locations per item (default: 1)")
     p.add_argument("--max-locations", type=int, default=10, help="Max locations per item (default: 10)")
     p.add_argument("--min-qty", type=int, default=0, help="Min quantity per location (default: 0)")
@@ -220,6 +250,7 @@ def main():
     p.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     p.add_argument("--batch-size", type=int, default=500, help="Approx number of files per commit batch (default: 500)")
     p.add_argument("--no-git", action="store_true", help="Do not commit; just write files")
+    p.add_argument("--token-limit", type=int, default=200, help="Max ::sfid:: tokens per type (entity/location) to include in each commit message")
 
     args = p.parse_args()
 
@@ -239,6 +270,7 @@ def main():
         seed=args.seed,
         batch_size=args.batch_size,
         no_git=args.no_git,
+        token_limit=args.token_limit,
     )
 
     print(yaml.safe_dump(summary, sort_keys=False))
