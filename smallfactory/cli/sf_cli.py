@@ -63,18 +63,18 @@ def main():
     inv_ls = inv_sub.add_parser("ls", aliases=["list"], help="List inventory items")
 
     inv_show = inv_sub.add_parser("show", aliases=["view"], help="Show an inventory item")
-    inv_show.add_argument("id", help="Item ID")
+    inv_show.add_argument("sfid", help="Item SFID")
 
     inv_set = inv_sub.add_parser("set", help="Set metadata fields for an item")
-    inv_set.add_argument("id", help="Item ID")
+    inv_set.add_argument("sfid", help="Item SFID")
     inv_set.add_argument("pairs", nargs="+", help="key=value pairs to set")
 
     inv_rm = inv_sub.add_parser("rm", aliases=["delete"], help="Remove an inventory item")
-    inv_rm.add_argument("id", help="Item ID")
+    inv_rm.add_argument("sfid", help="Item SFID")
     inv_rm.add_argument("-y", "--yes", action="store_true", help="Confirm deletion without prompt")
 
-    inv_adjust = inv_sub.add_parser("adjust", help="Adjust quantity for an item")
-    inv_adjust.add_argument("id", help="Item ID")
+    inv_adjust = inv_sub.add_parser("adjust", help="Adjust quantity for an item/location")
+    inv_adjust.add_argument("sfid", help="Item SFID")
     inv_adjust.add_argument("delta", type=int, help="Signed quantity delta (e.g. +5, -2)")
     inv_adjust.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
 
@@ -209,7 +209,7 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(added, sort_keys=False))
         else:
-            print(f"[smallfactory] Added inventory item '{added['id']}' to datarepo at {datarepo_path}")
+            print(f"[smallfactory] Added inventory item '{added['sfid']}' to datarepo at {datarepo_path}")
 
     def cmd_inventory_list(args):
         datarepo_path = _repo_path()
@@ -224,7 +224,7 @@ def main():
                 print("[smallfactory] No inventory items found.")
                 sys.exit(0)
             # Dynamically determine all fields
-            required = ["id", "name", "quantity", "location"]
+            required = ["sfid", "name", "quantity", "location"]
             extra_fields = set()
             for item in items:
                 extra_fields.update(item.keys())
@@ -250,7 +250,7 @@ def main():
                 locs = item.get("locations", [])
                 if isinstance(locs, list) and len(locs) > 1:
                     try:
-                        details = view_item(datarepo_path, item.get("id", ""))
+                        details = view_item(datarepo_path, item.get("sfid", ""))
                         loc_map = details.get("locations", {})
                     except Exception:
                         loc_map = {}
@@ -258,7 +258,7 @@ def main():
                         qty = loc_map.get(loc_name, "")
                         sub_row = []
                         for f in fields:
-                            if f == "id" or f == "name":
+                            if f == "sfid" or f == "name":
                                 val = ""
                             elif f == "quantity":
                                 val = qty
@@ -272,7 +272,7 @@ def main():
     def cmd_inventory_view(args):
         datarepo_path = _repo_path()
         try:
-            item = view_item(datarepo_path, args.id)
+            item = view_item(datarepo_path, args.sfid)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -294,7 +294,7 @@ def main():
                 sys.exit(1)
             field, value = pair.split("=", 1)
             try:
-                last_item = update_item(datarepo_path, args.id, field.strip(), value.strip())
+                last_item = update_item(datarepo_path, args.sfid, field.strip(), value.strip())
             except Exception as e:
                 print(f"[smallfactory] Error: {e}")
                 sys.exit(1)
@@ -309,18 +309,18 @@ def main():
             print(yaml.safe_dump(last_item, sort_keys=False))
         else:
             changed = ", ".join(args.pairs)
-            print(f"[smallfactory] Updated {changed} for inventory item '{args.id}' in datarepo at {datarepo_path}")
+            print(f"[smallfactory] Updated {changed} for inventory item '{args.sfid}' in datarepo at {datarepo_path}")
 
     def cmd_inventory_delete(args):
         datarepo_path = _repo_path()
         fmt = _fmt()
         if fmt == "human" and not getattr(args, "yes", False) and sys.stdout.isatty():
-            confirm = input(f"Are you sure you want to delete inventory item '{args.id}'? [y/N]: ").strip().lower()
+            confirm = input(f"Are you sure you want to delete inventory item '{args.sfid}'? [y/N]: ").strip().lower()
             if confirm not in ("y", "yes"):
                 print("[smallfactory] Delete cancelled.")
                 sys.exit(0)
         try:
-            item = delete_item(datarepo_path, args.id)
+            item = delete_item(datarepo_path, args.sfid)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -330,12 +330,12 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            print(f"[smallfactory] Deleted inventory item '{args.id}' from datarepo at {datarepo_path}")
+            print(f"[smallfactory] Deleted inventory item '{args.sfid}' from datarepo at {datarepo_path}")
 
     def cmd_inventory_adjust(args):
         datarepo_path = _repo_path()
         try:
-            item = adjust_quantity(datarepo_path, args.id, args.delta, location=args.location)
+            item = adjust_quantity(datarepo_path, args.sfid, args.delta, location=args.location)
         except Exception as e:
             print(f"[smallfactory] Error: {e}")
             sys.exit(1)
@@ -347,7 +347,7 @@ def main():
             print(yaml.safe_dump(item, sort_keys=False))
         else:
             loc = f" at '{args.location}'" if args.location else ""
-            print(f"[smallfactory] Adjusted quantity for inventory item '{args.id}'{loc} by {args.delta} in datarepo at {datarepo_path}")
+            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sfid}'{loc} by {args.delta} in datarepo at {datarepo_path}")
 
     def cmd_web(args):
         try:

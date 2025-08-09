@@ -17,7 +17,7 @@
                     <li>
                         <div class="flex items-center">
                             <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
-                            <span class="text-gray-900 font-medium">{{ item.id }}</span>
+                            <span class="text-gray-900 font-medium">{{ item.sfid }}</span>
                         </div>
                     </li>
                 </ol>
@@ -25,10 +25,10 @@
             <h1 class="text-3xl font-bold text-gray-900 mt-2">{{ item.name }}</h1>
         </div>
         <div class="flex space-x-3">
-            <a href="{{ url_for('inventory_edit', item_id=item.id) }}" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+            <a href="{{ url_for('inventory_edit', item_id=item.sfid) }}" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
                 <i class="fas fa-edit mr-2"></i>Edit
             </a>
-            <button onclick="deleteItem('{{ item.id }}')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+            <button onclick="deleteItem('{{ item.sfid }}')" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
                 <i class="fas fa-trash mr-2"></i>Delete
             </button>
         </div>
@@ -45,8 +45,8 @@
                 <div class="px-6 py-4">
                     <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
                         <div>
-                            <dt class="text-sm font-medium text-gray-500">ID</dt>
-                            <dd class="mt-1 text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">{{ item.id }}</dd>
+                            <dt class="text-sm font-medium text-gray-500">SFID</dt>
+                            <dd class="mt-1 text-sm text-gray-900 font-mono bg-gray-50 px-2 py-1 rounded">{{ item.sfid }}</dd>
                         </div>
                         <div>
                             <dt class="text-sm font-medium text-gray-500">Name</dt>
@@ -59,7 +59,7 @@
                         </div>
                         {% endif %}
                         {% for field_name, field_spec in field_specs.items() %}
-                            {% if field_name not in ['id', 'name', 'description', 'quantity', 'location'] and field_name in item and item[field_name] %}
+                            {% if field_name not in ['sfid', 'name', 'description', 'quantity', 'location'] and field_name in item and item[field_name] %}
                             <div>
                                 <dt class="text-sm font-medium text-gray-500">{{ field_name.replace('_', ' ').title() }}</dt>
                                 <dd class="mt-1 text-sm text-gray-900">{{ item[field_name] }}</dd>
@@ -160,7 +160,7 @@
                     <button onclick="showAdjustModal()" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                         <i class="fas fa-plus-minus mr-2"></i>Adjust Quantity
                     </button>
-                    <a href="{{ url_for('inventory_edit', item_id=item.id) }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                    <a href="{{ url_for('inventory_edit', item_id=item.sfid) }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                         <i class="fas fa-edit mr-2"></i>Edit Details
                     </a>
                     <a href="{{ url_for('inventory_list') }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
@@ -180,7 +180,7 @@
                 <i class="fas fa-plus-minus text-blue-600"></i>
             </div>
             <h3 class="text-lg font-medium text-gray-900 text-center mb-4">Adjust Quantity</h3>
-            <form id="adjust-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.id) }}">
+            <form id="adjust-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.sfid) }}">
                 <div class="space-y-4">
                     {% if item.locations and item.locations|length > 1 %}
                     <div>
@@ -239,7 +239,7 @@
                 <i class="fas fa-map-marker-alt text-green-600"></i>
             </div>
             <h3 class="text-lg font-medium text-gray-900 text-center mb-4">Add Location</h3>
-            <form id="add-location-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.id) }}">
+            <form id="add-location-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.sfid) }}">
                 <div class="space-y-4">
                     <div>
                         <label for="add-location-name" class="block text-sm font-medium text-gray-700">Location Name</label>
@@ -329,7 +329,7 @@ function deleteItem(itemId) {
 document.getElementById('confirm-delete').addEventListener('click', function() {
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '{{ url_for("inventory_delete", item_id=item.id) }}';
+    form.action = '{{ url_for("inventory_delete", item_id=item.sfid) }}';
     document.body.appendChild(form);
     form.submit();
 });

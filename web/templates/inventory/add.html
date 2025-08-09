@@ -47,7 +47,7 @@
                                 <input type="number" name="{{ field_name }}" id="{{ field_name }}" min="0" 
                                     class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="{{ field_spec.description }}" value="{{ form_data.get(field_name, '') }}" required>
-                            {% elif field_name == 'id' %}
+                            {% elif field_name == 'sfid' %}
                                 <input type="text" name="{{ field_name }}" id="{{ field_name }}" 
                                     class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                     placeholder="e.g. PART-001, resistor_10k, sensor.temp" value="{{ form_data.get(field_name, '') }}" required>
@@ -152,11 +152,11 @@ function addCustomField() {
     container.appendChild(fieldDiv);
 }
 
-// Add real-time validation for ID field
+// Add real-time validation for SFID field
 document.addEventListener('DOMContentLoaded', function() {
-    const idField = document.getElementById('id');
-    if (idField) {
-        idField.addEventListener('input', function() {
+    const sfidField = document.getElementById('sfid');
+    if (sfidField) {
+        sfidField.addEventListener('input', function() {
             const value = this.value;
             const isValid = /^[A-Za-z0-9._-]*$/.test(value);
             

@@ -17,12 +17,12 @@ def ensure_inventory_dir(datarepo_path: Path) -> Path:
 
 # -------------------------------
 # Helpers for new storage layout
-# inventory/{id}/part.yml
-# inventory/{id}/{location}.yml
+# inventory/{sfid}/part.yml
+# inventory/{sfid}/{location}.yml
 # -------------------------------
 
-def _part_dir(datarepo_path: Path, id: str) -> Path:
-    return ensure_inventory_dir(datarepo_path) / id
+def _part_dir(datarepo_path: Path, sfid: str) -> Path:
+    return ensure_inventory_dir(datarepo_path) / sfid
 
 
 def _part_meta_path(part_dir: Path) -> Path:
@@ -73,7 +73,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
                 if re.fullmatch(pattern, sval) is None:
                     raise ValueError(f"Field '{k}' does not match expected format")
     # Parse and validate
-    id = str(item["id"]).strip()
+    sfid = str(item["sfid"]).strip()
     name = str(item["name"]).strip()
     location = str(item["location"]).strip()
     try:
@@ -85,7 +85,7 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
     _validate_location_name(location)
 
     # Prepare paths
-    pdir = _part_dir(datarepo_path, id)
+    pdir = _part_dir(datarepo_path, sfid)
     meta_path = _part_meta_path(pdir)
     if meta_path.exists():
         # Explicitly disallow creating an item when the ID already exists.
@@ -99,9 +99,9 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
         loc_path = _location_file(pdir, location)
 
         # Write files
-        meta = {"id": id, "name": name}
+        meta = {"sfid": sfid, "name": name}
         # include any extra fields except quantity/location
-        extras = {k: v for k, v in item.items() if k not in {"id", "name", "quantity", "location"}}
+        extras = {k: v for k, v in item.items() if k not in {"sfid", "name", "quantity", "location"}}
         if extras:
             meta.update(extras)
         _write_yaml(meta_path, meta)
@@ -109,9 +109,9 @@ def add_item(datarepo_path: Path, item: dict) -> dict:
 
         # Commit both files together
         commit_lines = [
-            f"[smallfactory] Added inventory item {id} ({name})",
+            f"[smallfactory] Added inventory item {sfid} ({name})",
             "::sf-action::add",
-            f"::sf-id::{id}",
+            f"::sf-sfid::{sfid}",
             f"::sf-field::name={name}",
             f"::sf-field::location={location}",
             f"::sf-field::quantity={quantity}",
@@ -141,29 +141,29 @@ def list_items(datarepo_path: Path) -> list[dict]:
             total_qty += qty
             locname = lf.stem
             locations.append(locname)
-        # derive id from metadata or directory name (no legacy '' support)
-        _id = meta.get("id") or pdir.name
+        # derive sfid from metadata or directory name (no legacy '' support)
+        _sfid = meta.get("sfid") or pdir.name
         items.append({
-            "id": _id,
+            "sfid": _sfid,
             "name": meta.get("name"),
             "quantity": total_qty,
             # For human output, show multiple or single location name
             "location": locations[0] if len(locations) == 1 else ("multiple" if locations else ""),
             "locations": locations,
             # include all extra metadata fields
-            **{k: v for k, v in meta.items() if k not in {"id", "name"}},
+            **{k: v for k, v in meta.items() if k not in {"sfid", "name"}},
         })
     return items
 
 
-def view_item(datarepo_path: Path, id: str) -> dict:
-    pdir = _part_dir(datarepo_path, id)
+def view_item(datarepo_path: Path, sfid: str) -> dict:
+    pdir = _part_dir(datarepo_path, sfid)
     meta_path = _part_meta_path(pdir)
     if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{id}' not found")
+        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
     meta = _read_yaml(meta_path)
-    # Normalize output to always include 'id'
-    out_id = meta.get("id") or id
+    # Normalize output to always include 'sfid'
+    out_sfid = meta.get("sfid") or sfid
     locations: Dict[str, int] = {}
     total_qty = 0
     for lf in sorted(pdir.glob("*.yml")):
@@ -176,15 +176,15 @@ def view_item(datarepo_path: Path, id: str) -> dict:
         total_qty += qty
     # Include all metadata fields present in part.yml
     base = {k: v for k, v in meta.items()}
-    return {**base, "id": out_id, "quantity": total_qty, "locations": locations}
+    return {**base, "sfid": out_sfid, "quantity": total_qty, "locations": locations}
 
 
-def update_item(datarepo_path: Path, id: str, field: str, value: str) -> dict:
+def update_item(datarepo_path: Path, sfid: str, field: str, value: str) -> dict:
     # Update metadata in part.yml only (not quantities or locations here)
-    pdir = _part_dir(datarepo_path, id)
+    pdir = _part_dir(datarepo_path, sfid)
     meta_path = _part_meta_path(pdir)
     if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{id}' not found")
+        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
     item = _read_yaml(meta_path)
     if field in {"quantity", "location", "locations"}:
         raise ValueError("Use inventory-adjust to change quantities; location files are managed per-location")
@@ -200,23 +200,23 @@ def update_item(datarepo_path: Path, id: str, field: str, value: str) -> dict:
     item[field] = value
     _write_yaml(meta_path, item)
     commit_msg = (
-        f"[smallfactory] Updated {field} for inventory item {id}\n"
-        f"::sf-action::update\n::sf-id::{id}\n::sf-field::{field}\n::sf-value::{item[field]}"
+        f"[smallfactory] Updated {field} for inventory item {sfid}\n"
+        f"::sf-action::update\n::sf-sfid::{sfid}\n::sf-field::{field}\n::sf-value::{item[field]}"
     )
     git_commit_and_push(datarepo_path, meta_path, commit_msg)
     return item
 
 
-def delete_item(datarepo_path: Path, id: str) -> dict:
-    pdir = _part_dir(datarepo_path, id)
+def delete_item(datarepo_path: Path, sfid: str) -> dict:
+    pdir = _part_dir(datarepo_path, sfid)
     meta_path = _part_meta_path(pdir)
     if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{id}' not found")
+        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
     meta = _read_yaml(meta_path)
     # Collect all files to remove
     files = [fp for fp in pdir.glob("*.yml")]  # includes part.yml and all locations
     commit_msg = (
-        f"[smallfactory] Deleted inventory item {id} ({meta.get('name','')})\n::sf-action::delete\n::sf-id::{id}"
+        f"[smallfactory] Deleted inventory item {sfid} ({meta.get('name','')})\n::sf-action::delete\n::sf-sfid::{sfid}"
     )
     # Stage deletions via git rm and commit
     git_commit_paths(datarepo_path, files, commit_msg, delete=True)
@@ -228,13 +228,13 @@ def delete_item(datarepo_path: Path, id: str) -> dict:
     return meta
 
 
-def adjust_quantity(datarepo_path: Path, id: str, delta: int, location: Optional[str] = None) -> dict:
+def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Optional[str] = None) -> dict:
     """Adjust quantity for a specific location. If location is not provided and
     the part has a single location, adjust that one. Otherwise, require location."""
-    pdir = _part_dir(datarepo_path, id)
+    pdir = _part_dir(datarepo_path, sfid)
     meta_path = _part_meta_path(pdir)
     if not meta_path.exists():
-        raise FileNotFoundError(f"Inventory item '{id}' not found")
+        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
     meta = _read_yaml(meta_path)
 
     loc_files = [lf for lf in pdir.glob("*.yml") if lf.name != "part.yml"]
@@ -262,10 +262,10 @@ def adjust_quantity(datarepo_path: Path, id: str, delta: int, location: Optional
     data["quantity"] = new_qty
     _write_yaml(lf, data)
     commit_msg = (
-        f"[smallfactory] Adjusted quantity for inventory item {id} at {location} by {delta}\n"
-        f"::sf-action::adjust\n::sf-id::{id}\n::sf-location::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
+        f"[smallfactory] Adjusted quantity for inventory item {sfid} at {location} by {delta}\n"
+        f"::sf-action::adjust\n::sf-sfid::{sfid}\n::sf-location::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
     )
     git_commit_and_push(datarepo_path, lf, commit_msg)
     # Return combined view for convenience
-    out = view_item(datarepo_path, id)
+    out = view_item(datarepo_path, sfid)
     return out
