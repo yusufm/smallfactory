@@ -12,7 +12,7 @@ def git_commit_and_push(repo_path: Path, file_path: Path, message: str) -> None:
         if "origin" in remotes.stdout.split():
             subprocess.run(["git", "push", "origin", "HEAD"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
-        print("[smallfactory] Warning: Failed to commit or push changes to git.")
+        print("[smallFactory] Warning: Failed to commit or push changes to git.")
 
 
 def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: bool = False) -> None:
@@ -40,4 +40,4 @@ def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: b
         if "origin" in remotes.stdout.split():
             subprocess.run(["git", "push", "origin", "HEAD"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError:
-        print("[smallfactory] Warning: Failed to commit or push changes to git.")
+        print("[smallFactory] Warning: Failed to commit or push changes to git.")

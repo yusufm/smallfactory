@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Stickers for {{ entity.sfid }} - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-6">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('entities_list') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-id-card mr-1"></i>Entities
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="text-gray-600 hover:text-gray-900">{{ entity.sfid }}</a>
+          </div>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Stickers</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- Controls -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h1 class="text-2xl font-bold text-gray-900">Generate Sticker for {{ entity.get('name', entity.sfid) }}</h1>
+          <div class="flex items-center space-x-3">
+            <a href="{{ url_for('stickers_batch') }}" class="text-purple-700 hover:text-purple-900 text-sm"><i class="fas fa-layer-group mr-1"></i>Batch PDF</a>
+            <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="text-blue-600 hover:text-blue-900 text-sm"><i class="fas fa-arrow-left mr-1"></i>Back to entity</a>
+          </div>
+        </div>
+        <form method="POST" class="px-6 py-4 space-y-4">
+          {% if error %}
+          <div class="p-3 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+            <i class="fas fa-exclamation-triangle mr-1"></i>{{ error }}
+          </div>
+          {% endif %}
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Code type</label>
+              <div class="mt-1 text-sm text-gray-800">QR Code</div>
+              <p class="mt-1 text-xs text-gray-500">Requires <span class="font-mono">qrcode[pil]</span> and <span class="font-mono">pillow</span>.</p>
+              <div class="mt-2 text-xs text-gray-600">Available: QR {{ '✅' if deps.qrcode else '❌' }}</div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Sticker size (inches)</label>
+              <input type="text" name="size_in" value="{{ size_text }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="2x1">
+              <p class="mt-1 text-xs text-gray-500">WIDTHxHEIGHT in inches, e.g., 2x1</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">DPI</label>
+              <input type="number" min="72" step="1" name="dpi" value="{{ dpi_text }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="300">
+              <p class="mt-1 text-xs text-gray-500">Dots per inch (e.g., 300 for printer-quality output)</p>
+            </div>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Fields (comma-separated)</label>
+            <input type="text" name="fields" value="{{ selected_fields | join(', ') }}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., manufacturer, value, size">
+            {% if suggested_fields %}
+            <p class="mt-1 text-xs text-gray-500">Suggestions: {{ suggested_fields | join(', ') }}</p>
+            {% endif %}
+          </div>
+          <div class="pt-2">
+            <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+              <i class="fas fa-qrcode mr-2"></i>Generate
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Preview -->
+    <div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Preview</h2>
+        </div>
+        <div class="p-6">
+          {% if generated and generated.png_base64 %}
+            <img src="data:image/png;base64,{{ generated.png_base64 }}" alt="Sticker preview" class="w-full border border-gray-200 rounded">
+            <a download="{{ generated.filename }}" href="data:image/png;base64,{{ generated.png_base64 }}" class="mt-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+              <i class="fas fa-download mr-2"></i>Download PNG
+            </a>
+            <form method="POST" action="{{ url_for('stickers_entity_pdf', sfid=entity.sfid) }}" class="mt-3 inline-block ml-2">
+              <input type="hidden" name="size_in" value="{{ size_text }}">
+              <input type="hidden" name="dpi" value="{{ dpi_text }}">
+              <input type="hidden" name="fields" value="{{ selected_fields | join(', ') }}">
+              <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700">
+                <i class="fas fa-file-pdf mr-2"></i>Download PDF
+              </button>
+            </form>
+          {% else %}
+            <div class="text-sm text-gray-600">No sticker yet. Adjust options and click Generate.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

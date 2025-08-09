@@ -7,7 +7,7 @@ import yaml
 import re
 
 from .gitutils import git_commit_and_push
-from .config import get_entity_field_specs_for_sfid
+from .config import get_entity_field_specs_for_sfid, validate_sfid
 
 
 # -------------------------------
@@ -24,8 +24,8 @@ def _entities_dir(datarepo_path: Path) -> Path:
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
-    if "/" in sfid or "\\" in sfid:
-        raise ValueError("sfid cannot contain path separators")
+    # Validate sfid conforms to SPEC (regex and safety)
+    validate_sfid(sfid)
     return _entities_dir(datarepo_path) / f"{sfid}.yml"
 
 
@@ -92,6 +92,7 @@ def list_entities(datarepo_path: Path) -> List[dict]:
 
 
 def get_entity(datarepo_path: Path, sfid: str) -> dict:
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -105,6 +106,7 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
 def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None) -> dict:
     if not sfid:
         raise ValueError("sfid is required")
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if fp.exists():
         raise FileExistsError(f"Entity '{sfid}' already exists")
@@ -116,7 +118,7 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     # Validate against type-aware specs before writing
     _validate_against_specs(datarepo_path, sfid, data)
     _write_yaml(fp, data)
-    commit_msg = f"[smallfactory] Created entity {sfid}\n::sfid::{sfid}"
+    commit_msg = f"[smallFactory] Created entity {sfid}\n::sfid::{sfid}"
     git_commit_and_push(datarepo_path, fp, commit_msg)
     return data
 
@@ -124,6 +126,7 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
     if not field or field == "sfid":
         raise ValueError("Invalid or immutable field: 'sfid'")
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -135,7 +138,7 @@ def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> di
     _validate_against_specs(datarepo_path, sfid, data)
     _write_yaml(fp, data)
     commit_msg = (
-        f"[smallfactory] Updated entity {sfid} field {field}\n"
+        f"[smallFactory] Updated entity {sfid} field {field}\n"
         f"::sfid::{sfid}\n::sf-field::{field}\n::sf-value::{value}"
     )
     git_commit_and_push(datarepo_path, fp, commit_msg)
@@ -147,6 +150,7 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
         raise ValueError("updates must be a non-empty dict")
     if "sfid" in updates:
         raise ValueError("Cannot update 'sfid' via this method")
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -159,7 +163,7 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
     _write_yaml(fp, data)
     # Summarize updated keys
     keys = ", ".join(sorted(updates.keys()))
-    commit_msg = f"[smallfactory] Updated entity {sfid} fields: {keys}\n::sfid::{sfid}"
+    commit_msg = f"[smallFactory] Updated entity {sfid} fields: {keys}\n::sfid::{sfid}"
     git_commit_and_push(datarepo_path, fp, commit_msg)
     return data
 
@@ -187,6 +191,7 @@ def retire_entity(
     - Sets fields: retired: true, retired_at: ISO-8601 UTC, retired_reason: <reason?>
     - Does not touch inventory; references remain valid historically.
     """
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -201,7 +206,7 @@ def retire_entity(
         data["retired_reason"] = str(reason)
     _write_yaml(fp, data)
     # Commit
-    base_msg = f"[smallfactory] Retired entity {sfid}\n::sfid::{sfid}\n::sf-retired::true"
+    base_msg = f"[smallFactory] Retired entity {sfid}\n::sfid::{sfid}\n::sf-retired::true"
     if reason:
         base_msg += f"\n::sf-reason::{reason}"
     git_commit_and_push(datarepo_path, fp, base_msg)
