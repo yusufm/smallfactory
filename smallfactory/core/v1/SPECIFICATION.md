@@ -35,7 +35,7 @@ This document defines the Core Specification (the unbreakable tenets/conventions
   Given the same inputs and repository state, operations produce the same results.
 
 - Consistent UX contract.
-  Supported output modes (`human`, `json`, `yaml`) and required fields (`id`, `name`, `quantity`, `location`) are stable within the major version.
+  Supported output modes (`human`, `json`, `yaml`) and required fields (`sfid`, `name`, `quantity`, `location`) are stable within the major version.
 
 - Predictable repository layout.
   Top-level directories (e.g., `inventory/`, future: `prototypes/`, `finished_goods/`) are stable. New capabilities are added as new top-level dirs, not by reshuffling existing ones.
@@ -60,7 +60,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
       ```
 
 - Commit metadata
-  - Commits that affect an entity MUST include a machine-parsable token: `::sfid::<SFID>`.
+  - Commits that affect an entity MUST include a machine-parsable token: `::sfid::<SFID>`. It should be concise and provide enough information to undo the change.
 
 - Entity store and lifecycle
   - The data repository MUST contain a root directory `entities/`.
