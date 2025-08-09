@@ -20,7 +20,7 @@ This document defines the Core Specification (the unbreakable tenets/conventions
   YAML is the primary storage format; JSON is supported for machine I/O. Outputs may be human, YAML, or JSON.
 
 - Single source of truth API.
-  The CLI and Web UI must delegate to the Core API (this package) for business logic.
+  All tools and interfaces (CLI, Web, scripts, integrations) MUST call the Core API for all reads and writes to ensure that this specification is maintained.
 
 - Backward compatibility by default.
   Within a major version, changes are additive and non-breaking. Breaking changes require a major version bump.
@@ -52,33 +52,22 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 - Purpose
   - `sfid` is globally unique across all entities and never reused (temporal uniqueness).
   - `sfid` MUST be safe as a file or directory name across Windows/macOS/Linux.
-  - Human-friendly, entity-scoped IDs (e.g., inventory `id`) may exist but are not canonical.
 
   - Format
-    - MUST begin with a registered lowercase prefix followed by an underscore (e.g., `loc_`).
-    - After the prefix, allowed characters are: `a–z`, `0–9`, `_`, `-` (underscore, hyphen).
-    - No spaces, dots `.`, slashes `/`, backslashes `\\`, or other special characters.
-    - MUST be lowercase ASCII. Tools MUST enforce lowercase; non-lowercase inputs are invalid.
-    - Length SHOULD be between 3 and 64 characters inclusive.
     - Regex (authoritative pattern):
       ```regex
       ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
       ```
-      - Anchored; enforces total length 3–64.
-      - Requires lowercase prefix + underscore.
-      - Allows only `a–z`, `0–9`, `_`, `-` after the prefix.
-      - Disallows ending with `_` or `-`.
-      - Use ASCII character classes. Values MUST be lowercase.
 
 - Commit metadata
   - Commits that affect an entity MUST include a machine-parsable token: `::sfid::<SFID>`.
 
-- Registry and lifecycle
-  - The data repository MUST contain a root directory `sfids/`.
-  - Each `sfid` MUST have a registry file at `sfids/<SFID>.yml` that persists forever, even if the entity is retired.
-  - The registry file provides all the metadata for the entity and enforces temporal uniqueness.
+- Entity store and lifecycle
+  - The data repository MUST contain a root directory `entities/`.
+  - Each `sfid` MUST have a canonical entity file at `entities/<SFID>.yml` that persists forever, even if the entity is retired.
+  - This file is the canonical metadata for the entity and enforces temporal uniqueness.
 
-  Example `sfids/loc_a1.yml`:
+  Example `entities/loc_a1.yml`:
 
   ```yaml
   sfid: loc_a1
