@@ -101,9 +101,57 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 ### Module: inventory
 
 - Top-level directory: `inventory/`
-- Purpose: Track parts and storage locations.
-- Entities in scope: Location (`l_`), Part (`p_`).
-- Canonical record: `entities/<sfid>.yml` (persists forever). Module files under `inventory/` are non-canonical views/artifacts.
+- Purpose: Represent on-hand quantities per location (`l_*`) by entity `sfid`. These files are operational state; canonical entity metadata lives in `entities/<SFID>.yml`.
+- Scope: Location (`l_*`) and any storable entity (`p_*` typically, but any valid `sfid` allowed).
+
+#### Repository layout
+
+```
+inventory/
+  l_a1/                      # each subdirectory MUST be a location sfid (prefix `l_`)
+    p_m3x10.yml              # file name is the stored entity sfid
+    p_m3x10_lot23.yml
+    p_1kr.yml
+    tool_caliper.yml         # non-part entity also permitted
+  l_bin7/
+    p_m3x10.yml
+  l_qc/
+    p_stm32-c_sn39402.yml
+```
+
+Rules:
+- Every direct child of `inventory/` MUST be a directory named exactly as a location `sfid` (e.g., `l_a1`, `l_bin7`).
+- Inside each location directory, each YAML file MUST be named exactly as the stored entity `sfid` with a `.yml` extension.
+- There is at most one file per entity per location. The file encodes the current on-hand quantity at that location.
+- Inventory files are non-canonical; history/audit is derived from Git commits.
+
+#### File schema (per `inventory/<l_*>/<SFID>.yml`)
+
+Required fields:
+- `quantity` (integer, >= 0): the on-hand count at this location. Counts SHOULD be in the entity's base unit (typically `ea`).
+
+Other fields:
+- Implementations MAY include additional optional keys as needed for workflows (e.g., labels, thresholds, notes).
+- Readers can expect additional optional keys, but should ignore unknown keys.
+- Writers SHOULD preserve optional keys when updating `quantity` (read-modify-write behavior).
+
+Example (`inventory/l_shelf_a1/p_m3x10.yml`):
+
+```yaml
+quantity: 125
+```
+
+Example (non-part entity, `inventory/l_qc_desk/tool_caliper.yml`):
+
+```yaml
+quantity: 1
+```
+
+Additional guidance:
+- Zero quantities are permitted to stage planned placements, but it is RECOMMENDED to remove the file to represent no stock at a location.
+- Do not duplicate entity metadata here (name, description, manufacturer, lot/serial); that lives in `entities/<SFID>.yml`.
+- Git history is the audit trail; avoid redundant timestamps. Commit history provides change chronology.
+- Commit messages for inventory changes MUST include both tokens: `::sfid::<ENTITY_SFID>` and `::sfid::<LOCATION_SFID>`.
 
 ---
 

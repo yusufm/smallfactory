@@ -17,22 +17,9 @@ DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
 # Defaults used to bootstrap a fresh config file and as fallback if missing.
 INVENTORY_DEFAULT_FIELD_SPECS = {
-    # Core identifiers (required)
-    "sfid": {"required": True, "regex": r"^[A-Za-z0-9._-]+$", "description": "Primary key (smallFactory ID) for the inventory item."},
-    "name": {"required": True, "regex": r"^.{1,200}$", "description": "Human-readable item name."},
-
-    # Operational inputs (required when creating a record/location)
-    "location_sfid": {"required": True, "regex": r"^[A-Za-z0-9 ._-]+$", "description": "Storage location name."},
-    "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "Quantity as non-negative integer (per location)."},
-
-    # Common but optional metadata (regex allows empty)
-    "description": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Freeform description (<=500 chars)."},
-    "category": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Category or family."},
-    "manufacturer": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Manufacturer name."},
-    "mpn": {"required": False, "regex": r"^[A-Za-z0-9 ._\-/#+]*$", "description": "Manufacturer Part Number."},
-    "vendor": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Preferred supplier/vendor."},
-    "spn": {"required": False, "regex": r"^[A-Za-z0-9 ._\-/#+]*$", "description": "Supplier Part Number."},
-    "notes": {"required": False, "regex": r"^$|^.{1,500}$", "description": "Additional notes."},
+    # Only required field for inventory files per SPEC: quantity (non-negative integer).
+    # Other keys may be present and should be ignored by readers and preserved by writers.
+    "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "On-hand quantity as non-negative integer."},
 }
 
 
