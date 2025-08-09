@@ -93,49 +93,40 @@ def inventory_view(item_id):
 
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def inventory_add():
-    """Add a new inventory item."""
+    """Adjust inventory quantity (global form).
+
+    This page allows adjusting an item's quantity at a specific location
+    using a signed delta (positive to add, negative to subtract).
+    """
     field_specs = get_inventory_field_specs()
     form_data = {}
     
     if request.method == 'POST':
         # Always preserve form data for potential re-display
-        form_data = {key: value for key, value in request.form.items() if value.strip()}
-        
-        try:
-            # Build item dict from form data
-            item_data = {}
-            for field_name in field_specs.keys():
-                value = request.form.get(field_name, '').strip()
-                if value:  # Only include non-empty values
-                    item_data[field_name] = value
-            
-            # Add any custom fields
-            for key, value in request.form.items():
-                if key not in field_specs and key.strip() and value.strip():
-                    item_data[key] = value.strip()
-            
-            datarepo_path = get_datarepo_path()
-            # Proactively prevent duplicate SFIDs for better UX
-            candidate_id = item_data.get("sfid")
-            if candidate_id:
-                try:
-                    _ = view_item(datarepo_path, candidate_id)
-                    # If no exception, the item exists already
-                    flash(f"Inventory item '{candidate_id}' already exists. Choose a different SFID.", 'error')
-                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
-                except FileNotFoundError:
-                    pass  # OK, proceed to create
-                except Exception as ve:
-                    # Unexpected error when checking existence
-                    flash(f"Error validating SFID: {ve}", 'error')
-                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
+        form_data = {key: value for key, value in request.form.items() if str(value).strip()}
 
-            add_item(datarepo_path, item_data)
-            flash(f"Successfully added inventory item: {item_data.get('sfid')}", 'success')
-            return redirect(url_for('inventory_view', item_id=item_data.get('sfid')))
+        try:
+            # Extract required fields for adjustment
+            sfid = request.form.get('sfid', '').strip()
+            location = request.form.get('location', '').strip()
+            delta_raw = request.form.get('delta', '0').strip()
+
+            if not sfid:
+                raise ValueError("Missing required field: sfid")
+            if not location:
+                raise ValueError("Missing required field: location")
+            try:
+                delta = int(delta_raw)
+            except Exception:
+                raise ValueError("delta must be an integer (can be negative)")
+
+            datarepo_path = get_datarepo_path()
+            adjust_quantity(datarepo_path, sfid, delta, location)
+            flash(f"Successfully adjusted '{sfid}' at {location} by {delta}", 'success')
+            return redirect(url_for('inventory_view', item_id=sfid))
         except Exception as e:
-            flash(f'Error adding item: {e}', 'error')
-            # Form data is already preserved in form_data variable for re-display
+            flash(f'Error adjusting quantity: {e}', 'error')
+            # fall through to re-render form
     
     return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
 

@@ -56,11 +56,11 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <a href="{{ url_for('inventory_add') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
                 <div class="p-2 rounded-md bg-blue-100 group-hover:bg-blue-200 transition-colors">
-                    <i class="fas fa-plus text-blue-600"></i>
+                    <i class="fas fa-right-left text-blue-600"></i>
                 </div>
                 <div class="ml-3">
-                    <p class="text-sm font-medium text-gray-900">Add Stock</p>
-                    <p class="text-xs text-gray-500">Create new inventory</p>
+                    <p class="text-sm font-medium text-gray-900">Adjust Stock</p>
+                    <p class="text-xs text-gray-500">Increase or decrease quantity</p>
                 </div>
             </a>
 
@@ -173,10 +173,10 @@
             <i class="fas fa-boxes text-gray-400 text-3xl"></i>
         </div>
         <h3 class="text-lg font-medium text-gray-900 mb-2">No inventory items yet</h3>
-        <p class="text-gray-500 mb-6">Get started by adding your first inventory item.</p>
+        <p class="text-gray-500 mb-6">Get started by adjusting an item's quantity.</p>
         <a href="{{ url_for('inventory_add') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-            <i class="fas fa-plus mr-2"></i>
-            Add First Item
+            <i class="fas fa-right-left mr-2"></i>
+            Adjust First Item
         </a>
     </div>
     {% endif %}
