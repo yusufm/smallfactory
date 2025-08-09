@@ -67,7 +67,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
   - Each `sfid` MUST have a canonical entity file at `entities/<SFID>.yml` that persists forever, even if the entity is retired.
   - This file is the canonical metadata for the entity and enforces temporal uniqueness.
 
-  Example `entities/loc_a1.yml`:
+  Example `entities/l_a1.yml`:
 
   ```yaml
   status: active # or 'retired'
@@ -76,9 +76,34 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 
   | Entity Type | Prefix | Example sfid | Notes |
   | --- | --- | --- | --- |
-  | Location | `loc_` | `loc_a1` | Physical storage/location (e.g., shelf, bin, room) |
+  | Location | `l_` | `l_a1` | Physical storage/location (e.g., shelf, bin, room) |
+  | Part | `p_` | `p_m3x10` | Discrete part/stock item |
 
   Additional prefixes will be added here as new entity types are defined.
+
+### sfid Naming Conventions (Recommended)
+
+- Purpose: Improve searchability, interchangeability grouping, and lot/serial tracking. These conventions are HIGHLY RECOMMENDED but not required.
+- Parts (`p_`):
+  - Structure: `p_<part-number>[ _<postfix> ]`
+    - `<part-number>`: use lowercase letters/digits; `-` may separate subcodes (e.g., `stm32-c`, `m3x10`). Prefer hyphens in the base; reserve `_` for classification separators.
+    - `<postfix>` (optional): one or more classifications separated by `_` to differentiate instances, e.g. `lot23`, `sn39402`, `sn39404`.
+    - Classification order and specificity: classifications MUST progress from general → specific left-to-right. Do not reorder once established.
+    - Prefix search rule: prefix matches at classification boundaries MUST find all more-specific variants. Example: `p_1kr` matches `p_1kr_lot21` and `p_1kr_lot21_sn39402`.
+    - Classification charset: within a classification, use `[a-z0-9-]`; do not use `_` inside classifications (only as the classification delimiter).
+  - Examples:
+    - `p_1kr`
+    - `p_1kr_lot21` `p_1kr_lot52` (two otherwise identical parts tracked separately)
+    - `p_m3x10`
+    - `p_m3x10_lot23`
+    - `p_stm32-c_sn39402`, `p_stm32-c_sn59404`
+
+### Module: inventory
+
+- Top-level directory: `inventory/`
+- Purpose: Track parts and storage locations.
+- Entities in scope: Location (`l_`), Part (`p_`).
+- Canonical record: `entities/<sfid>.yml` (persists forever). Module files under `inventory/` are non-canonical views/artifacts.
 
 ---
 
