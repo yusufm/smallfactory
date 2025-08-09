@@ -8,7 +8,6 @@ import yaml
 from smallfactory.core.v1.config import ensure_config, get_datarepo_path, CONFIG_FILENAME
 from smallfactory.core.v1 import repo as repo_ops
 from smallfactory.core.v1.inventory import (
-    ensure_inventory_dir,
     add_item,
     list_items,
     view_item,
@@ -109,7 +108,6 @@ def main():
 
         repo_ops.write_datarepo_config(repo_path)
         repo_ops.set_default_datarepo(repo_path)
-        ensure_inventory_dir(repo_path)
         repo_ops.initial_commit_and_optional_push(repo_path, has_remote)
 
     def cmd_inventory_add(args):
