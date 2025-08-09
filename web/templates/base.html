@@ -183,7 +183,7 @@
                             // Trigger input event for any listeners
                             targetInput.dispatchEvent(new Event('input', { bubbles: true }));
                         } else {
-                            alert('No QR code found in the image. Please try again.');
+                            alert('No QR code found. Tip: keep the whole code in frame, ensure focus, and try moving slightly farther away.');
                         }
                     } catch (e) {
                         console.error('QR decode error:', e);
@@ -205,23 +205,62 @@
             function decodeQrFromImage(dataUrl) {
                 return new Promise((resolve) => {
                     const img = new Image();
-                    img.onload = () => {
-                        const maxDim = 1024;
-                        let w = img.naturalWidth || img.width;
-                        let h = img.naturalHeight || img.height;
-                        const scale = Math.min(1, maxDim / Math.max(w, h));
-                        w = Math.round(w * scale);
-                        h = Math.round(h * scale);
+                    img.onload = async () => {
+                        // 1) Try native BarcodeDetector first (when available)
+                        try {
+                            if ('BarcodeDetector' in window) {
+                                const detector = new BarcodeDetector({ formats: ['qr_code'] });
+                                const results = await detector.detect(img);
+                                if (results && results.length && results[0].rawValue) {
+                                    resolve(results[0].rawValue);
+                                    return;
+                                }
+                            }
+                        } catch (e) {
+                            // Ignore and fall back to jsQR
+                        }
 
-                        const canvas = document.createElement('canvas');
-                        canvas.width = w;
-                        canvas.height = h;
-                        const ctx = canvas.getContext('2d');
-                        if (!ctx) { resolve(null); return; }
-                        ctx.drawImage(img, 0, 0, w, h);
-                        const imageData = ctx.getImageData(0, 0, w, h);
-                        const code = jsQR(imageData.data, imageData.width, imageData.height);
-                        resolve(code ? code.data : null);
+                        // 2) Fallback: try multiple sizes and rotations via jsQR
+                        const maxDims = [1920, 1280, 1024, 800];
+                        const rotations = [0, 90, 180, 270];
+                        const options = { inversionAttempts: 'attemptBoth' };
+
+                        const tryOnce = (maxDim, rotationDeg) => {
+                            let w = img.naturalWidth || img.width;
+                            let h = img.naturalHeight || img.height;
+                            const scale = Math.min(1, maxDim / Math.max(w, h));
+                            w = Math.round(w * scale);
+                            h = Math.round(h * scale);
+
+                            const rad = (rotationDeg * Math.PI) / 180;
+                            const sin = Math.abs(Math.sin(rad));
+                            const cos = Math.abs(Math.cos(rad));
+                            const rw = Math.round(w * cos + h * sin);
+                            const rh = Math.round(w * sin + h * cos);
+
+                            const canvas = document.createElement('canvas');
+                            canvas.width = rw;
+                            canvas.height = rh;
+                            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                            if (!ctx) return null;
+                            ctx.imageSmoothingEnabled = false;
+
+                            ctx.translate(rw / 2, rh / 2);
+                            ctx.rotate(rad);
+                            ctx.drawImage(img, -w / 2, -h / 2, w, h);
+
+                            const imageData = ctx.getImageData(0, 0, rw, rh);
+                            const result = jsQR(imageData.data, imageData.width, imageData.height, options);
+                            return result ? result.data : null;
+                        };
+
+                        for (let i = 0; i < maxDims.length; i++) {
+                            for (let j = 0; j < rotations.length; j++) {
+                                const decoded = tryOnce(maxDims[i], rotations[j]);
+                                if (decoded) { resolve(decoded); return; }
+                            }
+                        }
+                        resolve(null);
                     };
                     img.onerror = () => resolve(null);
                     img.src = dataUrl;
