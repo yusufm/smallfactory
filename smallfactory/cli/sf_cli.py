@@ -66,6 +66,11 @@ def main():
     inv_sub = inventory_parser.add_subparsers(dest="inv_cmd", required=False, parser_class=SFArgumentParser)
 
     inv_add = inv_sub.add_parser("add", help="Add a new inventory item")
+    # Core required fields per SPEC/Core API
+    inv_add.add_argument("--sfid", required=True, metavar="sfid", help="Entity SFID (e.g., p_m3x10)")
+    inv_add.add_argument("--l_sfid", dest="location", required=True, metavar="l_sfid", help="Location SFID (e.g., l_a1)")
+    inv_add.add_argument("--quantity", required=True, type=int, metavar="qty", help="On-hand quantity (>= 0)")
+    # Additional optional metadata via key=value pairs
     inv_add.add_argument("--set", dest="set_pairs", action="append", default=[], help="Extra metadata key=value (repeatable)")
 
     inv_ls = inv_sub.add_parser("ls", aliases=["list"], help="List inventory items")
@@ -79,10 +84,10 @@ def main():
     inv_rm.add_argument("sfid", help="Item SFID")
     inv_rm.add_argument("-y", "--yes", action="store_true", help="Confirm deletion without prompt")
 
-    inv_adjust = inv_sub.add_parser("adjust", help="Adjust quantity for an item/location")
-    inv_adjust.add_argument("sfid", help="Item SFID")
-    inv_adjust.add_argument("delta", type=int, help="Signed quantity delta (e.g. +5, -2)")
-    inv_adjust.add_argument("--location", help="Location to adjust (required if multiple locations exist)")
+    inv_adjust = inv_sub.add_parser("adjust", help="Adjust quantity for an item at a location")
+    inv_adjust.add_argument("location", metavar="l_sfid", help="Location SFID (e.g., l_a1)")
+    inv_adjust.add_argument("sfid", metavar="sfid", help="Item SFID (e.g., p_m3x10)")
+    inv_adjust.add_argument("delta", type=int, metavar="delta", help="Signed quantity delta (e.g. +5, -2)")
 
     # entities group (canonical metadata operations)
     entities_parser = subparsers.add_parser("entities", help="Entities operations")
@@ -135,12 +140,22 @@ def main():
         fields_cfg = (dr_cfg.get("inventory", {}) or {}).get("fields") or INVENTORY_DEFAULT_FIELD_SPECS
         for fname, meta in fields_cfg.items():
             if meta.get("required"):
-                opt = f"--{fname}"
-                kwargs = {"required": True, "help": meta.get("description", "")}
-                if fname == "quantity":
-                    kwargs["type"] = int
-                if not any(a.option_strings and a.option_strings[0] == opt for a in inv_add._actions):
-                    inv_add.add_argument(opt, **kwargs)
+                # Map field name to canonical CLI option
+                if fname == "location":
+                    opt = "--l_sfid"
+                    kwargs = {"required": True, "help": meta.get("description", ""), "dest": "location", "metavar": "l_sfid"}
+                else:
+                    opt = f"--{fname}"
+                    kwargs = {"required": True, "help": meta.get("description", "")}
+                    if fname == "quantity":
+                        kwargs["type"] = int
+                # Skip if option already exists (by option string or destination)
+                existing_opts = [s for a in inv_add._actions for s in (a.option_strings or [])]
+                existing_dests = [getattr(a, "dest", None) for a in inv_add._actions]
+                desired_dest = kwargs.get("dest", fname.replace('-', '_'))
+                if (opt in existing_opts) or (desired_dest in existing_dests):
+                    continue
+                inv_add.add_argument(opt, **kwargs)
 
     args, unknown = parser.parse_known_args()
 
@@ -206,13 +221,20 @@ def main():
 
     def cmd_inventory_add(args):
         datarepo_path = _repo_path()
-        # Load field specs from repo and collect required fields
+        # Load field specs for any additional required fields beyond the core ones
         dr_cfg = load_datarepo_config(datarepo_path)
         fields_cfg = (dr_cfg.get("inventory", {}) or {}).get("fields") or INVENTORY_DEFAULT_FIELD_SPECS
         required_fields = [fname for fname, meta in fields_cfg.items() if meta.get("required")]
-        # Build item from dynamically required flags
-        item = {}
+        # Build base item from core required args
+        item = {
+            "sfid": args.sfid,
+            "location": args.location,
+            "quantity": args.quantity,
+        }
+        # Include any additional repo-required fields (if present)
         for fname in required_fields:
+            if fname in ("sfid", "location", "quantity"):
+                continue
             val = getattr(args, fname.replace('-', '_'), None)
             if val is None:
                 print(f"[smallfactory] Error: missing required field '--{fname}'")
@@ -350,8 +372,7 @@ def main():
         elif fmt == "yaml":
             print(yaml.safe_dump(item, sort_keys=False))
         else:
-            loc = f" at '{args.location}'" if args.location else ""
-            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sfid}'{loc} by {args.delta} in datarepo at {datarepo_path}")
+            print(f"[smallfactory] Adjusted quantity for inventory item '{args.sfid}' at '{args.location}' by {args.delta} in datarepo at {datarepo_path}")
 
     # Entities command handlers
     def _parse_pairs(pairs_list):
