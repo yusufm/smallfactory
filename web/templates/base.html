@@ -120,6 +120,147 @@
             });
         }, 5000);
     </script>
+
+    <!-- QR scanning support (QR-only) -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script>
+        (function() {
+            function isMobileish() {
+                if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
+                const ua = navigator.userAgent || '';
+                return /Android|iPhone|iPad|iPod/i.test(ua);
+            }
+
+            function enhanceInputWithScanner(input) {
+                if (!input || input.dataset.qrEnhanced === '1') return;
+                input.dataset.qrEnhanced = '1';
+
+                // Wrap input in a relative container to place the button
+                const wrapper = document.createElement('div');
+                wrapper.className = 'relative';
+                input.parentNode.insertBefore(wrapper, input);
+                wrapper.appendChild(input);
+
+                // Ensure padding to avoid overlap
+                input.classList.add('pr-10');
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'absolute inset-y-0 right-0 px-3 text-gray-500 hover:text-gray-700 focus:outline-none';
+                btn.title = 'Scan QR';
+                btn.innerHTML = '<i class="fas fa-camera"></i>';
+                wrapper.appendChild(btn);
+
+                btn.addEventListener('click', function() {
+                    openScannerFor(input);
+                });
+            }
+
+            // Single hidden file input reused
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*';
+            // Hint to use rear camera on mobile
+            fileInput.setAttribute('capture', 'environment');
+            fileInput.className = 'hidden';
+            document.addEventListener('DOMContentLoaded', function() { document.body.appendChild(fileInput); });
+
+            function openScannerFor(targetInput) {
+                if (typeof jsQR === 'undefined') {
+                    alert('QR scanner unavailable. Please check your connection and try again.');
+                    return;
+                }
+                fileInput.value = '';
+                fileInput.onchange = async function() {
+                    const file = fileInput.files && fileInput.files[0];
+                    if (!file) return;
+                    try {
+                        const dataUrl = await fileToDataURL(file);
+                        const decoded = await decodeQrFromImage(dataUrl);
+                        if (decoded) {
+                            targetInput.value = decoded;
+                            flashInput(targetInput);
+                            // Trigger input event for any listeners
+                            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                        } else {
+                            alert('No QR code found in the image. Please try again.');
+                        }
+                    } catch (e) {
+                        console.error('QR decode error:', e);
+                        alert('Failed to read image.');
+                    }
+                };
+                fileInput.click();
+            }
+
+            function fileToDataURL(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            function decodeQrFromImage(dataUrl) {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const maxDim = 1024;
+                        let w = img.naturalWidth || img.width;
+                        let h = img.naturalHeight || img.height;
+                        const scale = Math.min(1, maxDim / Math.max(w, h));
+                        w = Math.round(w * scale);
+                        h = Math.round(h * scale);
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        if (!ctx) { resolve(null); return; }
+                        ctx.drawImage(img, 0, 0, w, h);
+                        const imageData = ctx.getImageData(0, 0, w, h);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        resolve(code ? code.data : null);
+                    };
+                    img.onerror = () => resolve(null);
+                    img.src = dataUrl;
+                });
+            }
+
+            function flashInput(el) {
+                el.classList.add('ring-2', 'ring-green-400');
+                setTimeout(() => el.classList.remove('ring-2', 'ring-green-400'), 1200);
+            }
+
+            // Initialize on DOM ready (mobile only)
+            document.addEventListener('DOMContentLoaded', function() {
+                if (!isMobileish()) return;
+                const selector = [
+                    'input[name="sfid"]',
+                    'input#sfid',
+                    'input[name="location"]',
+                    'input#location',
+                    'input[data-scan="sfid"]',
+                    'input[data-scan="location"]'
+                ].join(',');
+
+                document.querySelectorAll(selector).forEach(enhanceInputWithScanner);
+
+                // Also observe DOM mutations for dynamically added inputs
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach((m) => {
+                        m.addedNodes && m.addedNodes.forEach((node) => {
+                            if (!(node instanceof HTMLElement)) return;
+                            node.querySelectorAll && node.querySelectorAll(selector).forEach(enhanceInputWithScanner);
+                            if (node.matches && node.matches(selector)) enhanceInputWithScanner(node);
+                        });
+                    });
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            });
+        })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
