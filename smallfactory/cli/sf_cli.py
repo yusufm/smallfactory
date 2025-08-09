@@ -31,6 +31,12 @@ from smallfactory.core.v1.entities import (
     retire_entity as ent_retire_entity,
 )
 
+# Stickers generation (QR only)
+from smallfactory.core.v1.stickers import (
+    generate_sticker_for_entity as st_generate_sticker_for_entity,
+    check_dependencies as st_check_dependencies,
+)
+
 
 class SFArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on error instead of short usage."""
@@ -90,7 +96,7 @@ def main():
     inv_adjust.add_argument("delta", type=int, metavar="delta", help="Signed quantity delta (e.g. +5, -2)")
 
     # entities group (canonical metadata operations)
-    entities_parser = subparsers.add_parser("entities", help="Entities operations")
+    entities_parser = subparsers.add_parser("entities", help="Entities (canonical metadata) operations")
     ent_sub = entities_parser.add_subparsers(dest="ent_cmd", required=False, parser_class=SFArgumentParser)
 
     ent_add = ent_sub.add_parser("add", help="Create a canonical entity")
@@ -202,6 +208,89 @@ def main():
         if target_path.exists() and os.listdir(str(target_path)):
             print(f"[smallFactory] Error: Target directory '{target_path}' already exists and is not empty.")
             sys.exit(1)
+
+    # stickers group (generate codes for entities)
+    stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities")
+    st_sub = stickers_parser.add_subparsers(dest="st_cmd", required=False, parser_class=SFArgumentParser)
+
+    st_gen = st_sub.add_parser("generate", help="Generate a sticker PNG (QR) for an entity")
+    st_gen.add_argument("sfid", help="Entity SFID (e.g., p_m3x10 or l_a1)")
+    st_gen.add_argument(
+        "--fields",
+        dest="fields",
+        default=None,
+        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
+    )
+    st_gen.add_argument(
+        "--size",
+        dest="size",
+        default="480x240",
+        help="Sticker size in pixels, WIDTHxHEIGHT (default 480x240)",
+    )
+    st_gen.add_argument(
+        "-o",
+        "--out",
+        dest="out",
+        default=None,
+        help="Output filename (.png). Defaults to sticker_<sfid>_<code>.png in CWD",
+    )
+
+    def _parse_size(sz: str):
+        if not sz:
+            return (480, 240)
+        try:
+            w_s, h_s = sz.lower().split("x", 1)
+            w, h = int(w_s), int(h_s)
+            if w <= 0 or h <= 0:
+                raise ValueError
+            return (w, h)
+        except Exception:
+            raise SystemExit("Invalid --size. Use WIDTHxHEIGHT, e.g., 480x240")
+
+    def cmd_stickers_generate(args):
+        # Check optional deps
+        deps = st_check_dependencies()
+        if not deps.get("qrcode"):
+            print("[smallFactory] Error: 'qrcode' not installed. Try: pip install 'qrcode[pil]' pillow")
+            sys.exit(1)
+
+        datarepo_path = _repo_path()
+        fields_list = None
+        if args.fields:
+            fields_list = [s.strip() for s in args.fields.split(",") if s.strip()]
+        size = _parse_size(args.size)
+        try:
+            result = st_generate_sticker_for_entity(
+                datarepo_path,
+                args.sfid,
+                fields=fields_list,
+                size=size,
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+
+        # Write file
+        import base64, os
+        png_bytes = base64.b64decode(result["png_base64"]) if result.get("png_base64") else None
+        if png_bytes is None:
+            print("[smallFactory] Error: failed to generate image bytes")
+            sys.exit(1)
+        out = args.out or result.get("filename") or f"sticker_{args.sfid}_qr.png"
+        try:
+            with open(out, "wb") as f:
+                f.write(png_bytes)
+        except Exception as e:
+            print(f"[smallFactory] Error writing file '{out}': {e}")
+            sys.exit(1)
+
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps({**result, "output": os.path.abspath(out)}, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump({**result, "output": os.path.abspath(out)}, sort_keys=False))
+        else:
+            print(f"[smallFactory] Wrote {out}")
 
         repo_path = repo_ops.create_or_clone(target_path, github_url or None)
 
@@ -523,6 +612,8 @@ def main():
         sub = getattr(args, "inv_cmd", None)
     elif cmd == "entities":
         sub = getattr(args, "ent_cmd", None)
+    elif cmd == "stickers":
+        sub = getattr(args, "st_cmd", None)
     else:
         sub = None
     if sub in ("ls", "list"):
@@ -545,6 +636,7 @@ def main():
         ("entities", "show"): cmd_entities_show,
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
+        ("stickers", "generate"): cmd_stickers_generate,
     }
 
     handler = DISPATCH.get((cmd, sub))

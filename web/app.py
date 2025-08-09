@@ -28,6 +28,10 @@ from smallfactory.core.v1.entities import (
     update_entity_fields,
     retire_entity,
 )
+from smallfactory.core.v1.stickers import (
+    generate_sticker_for_entity,
+    check_dependencies as stickers_check_deps,
+)
 
 app = Flask(__name__)
 app.secret_key = 'smallfactory-web-ui-secret-key-change-in-production'
@@ -311,6 +315,78 @@ def api_entities_specs(sfid):
         return jsonify({'success': True, 'specs': specs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# -----------------------
+# Stickers (QR only) routes
+# -----------------------
+
+@app.route('/stickers', methods=['GET', 'POST'])
+def stickers_index():
+    """Landing page to enter an SFID and jump to generator."""
+    if request.method == 'POST':
+        sfid = (request.form.get('sfid') or '').strip()
+        if not sfid:
+            flash('Please provide an SFID', 'error')
+            return render_template('stickers/index.html')
+        return redirect(url_for('stickers_entity', sfid=sfid))
+    return render_template('stickers/index.html')
+
+
+@app.route('/stickers/<sfid>', methods=['GET', 'POST'])
+def stickers_entity(sfid):
+    """Generate and preview a sticker for a specific entity."""
+    try:
+        datarepo_path = get_datarepo_path()
+        entity = get_entity(datarepo_path, sfid)
+    except Exception as e:
+        flash(f'Error loading entity: {e}', 'error')
+        return redirect(url_for('entities_list'))
+
+    deps = stickers_check_deps()
+    generated = None
+    error = None
+    selected_fields = []
+    size_text = '480x240'
+
+    if request.method == 'POST':
+        fields_raw = (request.form.get('fields') or '').strip()
+        size_text = (request.form.get('size') or '480x240').strip()
+        if fields_raw:
+            selected_fields = [s.strip() for s in fields_raw.split(',') if s.strip()]
+        # parse size
+        try:
+            w_s, h_s = size_text.lower().split('x', 1)
+            size = (int(w_s), int(h_s))
+            if size[0] <= 0 or size[1] <= 0:
+                raise ValueError
+        except Exception:
+            error = 'Invalid size. Use WIDTHxHEIGHT, e.g., 480x240'
+            size = (480, 240)
+        if not error:
+            try:
+                res = generate_sticker_for_entity(
+                    datarepo_path,
+                    sfid,
+                    fields=selected_fields or None,
+                    size=size,
+                )
+                generated = res
+            except Exception as e:
+                error = str(e)
+
+    # Suggest fields from entity (excluding sfid/name)
+    suggested_fields = [k for k in entity.keys() if k not in ('sfid', 'name')][:8]
+
+    return render_template(
+        'stickers/generate.html',
+        entity=entity,
+        deps=deps,
+        generated=generated,
+        error=error,
+        selected_fields=selected_fields,
+        size_text=size_text,
+        suggested_fields=suggested_fields,
+    )
 
 @app.errorhandler(404)
 def not_found(error):

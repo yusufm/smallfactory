@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Stickers - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-6">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('index') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-home mr-1"></i>Home
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Stickers</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h1 class="text-2xl font-bold text-gray-900 mb-4">Generate Stickers</h1>
+        <p class="text-gray-600 mb-4">Enter an entity SFID (e.g., <span class="font-mono">p_m3x10</span> or <span class="font-mono">l_a1</span>) to generate a QR code sticker with readable fields.</p>
+        <form method="POST" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Entity SFID</label>
+            <input type="text" name="sfid" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., p_m3x10">
+          </div>
+          <div>
+            <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+              Continue
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">About</h2>
+        <ul class="text-sm text-gray-700 list-disc list-inside space-y-1">
+          <li>Supports QR codes</li>
+          <li>Renders SFID and selected fields as text</li>
+          <li>Download printable PNG</li>
+        </ul>
+        <div class="mt-4 text-sm">
+          <div class="font-medium text-gray-900 mb-1">Dependencies</div>
+          <div class="text-gray-600">QR: <span class="font-mono">qrcode[pil]</span>, <span class="font-mono">pillow</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
