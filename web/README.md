@@ -83,3 +83,67 @@ The UI is designed to be extensible for additional PLM modules:
 - Reporting and analytics
 
 Each new module can follow the same pattern with its own template directory and routes.
+
+## Vision (Qwen2‑VL via Ollama)
+
+The web UI can call a local or remote Visual LLM (VLM) hosted by Ollama. We recommend Qwen2‑VL 2B Instruct for a lightweight, high‑quality model.
+
+### 1) Start Ollama and pull the model
+
+macOS (Homebrew):
+
+```bash
+brew install ollama
+ollama serve &
+ollama pull qwen2.5vl:3b
+```
+
+Linux: install from https://ollama.com/download, then:
+
+```bash
+ollama serve &
+ollama pull qwen2.5vl:3b
+```
+
+Verify the API:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+### 2) Configure smallFactory to talk to Ollama
+
+Defaults assume a local Ollama at `http://localhost:11434`. To override, set:
+
+```bash
+export SF_OLLAMA_BASE_URL=http://<ollama-host>:11434
+export SF_VISION_MODEL=qwen2-vl:2b-instruct
+```
+
+### 3) Install web deps and run
+
+```bash
+cd web
+pip install -r requirements.txt
+cd ..
+python sf.py web --port 8080
+```
+
+### 4) Use the Vision API
+
+- Generic ask (prompt + image):
+
+```bash
+curl -s -X POST http://localhost:8080/api/vision/ask \
+  -F "prompt=Summarize the contents of this image in 1-2 sentences." \
+  -F "file=@/path/to/invoice.jpg" | jq
+```
+
+- Extract part fields from an invoice:
+
+```bash
+curl -s -X POST http://localhost:8080/api/vision/extract/part \
+  -F "file=@/path/to/invoice.jpg" | jq
+```
+
+If you see an error, ensure Ollama is running and the model is pulled.

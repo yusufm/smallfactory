@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+{% block title %}Vision Extract · smallFactory{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="bg-white shadow rounded-lg p-6">
+    <h1 class="text-2xl font-semibold text-gray-900 mb-1">Extract Part From Image</h1>
+    <p class="text-sm text-gray-600 mb-4">Use your phone to take a photo of an invoice or parts label. We'll extract structured fields automatically.</p>
+
+    <div class="space-y-4">
+      <div class="flex items-center space-x-3">
+        <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
+        <button id="btnCapture" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500">
+          <i class="fas fa-camera mr-2"></i>Take Photo
+        </button>
+        <button id="btnChoose" class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 focus:ring-2 focus:ring-gray-300">
+          <i class="fas fa-image mr-2"></i>Choose From Library
+        </button>
+      </div>
+
+      <div id="previewWrap" class="hidden">
+        <div class="mt-2">
+          <img id="previewImg" class="w-full max-h-80 object-contain border rounded" alt="Selected image preview" />
+        </div>
+        <div class="text-xs text-gray-500 mt-1" id="imgInfo"></div>
+      </div>
+
+      <div class="pt-2">
+        <button id="btnSubmit" disabled class="w-full inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-md opacity-50 cursor-not-allowed">
+          <i class="fas fa-wand-magic-sparkles mr-2"></i>Extract Part Info
+        </button>
+      </div>
+
+      <div id="status" class="text-sm text-gray-600"></div>
+
+      <div id="resultWrap" class="hidden mt-4">
+        <h2 class="text-lg font-semibold text-gray-900 mb-2">Extracted Fields</h2>
+        <div id="resultTableWrap" class="overflow-hidden rounded-lg border border-gray-200">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Field</th>
+                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
+              </tr>
+            </thead>
+            <tbody id="resultTable" class="bg-white divide-y divide-gray-200"></tbody>
+          </table>
+        </div>
+        <details class="mt-3">
+          <summary class="text-sm text-gray-700 cursor-pointer">Raw JSON</summary>
+          <pre id="rawJson" class="mt-2 p-3 bg-gray-50 border rounded text-xs overflow-x-auto"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const fileInput = document.getElementById('fileInput');
+  const btnCapture = document.getElementById('btnCapture');
+  const btnChoose = document.getElementById('btnChoose');
+  const btnSubmit = document.getElementById('btnSubmit');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const imgInfo = document.getElementById('imgInfo');
+  const statusEl = document.getElementById('status');
+  const resultWrap = document.getElementById('resultWrap');
+  const resultTable = document.getElementById('resultTable');
+  const rawJson = document.getElementById('rawJson');
+
+  btnCapture.addEventListener('click', () => {
+    // Ensure capture attribute for rear camera
+    fileInput.setAttribute('capture', 'environment');
+    fileInput.click();
+  });
+
+  btnChoose.addEventListener('click', () => {
+    // Remove capture hint to show library/file picker
+    fileInput.removeAttribute('capture');
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    preview(file);
+    btnSubmit.disabled = false;
+    btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
+  });
+
+  function preview(file) {
+    const url = URL.createObjectURL(file);
+    previewImg.src = url;
+    previewWrap.classList.remove('hidden');
+    imgInfo.textContent = `${file.name} · ${(file.size/1024/1024).toFixed(2)} MB · ${file.type || 'image'}`;
+  }
+
+  async function compressImage(file, maxDim = 1600, quality = 0.85) {
+    // Return original if not an image
+    if (!/^image\//.test(file.type)) return file;
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1) return file; // no need to resize
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    return new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+  }
+
+  btnSubmit.addEventListener('click', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+
+    status('Optimizing image…');
+    const compressed = await compressImage(file);
+
+    const form = new FormData();
+    form.append('file', compressed);
+
+    status('Extracting with model…');
+    setBusy(true);
+    try {
+      const resp = await fetch('/api/vision/extract/part', {
+        method: 'POST',
+        body: form
+      });
+      const data = await resp.json();
+      if (!data.success) throw new Error((data && data.error) || 'Request failed');
+      const payload = data.result || {};
+      const model = payload.model || 'unknown-model';
+      const extracted = payload.data || payload; // tolerate shape
+      renderResult(extracted, model);
+      status('Done.');
+    } catch (e) {
+      console.error(e);
+      status('Error: ' + e.message);
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  function renderResult(obj, model) {
+    resultTable.innerHTML = '';
+    const order = [
+      'supplier_name','invoice_number','invoice_date',
+      'part_name','manufacturer','mpn','description',
+      'unit_price','currency','quantity','uom',
+      'location_l_sfid','notes','tags'
+    ];
+    const keys = Object.keys(obj || {});
+    const fields = order.concat(keys.filter(k => !order.includes(k)));
+    fields.forEach(k => {
+      const v = obj[k];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="px-4 py-2 text-sm text-gray-600">${escapeHtml(k)}</td>
+        <td class="px-4 py-2 text-sm text-gray-900">${formatValue(v)}</td>
+      `;
+      resultTable.appendChild(tr);
+    });
+    rawJson.textContent = JSON.stringify(obj, null, 2) + '\nmodel: ' + model;
+    resultWrap.classList.remove('hidden');
+  }
+
+  function status(t) { statusEl.textContent = t || ''; }
+  function setBusy(b) {
+    btnSubmit.disabled = b;
+    btnSubmit.classList.toggle('opacity-50', b);
+    btnSubmit.classList.toggle('cursor-not-allowed', b);
+  }
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  function formatValue(v) {
+    if (Array.isArray(v)) return v.map(escapeHtml).join(', ');
+    if (v == null) return '<span class="text-gray-400">null</span>';
+    if (typeof v === 'object') return '<code class="text-xs">' + escapeHtml(JSON.stringify(v)) + '</code>';
+    return escapeHtml(v);
+  }
+})();
+</script>
+{% endblock %}

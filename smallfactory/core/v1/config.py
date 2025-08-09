@@ -1,6 +1,7 @@
 import pathlib
 import yaml
 import re
+import os
 
 SF_TOOL_VERSION = "1.0"
 CONFIG_FILENAME = ".smallfactory.yml"
@@ -152,3 +153,23 @@ def get_entity_field_specs_for_sfid(sfid: str, repo_path: pathlib.Path | None = 
             if isinstance(tf, dict):
                 merged.update(tf)
     return merged
+
+
+# -------------------------------
+# Vision / VLM configuration
+# -------------------------------
+
+def get_ollama_base_url() -> str:
+    """Return the Ollama base URL from env, defaulting to localhost:11434.
+
+    Env var: SF_OLLAMA_BASE_URL
+    """
+    return os.environ.get("SF_OLLAMA_BASE_URL", "http://localhost:11434")
+
+
+def get_vision_model() -> str:
+    """Return the vision model id to use with Ollama.
+
+    Env var: SF_VISION_MODEL; default: qwen2.5vl:3b
+    """
+    return os.environ.get("SF_VISION_MODEL", "qwen2.5vl:3b")

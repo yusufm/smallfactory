@@ -11,6 +11,7 @@ import sys
 import os
 import base64
 import io
+from PIL import Image
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,6 +34,10 @@ from smallfactory.core.v1.entities import (
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
     check_dependencies as stickers_check_deps,
+)
+from smallfactory.core.v1.vision import (
+    ask_image as vlm_ask_image,
+    extract_invoice_part as vlm_extract_invoice_part,
 )
 
 app = Flask(__name__)
@@ -57,6 +62,11 @@ def index():
                              datarepo_path=str(datarepo_path))
     except Exception as e:
         return render_template('error.html', error=str(e))
+
+@app.route('/vision', methods=['GET'])
+def vision_page():
+    """Mobile-friendly page to capture/upload an image and extract part info."""
+    return render_template('vision.html')
 
 @app.route('/inventory')
 def inventory_list():
@@ -317,6 +327,85 @@ def api_entities_specs(sfid):
         return jsonify({'success': True, 'specs': specs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# -----------------------
+# Vision API (Ollama-backed)
+# -----------------------
+
+def _read_image_from_request(req, field_name: str = 'file', max_bytes: int = 10 * 1024 * 1024) -> bytes:
+    f = req.files.get(field_name)
+    if not f or not getattr(f, 'filename', None):
+        raise ValueError("No image file uploaded under field 'file'.")
+    # Size guard
+    try:
+        f.stream.seek(0, io.SEEK_END)
+        size = f.stream.tell()
+        f.stream.seek(0)
+    except Exception:
+        size = None
+    if size is not None and size > max_bytes:
+        raise ValueError("Image too large (max 10MB).")
+    # Basic type guard
+    ct = (getattr(f, 'mimetype', None) or '').lower()
+    if ct and not ct.startswith('image/'):
+        raise ValueError("Unsupported file type; expected an image.")
+    # Strip EXIF and re-encode to PNG
+    try:
+        img = Image.open(f.stream)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format='PNG')
+        return out.getvalue()
+    except Exception as e:
+        raise ValueError(f"Failed to read image: {e}")
+
+
+@app.route('/api/vision/ask', methods=['POST'])
+def api_vision_ask():
+    """Generic vision ask endpoint: prompt + image -> model response.
+
+    Form fields:
+      - file: image file
+      - prompt: text prompt
+    """
+    try:
+        img_bytes = _read_image_from_request(request)
+        prompt = (request.form.get('prompt') or '').strip()
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Missing prompt'}), 400
+        result = vlm_ask_image(prompt, img_bytes)
+        return jsonify({'success': True, 'result': result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        # Friendly guidance for Ollama not running / model not pulled
+        hint = (
+            "Ensure Ollama is running and the model is available.\n"
+            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+            "Pull model: `ollama pull qwen2.5vl:3b`\n"
+            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+        )
+        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+
+
+@app.route('/api/vision/extract/part', methods=['POST'])
+def api_vision_extract_part():
+    """Extract structured part fields from an invoice image."""
+    try:
+        img_bytes = _read_image_from_request(request)
+        result = vlm_extract_invoice_part(img_bytes)
+        return jsonify({'success': True, 'result': result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        hint = (
+            "Ensure Ollama is running and the model is available.\n"
+            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+            "Pull model: `ollama pull qwen2.5vl:3b`\n"
+            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+        )
+        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
 
 # -----------------------
 # Stickers (QR only) routes
