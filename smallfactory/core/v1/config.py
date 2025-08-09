@@ -18,11 +18,11 @@ DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 # Defaults used to bootstrap a fresh config file and as fallback if missing.
 INVENTORY_DEFAULT_FIELD_SPECS = {
     # Core identifiers (required)
-    "id": {"required": True, "regex": r"^[A-Za-z0-9._-]+$", "description": "Primary key for the inventory item."},
+    "sfid": {"required": True, "regex": r"^[A-Za-z0-9._-]+$", "description": "Primary key (smallFactory ID) for the inventory item."},
     "name": {"required": True, "regex": r"^.{1,200}$", "description": "Human-readable item name."},
 
     # Operational inputs (required when creating a record/location)
-    "location": {"required": True, "regex": r"^[A-Za-z0-9 ._-]+$", "description": "Storage location name."},
+    "location_sfid": {"required": True, "regex": r"^[A-Za-z0-9 ._-]+$", "description": "Storage location name."},
     "quantity": {"required": True, "regex": r"^[0-9]+$", "description": "Quantity as non-negative integer (per location)."},
 
     # Common but optional metadata (regex allows empty)
