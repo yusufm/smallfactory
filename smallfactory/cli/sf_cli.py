@@ -210,103 +210,219 @@ def main():
             sys.exit(1)
 
     # stickers group (generate codes for entities)
-    stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities")
+    stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
     st_sub = stickers_parser.add_subparsers(dest="st_cmd", required=False, parser_class=SFArgumentParser)
 
-    st_gen = st_sub.add_parser("generate", help="Generate a sticker PNG (QR) for an entity")
-    st_gen.add_argument("sfid", help="Entity SFID (e.g., p_m3x10 or l_a1)")
-    st_gen.add_argument(
+    # Allow using `sf stickers` directly with batch options
+    stickers_parser.add_argument(
+        "--sfids",
+        dest="sfids",
+        default=None,
+        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
+    )
+    stickers_parser.add_argument(
+        "--file",
+        dest="file",
+        default=None,
+        help="Path to a file containing SFIDs (one per line or comma-separated)",
+    )
+    stickers_parser.add_argument(
         "--fields",
         dest="fields",
         default=None,
         help="Comma-separated list of additional fields to print as text (besides name/SFID)",
     )
-    st_gen.add_argument(
+    stickers_parser.add_argument(
         "--size",
         dest="size",
-        default="480x240",
-        help="Sticker size in pixels, WIDTHxHEIGHT (default 480x240)",
+        default="2x1",
+        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
     )
-    st_gen.add_argument(
+    stickers_parser.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
+    stickers_parser.add_argument(
         "-o",
         "--out",
         dest="out",
-        default=None,
-        help="Output filename (.png). Defaults to sticker_<sfid>_<code>.png in CWD",
+        default="stickers.pdf",
+        help="Output PDF filename (default: stickers.pdf)",
     )
 
-    def _parse_size(sz: str):
-        if not sz:
-            return (480, 240)
-        try:
-            w_s, h_s = sz.lower().split("x", 1)
-            w, h = int(w_s), int(h_s)
-            if w <= 0 or h <= 0:
-                raise ValueError
-            return (w, h)
-        except Exception:
-            raise SystemExit("Invalid --size. Use WIDTHxHEIGHT, e.g., 480x240")
+    # NOTE: 'batch' is the default stickers interface and can handle a single SFID too.
 
-    def cmd_stickers_generate(args):
-        # Check optional deps
+    # stickers batch: generate multi-page PDF with one sticker per page
+    st_batch = st_sub.add_parser("batch", help="Generate a multi-page PDF of stickers (one per page)")
+    st_batch.add_argument(
+        "--sfids",
+        dest="sfids",
+        default=None,
+        help="Comma or newline separated SFIDs. Use '-' to read from stdin",
+    )
+    st_batch.add_argument(
+        "--file",
+        dest="file",
+        default=None,
+        help="Path to a file containing SFIDs (one per line or comma-separated)",
+    )
+    st_batch.add_argument(
+        "--fields",
+        dest="fields",
+        default=None,
+        help="Comma-separated list of additional fields to print as text (besides name/SFID)",
+    )
+    st_batch.add_argument(
+        "--size",
+        dest="size",
+        default="2x1",
+        help="Sticker size in inches, WIDTHxHEIGHT (default 2x1)",
+    )
+    st_batch.add_argument("--dpi", dest="dpi", type=int, default=300, help="Dots per inch for rendering (default 300)")
+    st_batch.add_argument(
+        "-o",
+        "--out",
+        dest="out",
+        default="stickers.pdf",
+        help="Output PDF filename (default: stickers.pdf)",
+    )
+
+    def _parse_size(sz: str, dpi: int):
+        if not sz:
+            return (600, 300)  # 2x1 inches @ 300 DPI
+        try:
+            st = sz.lower().replace("in", "").strip()
+            w_s, h_s = st.split("x", 1)
+            w_in, h_in = float(w_s), float(h_s)
+            if w_in <= 0 or h_in <= 0 or dpi <= 0:
+                raise ValueError
+            return (int(round(w_in * dpi)), int(round(h_in * dpi)))
+        except Exception:
+            raise SystemExit("Invalid --size/--dpi. Use WIDTHxHEIGHT inches (e.g., 2x1) and positive DPI (e.g., 300)")
+
+    def _parse_size_inches(sz: str):
+        if not sz:
+            return (2.0, 1.0)
+        try:
+            st = sz.lower().replace("in", "").strip()
+            w_s, h_s = st.split("x", 1)
+            w_in, h_in = float(w_s), float(h_s)
+            if w_in <= 0 or h_in <= 0:
+                raise ValueError
+            return (w_in, h_in)
+        except Exception:
+            raise SystemExit("Invalid --size. Use WIDTHxHEIGHT inches (e.g., 2x1)")
+
+    # Removed: cmd_stickers_generate (single PNG). Batch PDF covers single-SFID cases too.
+
+    def cmd_stickers_batch(args):
+        # Check optional deps (QR/Pillow) and ReportLab for PDF
         deps = st_check_dependencies()
         if not deps.get("qrcode"):
             print("[smallFactory] Error: 'qrcode' not installed. Try: pip install 'qrcode[pil]' pillow")
             sys.exit(1)
+        try:
+            from reportlab.pdfgen import canvas as rl_canvas
+            from reportlab.lib.units import inch
+            from reportlab.lib.utils import ImageReader
+        except Exception:
+            print("[smallFactory] Error: 'reportlab' is not installed. Install with: pip install -r web/requirements.txt or pip install reportlab")
+            sys.exit(1)
 
         datarepo_path = _repo_path()
+
+        # Collect SFIDs from --sfids/--file/stdin
+        sfids: list[str] = []
+        if args.sfids:
+            if args.sfids.strip() == "-":
+                # read from stdin
+                src = sys.stdin.read()
+            else:
+                src = args.sfids
+            # split by commas and newlines
+            parts = []
+            for chunk in src.splitlines():
+                parts.extend(chunk.split(","))
+            sfids.extend([p.strip() for p in parts if p.strip()])
+        if args.file:
+            try:
+                with open(args.file, "r", encoding="utf-8") as fh:
+                    src = fh.read()
+                parts = []
+                for chunk in src.splitlines():
+                    parts.extend(chunk.split(","))
+                sfids.extend([p.strip() for p in parts if p.strip()])
+            except Exception as e:
+                print(f"[smallFactory] Error reading --file '{args.file}': {e}")
+                sys.exit(1)
+
+        # Deduplicate while preserving order
+        seen = set()
+        sfids = [s for s in sfids if not (s in seen or seen.add(s))]
+        if not sfids:
+            print("[smallFactory] Error: No SFIDs provided. Use --sfids, --file, or '-' for stdin.")
+            sys.exit(2)
+
         fields_list = None
         if args.fields:
             fields_list = [s.strip() for s in args.fields.split(",") if s.strip()]
-        size = _parse_size(args.size)
-        try:
-            result = st_generate_sticker_for_entity(
-                datarepo_path,
-                args.sfid,
-                fields=fields_list,
-                size=size,
-            )
-        except Exception as e:
-            print(f"[smallFactory] Error: {e}")
+
+        # Parse sizes
+        size_px = _parse_size(args.size, args.dpi)
+        w_in, h_in = _parse_size_inches(args.size)
+
+        # Prepare PDF
+        out_pdf = args.out or "stickers.pdf"
+        c = rl_canvas.Canvas(out_pdf, pagesize=(w_in * inch, h_in * inch))
+
+        import base64, io
+
+        success = 0
+        for sfid in sfids:
+            try:
+                result = st_generate_sticker_for_entity(
+                    datarepo_path,
+                    sfid,
+                    fields=fields_list,
+                    size=size_px,
+                    dpi=args.dpi,
+                )
+                png_b64 = result.get("png_base64")
+                if not png_b64:
+                    raise RuntimeError("no image generated")
+                png_bytes = base64.b64decode(png_b64)
+                img_reader = ImageReader(io.BytesIO(png_bytes))
+                # Fill entire page to achieve exact physical size
+                c.drawImage(img_reader, 0, 0, width=w_in * inch, height=h_in * inch)
+                c.showPage()
+                success += 1
+            except Exception as e:
+                print(f"[smallFactory] Warning: failed to generate sticker for '{sfid}': {e}")
+
+        if success == 0:
+            print("[smallFactory] Error: Failed to generate any stickers; PDF not written.")
             sys.exit(1)
 
-        # Write file
-        import base64, os
-        png_bytes = base64.b64decode(result["png_base64"]) if result.get("png_base64") else None
-        if png_bytes is None:
-            print("[smallFactory] Error: failed to generate image bytes")
-            sys.exit(1)
-        out = args.out or result.get("filename") or f"sticker_{args.sfid}_qr.png"
         try:
-            with open(out, "wb") as f:
-                f.write(png_bytes)
+            c.save()
         except Exception as e:
-            print(f"[smallFactory] Error writing file '{out}': {e}")
+            print(f"[smallFactory] Error writing PDF '{out_pdf}': {e}")
             sys.exit(1)
 
         fmt = _fmt()
         if fmt == "json":
-            print(json.dumps({**result, "output": os.path.abspath(out)}, indent=2))
+            print(json.dumps({
+                "output": os.path.abspath(out_pdf),
+                "count": success,
+                "page_size_in": {"width": w_in, "height": h_in},
+                "dpi": args.dpi,
+            }, indent=2))
         elif fmt == "yaml":
-            print(yaml.safe_dump({**result, "output": os.path.abspath(out)}, sort_keys=False))
+            print(yaml.safe_dump({
+                "output": os.path.abspath(out_pdf),
+                "count": success,
+                "page_size_in": {"width": w_in, "height": h_in},
+                "dpi": args.dpi,
+            }, sort_keys=False))
         else:
-            print(f"[smallFactory] Wrote {out}")
-
-        repo_path = repo_ops.create_or_clone(target_path, github_url or None)
-
-        # If cloned, skip remote setup (already present). If new, optionally prompt to add remote.
-        has_remote = bool(github_url)
-        if not has_remote:
-            add_remote = input("Would you like to add a GitHub remote now? [y/N]: ").strip().lower()
-            if add_remote in ("y", "yes"):
-                remote_url = input("Paste the GitHub repository URL here: ").strip()
-                if remote_url:
-                    repo_ops.set_remote(repo_path, remote_url)
-                    has_remote = True
-
-        repo_ops.write_datarepo_config(repo_path)
-        repo_ops.set_default_datarepo(repo_path)
-        repo_ops.initial_commit_and_optional_push(repo_path, has_remote)
+            print(f"[smallFactory] Wrote {out_pdf} with {success} page(s)")
 
     def cmd_inventory_add(args):
         datarepo_path = _repo_path()
@@ -636,7 +752,8 @@ def main():
         ("entities", "show"): cmd_entities_show,
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
-        ("stickers", "generate"): cmd_stickers_generate,
+        ("stickers", None): cmd_stickers_batch,
+        ("stickers", "batch"): cmd_stickers_batch,
     }
 
     handler = DISPATCH.get((cmd, sub))

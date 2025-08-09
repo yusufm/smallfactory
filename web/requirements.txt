@@ -9,3 +9,6 @@ blinker==1.6.3
 # Sticker generation
 pillow
 qrcode[pil]
+
+# PDF export
+reportlab

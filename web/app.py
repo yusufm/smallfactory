@@ -4,11 +4,13 @@ smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
 from pathlib import Path
 import json
 import sys
 import os
+import base64
+import io
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -322,71 +324,147 @@ def api_entities_specs(sfid):
 
 @app.route('/stickers', methods=['GET', 'POST'])
 def stickers_index():
-    """Landing page to enter an SFID and jump to generator."""
+    """Default stickers interface is the batch PDF generator."""
     if request.method == 'POST':
         sfid = (request.form.get('sfid') or '').strip()
-        if not sfid:
-            flash('Please provide an SFID', 'error')
-            return render_template('stickers/index.html')
-        return redirect(url_for('stickers_entity', sfid=sfid))
-    return render_template('stickers/index.html')
+        # Redirect to batch with prefilled query if provided
+        if sfid:
+            return redirect(url_for('stickers_batch', sfids=sfid))
+    return redirect(url_for('stickers_batch'))
 
 
-@app.route('/stickers/<sfid>', methods=['GET', 'POST'])
-def stickers_entity(sfid):
-    """Generate and preview a sticker for a specific entity."""
+    # Single-sticker routes removed; use /stickers/batch
+
+
+    # Removed single-sticker PDF route; use /stickers/batch
+
+
+@app.route('/stickers/batch', methods=['GET', 'POST'])
+def stickers_batch():
+    """Batch generate a PDF with one sticker per page for multiple SFIDs."""
+    deps = stickers_check_deps()
+    error = None
+    if request.method == 'POST':
+        size_text = (request.form.get('size_in') or '2x1').strip()
+        dpi_text = (request.form.get('dpi') or '300').strip()
+        fields_raw = (request.form.get('fields') or '').strip()
+        sfids_text = (request.form.get('sfids') or '').strip()
+    else:
+        size_text = (request.args.get('size_in') or '2x1').strip()
+        dpi_text = (request.args.get('dpi') or '300').strip()
+        fields_raw = (request.args.get('fields') or '').strip()
+        sfids_text = (request.args.get('sfids') or '').strip()
+
+    if request.method == 'GET':
+        return render_template(
+            'stickers/batch.html',
+            deps=deps,
+            error=None,
+            size_text=size_text,
+            dpi_text=dpi_text,
+            fields_text=fields_raw,
+            sfids_text=sfids_text,
+        )
+
+    # POST: parse inputs
+    try:
+        st = size_text.lower().replace('in', '').strip()
+        w_s, h_s = st.split('x', 1)
+        w_in, h_in = float(w_s), float(h_s)
+        dpi = int(dpi_text)
+        if w_in <= 0 or h_in <= 0 or dpi <= 0:
+            raise ValueError
+        size_px = (int(round(w_in * dpi)), int(round(h_in * dpi)))
+    except Exception:
+        error = 'Invalid size/DPI. Use WIDTHxHEIGHT inches (e.g., 2x1) and a positive DPI (e.g., 300)'
+
+    # Parse SFIDs
+    sfids = []
+    if not error:
+        raw = sfids_text.replace(',', '\n')
+        sfids = [s.strip() for s in raw.split() if s.strip()]
+        # de-duplicate preserving order
+        seen = set()
+        sfids = [s for s in sfids if not (s in seen or seen.add(s))]
+        if not sfids:
+            error = 'Provide at least one SFID (one per line or comma-separated).'
+
+    # Selected fields
+    selected_fields = [s.strip() for s in fields_raw.split(',') if s.strip()] if fields_raw else []
+
+    if error:
+        return render_template(
+            'stickers/batch.html',
+            deps=deps,
+            error=error,
+            size_text=size_text,
+            dpi_text=dpi_text,
+            fields_text=fields_raw,
+            sfids_text=sfids_text,
+        )
+
+    # Generate PDF
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+        from reportlab.lib.utils import ImageReader
+    except Exception:
+        return render_template(
+            'stickers/batch.html',
+            deps=deps,
+            error='ReportLab is not installed. Install web deps: pip install -r web/requirements.txt',
+            size_text=size_text,
+            dpi_text=dpi_text,
+            fields_text=fields_raw,
+            sfids_text=sfids_text,
+        )
+
     try:
         datarepo_path = get_datarepo_path()
-        entity = get_entity(datarepo_path, sfid)
-    except Exception as e:
-        flash(f'Error loading entity: {e}', 'error')
-        return redirect(url_for('entities_list'))
+        pdf_io = io.BytesIO()
+        c = canvas.Canvas(pdf_io, pagesize=(w_in * inch, h_in * inch))
 
-    deps = stickers_check_deps()
-    generated = None
-    error = None
-    selected_fields = []
-    size_text = '480x240'
-
-    if request.method == 'POST':
-        fields_raw = (request.form.get('fields') or '').strip()
-        size_text = (request.form.get('size') or '480x240').strip()
-        if fields_raw:
-            selected_fields = [s.strip() for s in fields_raw.split(',') if s.strip()]
-        # parse size
-        try:
-            w_s, h_s = size_text.lower().split('x', 1)
-            size = (int(w_s), int(h_s))
-            if size[0] <= 0 or size[1] <= 0:
-                raise ValueError
-        except Exception:
-            error = 'Invalid size. Use WIDTHxHEIGHT, e.g., 480x240'
-            size = (480, 240)
-        if not error:
+        # Render each SFID on its own page
+        for idx, sid in enumerate(sfids):
             try:
                 res = generate_sticker_for_entity(
                     datarepo_path,
-                    sfid,
+                    sid,
                     fields=selected_fields or None,
-                    size=size,
+                    size=size_px,
+                    dpi=dpi,
                 )
-                generated = res
             except Exception as e:
-                error = str(e)
+                # Abort on first failure with a clear message
+                return render_template(
+                    'stickers/batch.html',
+                    deps=deps,
+                    error=f"Error generating sticker for SFID '{sid}': {e}",
+                    size_text=size_text,
+                    dpi_text=dpi_text,
+                    fields_text=fields_raw,
+                    sfids_text=sfids_text,
+                )
+            png_b64 = res.get('png_base64')
+            img_bytes = base64.b64decode(png_b64)
+            img_reader = ImageReader(io.BytesIO(img_bytes))
+            c.drawImage(img_reader, 0, 0, width=w_in * inch, height=h_in * inch)
+            c.showPage()
 
-    # Suggest fields from entity (excluding sfid/name)
-    suggested_fields = [k for k in entity.keys() if k not in ('sfid', 'name')][:8]
-
-    return render_template(
-        'stickers/generate.html',
-        entity=entity,
-        deps=deps,
-        generated=generated,
-        error=error,
-        selected_fields=selected_fields,
-        size_text=size_text,
-        suggested_fields=suggested_fields,
-    )
+        c.save()
+        pdf_io.seek(0)
+        filename = f"stickers_batch_{len(sfids)}_labels.pdf"
+        return send_file(pdf_io, as_attachment=True, download_name=filename, mimetype='application/pdf')
+    except Exception as e:
+        return render_template(
+            'stickers/batch.html',
+            deps=deps,
+            error=f'Failed to build PDF: {e}',
+            size_text=size_text,
+            dpi_text=dpi_text,
+            fields_text=fields_raw,
+            sfids_text=sfids_text,
+        )
 
 @app.errorhandler(404)
 def not_found(error):

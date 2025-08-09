@@ -81,14 +81,14 @@ def compose_sticker_image(
     *,
     code_type: str = "qr",
     fields: Optional[Iterable[str]] = None,
-    sticker_size: Tuple[int, int] = (480, 240),
+    sticker_size: Tuple[int, int] = (600, 300),
     padding: int = 16,
 ) -> Image.Image:
     """Compose a printable sticker PNG for an entity.
 
     - code_type: 'qr'
     - fields: list of field names to render as human-readable text (besides SFID/name)
-    - sticker_size: (width, height) in pixels
+    - sticker_size: (width, height) in pixels (default 600x300 ≈ 2x1 in @ 300 DPI)
     """
     _ensure_pillow()
     if code_type.lower() != "qr":
@@ -159,10 +159,14 @@ def compose_sticker_image(
     return img
 
 
-def image_to_base64_png(img: Image.Image) -> str:
+def image_to_base64_png(img: Image.Image, dpi: Optional[int] = None) -> str:
     _ensure_pillow()
     bio = io.BytesIO()
-    img.save(bio, format="PNG")
+    save_kwargs = {"format": "PNG"}
+    # Embed DPI so printers honor physical dimensions (pHYs chunk in PNG)
+    if dpi and dpi > 0:
+        save_kwargs["dpi"] = (dpi, dpi)
+    img.save(bio, **save_kwargs)
     return base64.b64encode(bio.getvalue()).decode("ascii")
 
 
@@ -172,15 +176,17 @@ def generate_sticker_for_entity(
     *,
     code_type: str = "qr",
     fields: Optional[Iterable[str]] = None,
-    size: Tuple[int, int] = (480, 240),
+    size: Tuple[int, int] = (600, 300),
+    dpi: int = 300,
 ) -> dict:
     """Generate a sticker for the given entity SFID.
 
-    Returns dict with keys: 'sfid', 'code_type', 'fields', 'png_base64', 'filename'
+    Returns dict with keys: 'sfid', 'code_type', 'fields', 'png_base64', 'filename'.
+    Default size is 600x300 pixels (≈2x1 in @ 300 DPI).
     """
     ent = get_entity(datarepo_path, sfid)
     img = compose_sticker_image(ent, code_type="qr", fields=fields, sticker_size=size)
-    b64 = image_to_base64_png(img)
+    b64 = image_to_base64_png(img, dpi=dpi)
     fname = f"sticker_{sfid}_qr.png"
     return {
         "sfid": sfid,
