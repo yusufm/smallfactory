@@ -100,6 +100,13 @@ def inventory_add():
     """
     field_specs = get_inventory_field_specs()
     form_data = {}
+
+    # Prefill from query params on GET (e.g., after creating entity and returning)
+    if request.method == 'GET':
+        for k in ('sfid', 'location', 'delta'):
+            v = request.args.get(k, '').strip()
+            if v:
+                form_data[k] = v
     
     if request.method == 'POST':
         # Always preserve form data for potential re-display
@@ -202,30 +209,74 @@ def entities_view(sfid):
 
 @app.route('/entities/add', methods=['GET', 'POST'])
 def entities_add():
-    """Create a new canonical entity."""
+    """Create a new canonical entity.
+
+    Supports optional prefill via query string (?sfid=...) and safe return via
+    ?next=<path>. If provided, 'next' is echoed back as a hidden field and used
+    as the redirect target after successful creation.
+    """
+    from urllib.parse import urlparse, parse_qs, urlencode
+
+    def _is_safe_next(url: str) -> bool:
+        try:
+            p = urlparse(url)
+            # Only allow relative, same-origin paths (no scheme or netloc)
+            return (p.scheme == '' and p.netloc == '' and (p.path or '/').startswith('/'))
+        except Exception:
+            return False
+
     form_data = {}
+    next_url = None
+    update_param = None  # which query param in 'next' should be updated with the final created SFID
+
+    if request.method == 'GET':
+        # Prefill from query args (e.g., coming from Adjust page)
+        pre_sfid = request.args.get('sfid', '').strip()
+        if pre_sfid:
+            form_data['sfid'] = pre_sfid
+        next_arg = request.args.get('next', '').strip()
+        if next_arg and _is_safe_next(next_arg):
+            next_url = next_arg
+        up = request.args.get('update_param', '').strip()
+        if up in ('sfid', 'location'):
+            update_param = up
+
     if request.method == 'POST':
-        form_data = {k: v for k, v in request.form.items() if v.strip()}
+        form_data = {k: v for k, v in request.form.items() if str(v).strip()}
         sfid = form_data.get('sfid', '').strip()
+        next_url = request.form.get('next', '').strip() or None
+        update_param = (request.form.get('update_param', '').strip() or None)
         try:
             if not sfid:
                 raise ValueError('sfid is required')
-            # Build fields dict excluding sfid
-            fields = {k: v for k, v in form_data.items() if k != 'sfid'}
+            # Build fields dict excluding sfid and 'next'
+            fields = {k: v for k, v in form_data.items() if k not in ('sfid', 'next', 'update_param')}
             datarepo_path = get_datarepo_path()
             # Proactive existence check for better UX
             try:
                 _ = get_entity(datarepo_path, sfid)
                 flash(f"Entity '{sfid}' already exists. Choose a different SFID.", 'error')
-                return render_template('entities/add.html', form_data=form_data)
+                return render_template('entities/add.html', form_data=form_data, next_url=next_url, update_param=update_param)
             except FileNotFoundError:
                 pass
             entity = create_entity(datarepo_path, sfid, fields)
             flash(f"Successfully created entity: {sfid}", 'success')
+            if next_url and _is_safe_next(next_url):
+                # If caller indicated which param to update, rewrite the next URL
+                try:
+                    if update_param in ('sfid', 'location'):
+                        parsed = urlparse(next_url)
+                        qs = parse_qs(parsed.query)
+                        qs[update_param] = [sfid]
+                        new_qs = urlencode(qs, doseq=True)
+                        next_url = parsed._replace(query=new_qs).geturl()
+                except Exception:
+                    pass
+                return redirect(next_url)
             return redirect(url_for('entities_view', sfid=entity.get('sfid')))
         except Exception as e:
             flash(f'Error creating entity: {e}', 'error')
-    return render_template('entities/add.html', form_data=form_data)
+    return render_template('entities/add.html', form_data=form_data, next_url=next_url, update_param=update_param)
 
 
 @app.route('/entities/<sfid>/edit', methods=['GET', 'POST'])

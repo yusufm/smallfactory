@@ -26,6 +26,12 @@
 
   <div class="max-w-2xl">
     <form method="POST" class="space-y-6">
+      {% if next_url %}
+      <input type="hidden" name="next" value="{{ next_url }}">
+      {% endif %}
+      {% if update_param %}
+      <input type="hidden" name="update_param" value="{{ update_param }}">
+      {% endif %}
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 class="text-lg font-semibold text-gray-900 mb-6">Identifier</h2>
         <div>

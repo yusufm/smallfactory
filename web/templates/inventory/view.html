@@ -199,7 +199,12 @@
                     {% else %}
                     <div>
                         <label for="new-location" class="block text-sm font-medium text-gray-700">New Location SFID</label>
-                        <input type="text" name="location" id="new-location" pattern="l_.*" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. l_a1, l_rack3" required>
+                        <div class="mt-1 flex gap-2 items-start">
+                            <input type="text" name="location" id="new-location" pattern="l_.*" class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. l_a1, l_rack3" required>
+                            <button type="button" onclick="createLocationEntity('new-location', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-plus mr-1"></i>New
+                            </button>
+                        </div>
                         <p class="mt-1 text-xs text-gray-500">Must start with <code>l_</code>.</p>
                     </div>
                     {% endif %}
@@ -244,7 +249,12 @@
                 <div class="space-y-4">
                     <div>
                         <label for="add-location-name" class="block text-sm font-medium text-gray-700">Location SFID</label>
-                        <input type="text" name="location" id="add-location-name" pattern="l_.*" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" placeholder="e.g. l_a1, l_rack3" required>
+                        <div class="mt-1 flex gap-2 items-start">
+                            <input type="text" name="location" id="add-location-name" pattern="l_.*" class="flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" placeholder="e.g. l_a1, l_rack3" required>
+                            <button type="button" onclick="createLocationEntity('add-location-name', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-plus mr-1"></i>New
+                            </button>
+                        </div>
                         <p class="mt-1 text-xs text-gray-500">Must start with <code>l_</code>.</p>
                     </div>
                     <div>
@@ -387,5 +397,37 @@ document.addEventListener('keydown', function(e) {
         hideAddLocationModal();
     }
 });
+
+// Create new location entity, then return to Adjust screen with prefilled fields
+function createLocationEntity(inputId, itemSfid){
+    try {
+        const inputEl = document.getElementById(inputId);
+        const seed = (inputEl && inputEl.value || '').trim();
+        if(!seed){
+            alert('Enter a Location SFID first.');
+            return;
+        }
+        // Prefer the delta from the visible modal
+        let d = '0';
+        const deltaAdj = document.getElementById('delta');
+        const deltaAdd = document.getElementById('delta-add');
+        if(deltaAdj && String(deltaAdj.value||'').trim() !== ''){
+            d = String(deltaAdj.value).trim();
+        } else if(deltaAdd && String(deltaAdd.value||'').trim() !== ''){
+            d = String(deltaAdd.value).trim();
+        }
+        const paramsNext = new URLSearchParams();
+        paramsNext.set('sfid', itemSfid);
+        paramsNext.set('location', seed);
+        if(d) paramsNext.set('delta', d);
+        const nextUrl = '/inventory/add?' + paramsNext.toString();
+
+        const paramsTarget = new URLSearchParams();
+        paramsTarget.set('sfid', seed);
+        paramsTarget.set('next', nextUrl);
+        paramsTarget.set('update_param', 'location');
+        window.location.href = '/entities/add?' + paramsTarget.toString();
+    } catch(e){ console.error(e); }
+}
 </script>
 {% endblock %}
