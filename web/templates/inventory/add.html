@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Add Stock - Inventory - smallFactory{% endblock %}
+{% block title %}Adjust Stock - Inventory - smallFactory{% endblock %}
 
 {% block content %}
 <div class="content-container">
@@ -16,30 +16,36 @@
                 <li>
                     <div class="flex items-center">
                         <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
-                        <span class="text-gray-900 font-medium">Add Stock</span>
+                        <span class="text-gray-900 font-medium">Adjust Stock</span>
                     </div>
                 </li>
             </ol>
         </nav>
-        <h1 class="text-3xl font-bold text-gray-900 mt-2">Add Stock</h1>
-        <p class="mt-2 text-gray-600">Add a new item and quantity.</p>
+        <h1 class="text-3xl font-bold text-gray-900 mt-2">Adjust Stock</h1>
+        <p class="mt-2 text-gray-600">Adjust quantity (positive or negative) at a specific location.</p>
     </div>
 
     <div class="max-w-2xl">
         <form method="POST" class="space-y-6">
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-6">Add Stock</h2>
+                <h2 class="text-lg font-semibold text-gray-900 mb-6">Adjust Stock</h2>
                 
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-                    <!-- Explicitly require item, location, and quantity -->
+                    <!-- Explicitly require item, location, and adjustment -->
                     <div>
                         <label for="sfid" class="block text-sm font-medium text-gray-700">
                             Item SFID
                             <span class="text-red-500">*</span>
                         </label>
-                        <input type="text" name="sfid" id="sfid" 
-                            class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="e.g. p_m3x10, resistor_10k, sensor.temp" value="{{ form_data.get('sfid', '') }}" required>
+                        <div class="mt-1 flex gap-2 items-start">
+                            <input type="text" name="sfid" id="sfid" 
+                                class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="e.g. p_m3x10, resistor_10k, sensor.temp" value="{{ form_data.get('sfid', '') }}" required>
+                            <button type="button" onclick="createEntityFromField('sfid')" title="Create new entity for this SFID"
+                                class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-plus mr-1"></i>New
+                            </button>
+                        </div>
                         <p class="mt-1 text-xs text-gray-500">Enter the item's SFID (unique identifier).</p>
                     </div>
 
@@ -48,21 +54,27 @@
                             Location SFID
                             <span class="text-red-500">*</span>
                         </label>
-                        <input type="text" name="location" id="location" 
-                            class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="e.g. l_a1, l_rack3" value="{{ form_data.get('location', '') }}" required>
-                        <p class="mt-1 text-xs text-gray-500">Enter a valid location SFID (must start with <code>l_</code> and exist in Entities).</p>
+                        <div class="mt-1 flex gap-2 items-start">
+                            <input type="text" name="location" id="location" pattern="l_.*"
+                                class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="e.g. l_a1, l_rack3" value="{{ form_data.get('location', '') }}" required>
+                            <button type="button" onclick="createEntityFromField('location')" title="Create new location entity"
+                                class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-plus mr-1"></i>New
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Enter a valid location SFID (must start with <code>l_</code>).</p>
                     </div>
 
                     <div>
-                        <label for="quantity" class="block text-sm font-medium text-gray-700">
-                            Quantity
+                        <label for="delta" class="block text-sm font-medium text-gray-700">
+                            Adjustment (Δ)
                             <span class="text-red-500">*</span>
                         </label>
-                        <input type="number" name="quantity" id="quantity" min="0" 
+                        <input type="number" name="delta" id="delta" step="1"
                             class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="Starting quantity" value="{{ form_data.get('quantity', '') }}" required>
-                        <p class="mt-1 text-xs text-gray-500">Starting on-hand quantity for this item.</p>
+                            placeholder="e.g. -5 or 10" value="{{ form_data.get('delta', '') or 0 }}" required>
+                        <p class="mt-1 text-xs text-gray-500">Use negative numbers to decrease. Resulting quantity cannot be negative.</p>
                     </div>
 
                     <!-- Render any additional required fields except sfid/quantity/location -->
@@ -144,10 +156,37 @@
                     Cancel
                 </a>
                 <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                    <i class="fas fa-plus mr-2"></i>Add Stock
+                    <i class="fas fa-right-left mr-2"></i>Adjust Stock
                 </button>
             </div>
         </form>
+        <script>
+        function createEntityFromField(fieldId){
+            try {
+                const sfidEl = document.getElementById('sfid');
+                const locEl = document.getElementById('location');
+                const deltaEl = document.getElementById('delta');
+                const seed = (fieldId === 'sfid') ? (sfidEl.value||'').trim() : (locEl.value||'').trim();
+                if(!seed){
+                    alert('Enter an SFID first.');
+                    return;
+                }
+                const paramsNext = new URLSearchParams();
+                if(sfidEl && sfidEl.value.trim()) paramsNext.set('sfid', sfidEl.value.trim());
+                if(locEl && locEl.value.trim()) paramsNext.set('location', locEl.value.trim());
+                const d = (deltaEl && String(deltaEl.value||'').trim()) || '0';
+                if(d) paramsNext.set('delta', d);
+                const nextUrl = '/inventory/add?' + paramsNext.toString();
+
+                const paramsTarget = new URLSearchParams();
+                paramsTarget.set('sfid', seed);
+                paramsTarget.set('next', nextUrl);
+                // Tell entities/add which query param to update in 'next' after creation
+                paramsTarget.set('update_param', fieldId === 'sfid' ? 'sfid' : 'location');
+                window.location.href = '/entities/add?' + paramsTarget.toString();
+            } catch(e){ console.error(e); }
+        }
+        </script>
     </div>
 </div>
 {% endblock %}

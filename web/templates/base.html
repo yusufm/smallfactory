@@ -43,6 +43,9 @@
                         <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-id-card mr-2"></i>Entities
                         </a>
+                        <a href="{{ url_for('vision_page') }}" class="{% if request.endpoint and request.endpoint.startswith('vision') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-wand-magic-sparkles mr-2"></i>Vision
+                        </a>
                         <a href="{{ url_for('stickers_index') }}" class="{% if request.endpoint and request.endpoint.startswith('stickers') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-qrcode mr-2"></i>Stickers
                         </a>
@@ -63,6 +66,9 @@
                 </a>
                 <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-id-card mr-2"></i>Entities
+                </a>
+                <a href="{{ url_for('vision_page') }}" class="{% if request.endpoint and request.endpoint.startswith('vision') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-wand-magic-sparkles mr-2"></i>Vision
                 </a>
                 <a href="{{ url_for('stickers_index') }}" class="{% if request.endpoint and request.endpoint.startswith('stickers') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-qrcode mr-2"></i>Stickers

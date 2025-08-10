@@ -12,3 +12,7 @@ qrcode[pil]
 
 # PDF export
 reportlab
+ 
+# Vision (Ollama client + schema)
+ollama
+pydantic>=2

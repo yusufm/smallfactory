@@ -11,6 +11,7 @@ import sys
 import os
 import base64
 import io
+from PIL import Image
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,6 +34,10 @@ from smallfactory.core.v1.entities import (
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
     check_dependencies as stickers_check_deps,
+)
+from smallfactory.core.v1.vision import (
+    ask_image as vlm_ask_image,
+    extract_invoice_part as vlm_extract_invoice_part,
 )
 
 app = Flask(__name__)
@@ -57,6 +62,11 @@ def index():
                              datarepo_path=str(datarepo_path))
     except Exception as e:
         return render_template('error.html', error=str(e))
+
+@app.route('/vision', methods=['GET'])
+def vision_page():
+    """Mobile-friendly page to capture/upload an image and extract part info."""
+    return render_template('vision.html')
 
 @app.route('/inventory')
 def inventory_list():
@@ -83,49 +93,47 @@ def inventory_view(item_id):
 
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def inventory_add():
-    """Add a new inventory item."""
+    """Adjust inventory quantity (global form).
+
+    This page allows adjusting an item's quantity at a specific location
+    using a signed delta (positive to add, negative to subtract).
+    """
     field_specs = get_inventory_field_specs()
     form_data = {}
+
+    # Prefill from query params on GET (e.g., after creating entity and returning)
+    if request.method == 'GET':
+        for k in ('sfid', 'location', 'delta'):
+            v = request.args.get(k, '').strip()
+            if v:
+                form_data[k] = v
     
     if request.method == 'POST':
         # Always preserve form data for potential re-display
-        form_data = {key: value for key, value in request.form.items() if value.strip()}
-        
-        try:
-            # Build item dict from form data
-            item_data = {}
-            for field_name in field_specs.keys():
-                value = request.form.get(field_name, '').strip()
-                if value:  # Only include non-empty values
-                    item_data[field_name] = value
-            
-            # Add any custom fields
-            for key, value in request.form.items():
-                if key not in field_specs and key.strip() and value.strip():
-                    item_data[key] = value.strip()
-            
-            datarepo_path = get_datarepo_path()
-            # Proactively prevent duplicate SFIDs for better UX
-            candidate_id = item_data.get("sfid")
-            if candidate_id:
-                try:
-                    _ = view_item(datarepo_path, candidate_id)
-                    # If no exception, the item exists already
-                    flash(f"Inventory item '{candidate_id}' already exists. Choose a different SFID.", 'error')
-                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
-                except FileNotFoundError:
-                    pass  # OK, proceed to create
-                except Exception as ve:
-                    # Unexpected error when checking existence
-                    flash(f"Error validating SFID: {ve}", 'error')
-                    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
+        form_data = {key: value for key, value in request.form.items() if str(value).strip()}
 
-            add_item(datarepo_path, item_data)
-            flash(f"Successfully added inventory item: {item_data.get('sfid')}", 'success')
-            return redirect(url_for('inventory_view', item_id=item_data.get('sfid')))
+        try:
+            # Extract required fields for adjustment
+            sfid = request.form.get('sfid', '').strip()
+            location = request.form.get('location', '').strip()
+            delta_raw = request.form.get('delta', '0').strip()
+
+            if not sfid:
+                raise ValueError("Missing required field: sfid")
+            if not location:
+                raise ValueError("Missing required field: location")
+            try:
+                delta = int(delta_raw)
+            except Exception:
+                raise ValueError("delta must be an integer (can be negative)")
+
+            datarepo_path = get_datarepo_path()
+            adjust_quantity(datarepo_path, sfid, delta, location)
+            flash(f"Successfully adjusted '{sfid}' at {location} by {delta}", 'success')
+            return redirect(url_for('inventory_view', item_id=sfid))
         except Exception as e:
-            flash(f'Error adding item: {e}', 'error')
-            # Form data is already preserved in form_data variable for re-display
+            flash(f'Error adjusting quantity: {e}', 'error')
+            # fall through to re-render form
     
     return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
 
@@ -201,30 +209,74 @@ def entities_view(sfid):
 
 @app.route('/entities/add', methods=['GET', 'POST'])
 def entities_add():
-    """Create a new canonical entity."""
+    """Create a new canonical entity.
+
+    Supports optional prefill via query string (?sfid=...) and safe return via
+    ?next=<path>. If provided, 'next' is echoed back as a hidden field and used
+    as the redirect target after successful creation.
+    """
+    from urllib.parse import urlparse, parse_qs, urlencode
+
+    def _is_safe_next(url: str) -> bool:
+        try:
+            p = urlparse(url)
+            # Only allow relative, same-origin paths (no scheme or netloc)
+            return (p.scheme == '' and p.netloc == '' and (p.path or '/').startswith('/'))
+        except Exception:
+            return False
+
     form_data = {}
+    next_url = None
+    update_param = None  # which query param in 'next' should be updated with the final created SFID
+
+    if request.method == 'GET':
+        # Prefill from query args (e.g., coming from Adjust page)
+        pre_sfid = request.args.get('sfid', '').strip()
+        if pre_sfid:
+            form_data['sfid'] = pre_sfid
+        next_arg = request.args.get('next', '').strip()
+        if next_arg and _is_safe_next(next_arg):
+            next_url = next_arg
+        up = request.args.get('update_param', '').strip()
+        if up in ('sfid', 'location'):
+            update_param = up
+
     if request.method == 'POST':
-        form_data = {k: v for k, v in request.form.items() if v.strip()}
+        form_data = {k: v for k, v in request.form.items() if str(v).strip()}
         sfid = form_data.get('sfid', '').strip()
+        next_url = request.form.get('next', '').strip() or None
+        update_param = (request.form.get('update_param', '').strip() or None)
         try:
             if not sfid:
                 raise ValueError('sfid is required')
-            # Build fields dict excluding sfid
-            fields = {k: v for k, v in form_data.items() if k != 'sfid'}
+            # Build fields dict excluding sfid and 'next'
+            fields = {k: v for k, v in form_data.items() if k not in ('sfid', 'next', 'update_param')}
             datarepo_path = get_datarepo_path()
             # Proactive existence check for better UX
             try:
                 _ = get_entity(datarepo_path, sfid)
                 flash(f"Entity '{sfid}' already exists. Choose a different SFID.", 'error')
-                return render_template('entities/add.html', form_data=form_data)
+                return render_template('entities/add.html', form_data=form_data, next_url=next_url, update_param=update_param)
             except FileNotFoundError:
                 pass
             entity = create_entity(datarepo_path, sfid, fields)
             flash(f"Successfully created entity: {sfid}", 'success')
+            if next_url and _is_safe_next(next_url):
+                # If caller indicated which param to update, rewrite the next URL
+                try:
+                    if update_param in ('sfid', 'location'):
+                        parsed = urlparse(next_url)
+                        qs = parse_qs(parsed.query)
+                        qs[update_param] = [sfid]
+                        new_qs = urlencode(qs, doseq=True)
+                        next_url = parsed._replace(query=new_qs).geturl()
+                except Exception:
+                    pass
+                return redirect(next_url)
             return redirect(url_for('entities_view', sfid=entity.get('sfid')))
         except Exception as e:
             flash(f'Error creating entity: {e}', 'error')
-    return render_template('entities/add.html', form_data=form_data)
+    return render_template('entities/add.html', form_data=form_data, next_url=next_url, update_param=update_param)
 
 
 @app.route('/entities/<sfid>/edit', methods=['GET', 'POST'])
@@ -317,6 +369,85 @@ def api_entities_specs(sfid):
         return jsonify({'success': True, 'specs': specs})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# -----------------------
+# Vision API (Ollama-backed)
+# -----------------------
+
+def _read_image_from_request(req, field_name: str = 'file', max_bytes: int = 10 * 1024 * 1024) -> bytes:
+    f = req.files.get(field_name)
+    if not f or not getattr(f, 'filename', None):
+        raise ValueError("No image file uploaded under field 'file'.")
+    # Size guard
+    try:
+        f.stream.seek(0, io.SEEK_END)
+        size = f.stream.tell()
+        f.stream.seek(0)
+    except Exception:
+        size = None
+    if size is not None and size > max_bytes:
+        raise ValueError("Image too large (max 10MB).")
+    # Basic type guard
+    ct = (getattr(f, 'mimetype', None) or '').lower()
+    if ct and not ct.startswith('image/'):
+        raise ValueError("Unsupported file type; expected an image.")
+    # Strip EXIF and re-encode to PNG
+    try:
+        img = Image.open(f.stream)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        out = io.BytesIO()
+        img.save(out, format='PNG')
+        return out.getvalue()
+    except Exception as e:
+        raise ValueError(f"Failed to read image: {e}")
+
+
+@app.route('/api/vision/ask', methods=['POST'])
+def api_vision_ask():
+    """Generic vision ask endpoint: prompt + image -> model response.
+
+    Form fields:
+      - file: image file
+      - prompt: text prompt
+    """
+    try:
+        img_bytes = _read_image_from_request(request)
+        prompt = (request.form.get('prompt') or '').strip()
+        if not prompt:
+            return jsonify({'success': False, 'error': 'Missing prompt'}), 400
+        result = vlm_ask_image(prompt, img_bytes)
+        return jsonify({'success': True, 'result': result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        # Friendly guidance for Ollama not running / model not pulled
+        hint = (
+            "Ensure Ollama is running and the model is available.\n"
+            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+            "Pull model: `ollama pull qwen2.5vl:3b`\n"
+            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+        )
+        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+
+
+@app.route('/api/vision/extract/part', methods=['POST'])
+def api_vision_extract_part():
+    """Extract structured part fields from an invoice image."""
+    try:
+        img_bytes = _read_image_from_request(request)
+        result = vlm_extract_invoice_part(img_bytes)
+        return jsonify({'success': True, 'result': result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        hint = (
+            "Ensure Ollama is running and the model is available.\n"
+            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+            "Pull model: `ollama pull qwen2.5vl:3b`\n"
+            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+        )
+        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
 
 # -----------------------
 # Stickers (QR only) routes
