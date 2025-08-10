@@ -187,6 +187,9 @@ def compose_sticker_image(
     base_sz = max(8, int(text_size))
     title_font, normal_font, mono_font = _get_fonts(base_sz)
 
+    # Add a little extra spacing between lines relative to font size
+    line_gap = max(3, int(round(base_sz * 0.2)))
+
     y = padding
 
     # Title (name)
@@ -194,16 +197,16 @@ def compose_sticker_image(
     for ln in title_lines:
         draw.text((text_x, y), ln, fill=(0, 0, 0), font=title_font)
         tb = draw.textbbox((0, 0), ln, font=title_font)
-        y += (tb[3] - tb[1])
+        y += (tb[3] - tb[1]) + line_gap
 
-    # SFID (monospace-ish)
-    y += 4
-    sfid_line = f"SFID: {sfid}"
+    # SFID (monospace-ish, value only)
+    y += max(4, line_gap)
+    sfid_line = f"{sfid}"
     draw.text((text_x, y), sfid_line, fill=(0, 0, 0), font=mono_font)
     tb = draw.textbbox((0, 0), sfid_line, font=mono_font)
-    y += (tb[3] - tb[1]) + 8
+    y += (tb[3] - tb[1]) + (8 + line_gap)
 
-    # Additional fields
+    # Additional fields (values only, no field names)
     if fields:
         for f in fields:
             if f in ("sfid", "name"):
@@ -211,12 +214,12 @@ def compose_sticker_image(
             val = entity.get(f)
             if val is None:
                 continue
-            label = f"{f}: {val}"
-            for ln in _wrap_text(draw, str(label), normal_font, text_w):
+            value_text = f"{val}"
+            for ln in _wrap_text(draw, str(value_text), normal_font, text_w):
                 draw.text((text_x, y), ln, fill=(0, 0, 0), font=normal_font)
                 tb = draw.textbbox((0, 0), ln, font=normal_font)
-                y += (tb[3] - tb[1])
-            y += 2
+                y += (tb[3] - tb[1]) + line_gap
+            y += max(2, line_gap)
 
     # Footer brand
     footer = "smallFactory"
