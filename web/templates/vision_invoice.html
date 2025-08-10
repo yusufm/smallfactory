@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+
+{% block title %}Invoice Scan (Batch) - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-8">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('vision_page') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-wand-magic-sparkles mr-1"></i>Vision
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Invoice (Batch)</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">Scan Invoice for Multiple Parts</h1>
+    <p class="mt-2 text-gray-600">Capture or upload an invoice. We'll extract all recognizable part line items for batch entity creation.</p>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Capture/Preview -->
+    <div class="lg:col-span-1 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">Upload or Capture</h2>
+      <div class="space-y-3">
+        <div class="aspect-w-4 aspect-h-3 bg-gray-100 rounded-md flex items-center justify-center overflow-hidden" style="min-height: 200px;">
+          <img id="preview" alt="Preview" class="max-h-80 object-contain hidden" />
+          <div id="placeholder" class="text-gray-400 flex flex-col items-center">
+            <i class="fas fa-file-invoice text-4xl mb-2"></i>
+            <span>No image selected</span>
+          </div>
+        </div>
+        <div class="flex gap-3">
+          <input id="file-input" type="file" accept="image/*" capture="environment" class="hidden" />
+          <button id="btn-capture" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            <i class="fas fa-camera mr-2"></i>Use Camera
+          </button>
+          <button id="btn-upload" class="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200">
+            <i class="fas fa-upload mr-2"></i>Upload Image
+          </button>
+        </div>
+        <div id="status" class="text-sm text-gray-600"></div>
+      </div>
+    </div>
+
+    <!-- Extraction Results -->
+    <div class="lg:col-span-2 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">Extracted Results</h2>
+        <div class="text-sm text-gray-500" id="model-info"></div>
+      </div>
+
+      <div id="invoice-meta" class="hidden mb-4 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div><span class="text-gray-500">Supplier:</span> <span id="meta-supplier" class="text-gray-900"></span></div>
+          <div><span class="text-gray-500">Invoice #:</span> <span id="meta-number" class="text-gray-900"></span></div>
+          <div><span class="text-gray-500">Date:</span> <span id="meta-date" class="text-gray-900"></span></div>
+        </div>
+      </div>
+
+      <div id="items-empty" class="text-gray-500">No items yet. Upload an invoice image to begin.</div>
+      <div id="items-list" class="space-y-4 hidden"></div>
+
+      <div class="mt-6 flex items-center justify-between">
+        <div class="text-sm text-gray-500" id="hint">Tip: Deselect lines that are not parts.</div>
+        <div class="flex gap-3">
+          <button id="btn-clear" class="px-4 py-2 border border-gray-300 rounded-md text-sm">Clear</button>
+          <button id="btn-to-batch" class="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 disabled:opacity-50" disabled>
+            Continue to Batch Create
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const fileInput = $('#file-input');
+  const btnCap = $('#btn-capture');
+  const btnUp = $('#btn-upload');
+  const preview = $('#preview');
+  const placeholder = $('#placeholder');
+  const statusEl = $('#status');
+  const itemsList = $('#items-list');
+  const itemsEmpty = $('#items-empty');
+  const invoiceMeta = $('#invoice-meta');
+  const metaSupplier = $('#meta-supplier');
+  const metaNumber = $('#meta-number');
+  const metaDate = $('#meta-date');
+  const btnToBatch = $('#btn-to-batch');
+  const btnClear = $('#btn-clear');
+  const modelInfo = $('#model-info');
+
+  function setStatus(t){ statusEl.textContent = t || ''; }
+  function showPreview(src){
+    if (src){
+      preview.src = src;
+      preview.classList.remove('hidden');
+      placeholder.classList.add('hidden');
+    } else {
+      preview.src = '';
+      preview.classList.add('hidden');
+      placeholder.classList.remove('hidden');
+    }
+  }
+
+  btnCap.addEventListener('click', () => fileInput.click());
+  btnUp.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    const f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    try{
+      setStatus('Processing image...');
+      const dataUrl = await compressToDataURL(f, 1800, 0.85);
+      showPreview(dataUrl);
+      await extractAll(await dataURLToBlob(dataUrl));
+    }catch(e){
+      console.error(e);
+      alert('Failed to process image.');
+    }finally{
+      setStatus('');
+    }
+  });
+
+  async function compressToDataURL(file, maxDim=1800, quality=0.85){
+    const img = await readImageFile(file);
+    const {w, h} = fitWithin(img.width, img.height, maxDim);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', quality);
+  }
+  function fitWithin(w, h, maxDim){
+    const r = Math.max(w, h);
+    if (r <= maxDim) return {w, h};
+    const s = maxDim / r; return {w: Math.round(w*s), h: Math.round(h*s)};
+  }
+  function readImageFile(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      const fr = new FileReader();
+      fr.onload = () => { img.src = fr.result; };
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+  }
+  async function dataURLToBlob(url){
+    const res = await fetch(url); return await res.blob();
+  }
+
+  async function extractAll(blob){
+    itemsList.innerHTML = '';
+    itemsList.classList.add('hidden');
+    itemsEmpty.classList.remove('hidden');
+    invoiceMeta.classList.add('hidden');
+    btnToBatch.disabled = true;
+    setStatus('Extracting parts via Vision...');
+
+    const fd = new FormData();
+    fd.append('file', new File([blob], 'invoice.jpg', {type: 'image/jpeg'}));
+    const res = await fetch('/api/vision/extract/parts', { method: 'POST', body: fd });
+    const j = await res.json();
+    if (!j || !j.success){
+      const err = (j && (j.error || j.hint)) || 'Vision extraction failed';
+      throw new Error(err);
+    }
+    const result = j.result || {};
+    modelInfo.textContent = result.model ? `Model: ${result.model}` : '';
+    const data = result.data || {};
+    // meta
+    const supplier = safeText(data.supplier_name);
+    const invno = safeText(data.invoice_number);
+    const invdate = safeText(data.invoice_date);
+    if (supplier || invno || invdate){
+      metaSupplier.textContent = supplier;
+      metaNumber.textContent = invno;
+      metaDate.textContent = invdate;
+      invoiceMeta.classList.remove('hidden');
+    }
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length){
+      itemsEmpty.textContent = 'No line items detected.';
+      return;
+    }
+    itemsEmpty.classList.add('hidden');
+    itemsList.classList.remove('hidden');
+
+    items.forEach((it, idx) => {
+      const id = `itm_${idx}`;
+      const chk = `<input type="checkbox" class="h-4 w-4 text-blue-600" id="sel_${id}" checked>`;
+      const title = safeText(it.part_name) || safeText(it.mpn) || `Item ${idx+1}`;
+      const mf = safeText(it.manufacturer);
+      const mpn = safeText(it.mpn);
+      const desc = safeText(it.description);
+      const qty = it.quantity == null ? '' : String(it.quantity);
+      const uom = safeText(it.uom);
+      const price = it.unit_price == null ? '' : String(it.unit_price);
+      const cur = safeText(it.currency);
+      const notes = safeText(it.notes);
+      const tags = Array.isArray(it.tags) ? it.tags.join(', ') : safeText(it.tags);
+      const card = document.createElement('div');
+      card.className = 'border border-gray-200 rounded-md p-4';
+      card.innerHTML = `
+        <div class="flex items-start justify-between">
+          <div>
+            <label class="inline-flex items-center gap-2">${chk} <span class="font-medium text-gray-900">${escapeHtml(title)}</span></label>
+            ${mf || mpn ? `<div class="text-sm text-gray-600">${escapeHtml([mf, mpn].filter(Boolean).join(' · '))}</div>` : ''}
+          </div>
+          <span class="text-xs text-gray-400">#${idx+1}</span>
+        </div>
+        ${desc ? `<div class="text-sm text-gray-700 mt-2">${escapeHtml(desc)}</div>`: ''}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-3">
+          <div><span class="text-gray-500">Qty</span><div class="text-gray-900">${escapeHtml(qty)}</div></div>
+          <div><span class="text-gray-500">UOM</span><div class="text-gray-900">${escapeHtml(uom)}</div></div>
+          <div><span class="text-gray-500">Unit Price</span><div class="text-gray-900">${escapeHtml(price)}</div></div>
+          <div><span class="text-gray-500">Currency</span><div class="text-gray-900">${escapeHtml(cur)}</div></div>
+        </div>
+        ${(notes||tags)? `<div class="text-xs text-gray-500 mt-2">${escapeHtml([notes, tags].filter(Boolean).join(' • '))}</div>`:''}
+      `;
+      card.dataset.idx = idx;
+      itemsList.appendChild(card);
+    });
+
+    btnToBatch.disabled = false;
+  }
+
+  function safeText(v){ return v == null ? '' : String(v); }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+  btnClear.addEventListener('click', () => {
+    showPreview('');
+    itemsList.innerHTML='';
+    itemsList.classList.add('hidden');
+    itemsEmpty.classList.remove('hidden');
+    invoiceMeta.classList.add('hidden');
+    btnToBatch.disabled = true;
+    modelInfo.textContent = '';
+  });
+
+  btnToBatch.addEventListener('click', () => {
+    // Gather selected items from last extraction
+    const cards = Array.from(itemsList.children || []);
+    if (!cards.length) return;
+    const selectedIdx = cards
+      .map((c, i) => ({c, i}))
+      .filter(({c,i}) => {
+        const id = c.dataset.idx;
+        const chk = document.getElementById(`sel_itm_${id}`) || c.querySelector('input[type="checkbox"]');
+        return chk && chk.checked;
+      })
+      .map(({i}) => i);
+    if (!selectedIdx.length){ alert('Select at least one item to continue.'); return; }
+
+    // Build payload
+    const data = window.__lastExtractionData || {};
+    // We didn't store it explicitly; reconstruct from DOM and preview extraction variables
+    // For reliability, re-read the cards and use their text plus original parsed result held in closure
+    // Instead, re-extract from the original response kept in a dataset on itemsList
+    const all = (itemsList.dataset.raw ? JSON.parse(itemsList.dataset.raw) : (window.__rawItems || []));
+    const rawItems = Array.isArray(all) ? all : [];
+
+    // Fallback: if dataset not set, cannot proceed
+    const pick = selectedIdx.map(i => rawItems[i]).filter(Boolean);
+    if (!pick.length){ alert('Nothing to transfer. Try extracting again.'); return; }
+
+    const shared = {
+      supplier_name: metaSupplier.textContent || null,
+      invoice_number: metaNumber.textContent || null,
+      invoice_date: metaDate.textContent || null,
+    };
+
+    const entities = pick.map((it) => {
+      // Suggest sfid based on mpn if present
+      const mpn = (it && it.mpn) ? String(it.mpn).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') : '';
+      const suggested = mpn ? `p_${mpn}` : '';
+      // Pass fields through as-is
+      const fields = Object.assign({}, it);
+      // Augment notes with invoice metadata if available
+      const frags = [];
+      if (shared.supplier_name) frags.push(`Supplier: ${shared.supplier_name}`);
+      if (shared.invoice_number) frags.push(`Invoice#: ${shared.invoice_number}`);
+      if (shared.invoice_date) frags.push(`Date: ${shared.invoice_date}`);
+      const extra = frags.join(' | ');
+      if (extra){
+        fields.notes = fields.notes ? `${fields.notes} | ${extra}` : extra;
+      }
+      // Remove fields that are not typical entity fields but keep core ones; we leave as-is to allow custom schemas
+      delete fields["invoice_number"]; delete fields["invoice_date"]; delete fields["supplier_name"];
+      return { suggested_sfid: suggested, fields };
+    });
+
+    const payload = { shared, entities };
+    try{
+      sessionStorage.setItem('sf_batch_prefill', JSON.stringify(payload));
+    }catch(e){ /* ignore */ }
+    window.location.href = '/entities/batch/new';
+  });
+
+  // Store raw result items for later transfer
+  function storeRaw(items){
+    itemsList.dataset.raw = JSON.stringify(items);
+    window.__rawItems = items;
+  }
+
+  // Patch extractAll to store raw items after success
+  const _oldExtractAll = extractAll;
+  extractAll = async function(blob){
+    const fd = new FormData();
+    fd.append('file', new File([blob], 'invoice.jpg', {type: 'image/jpeg'}));
+    const res = await fetch('/api/vision/extract/parts', { method: 'POST', body: fd });
+    const j = await res.json();
+    if (!j || !j.success){
+      const err = (j && (j.error || j.hint)) || 'Vision extraction failed';
+      throw new Error(err);
+    }
+    const result = j.result || {};
+    modelInfo.textContent = result.model ? `Model: ${result.model}` : '';
+    const data = result.data || {};
+    const supplier = safeText(data.supplier_name);
+    const invno = safeText(data.invoice_number);
+    const invdate = safeText(data.invoice_date);
+    if (supplier || invno || invdate){
+      metaSupplier.textContent = supplier;
+      metaNumber.textContent = invno;
+      metaDate.textContent = invdate;
+      invoiceMeta.classList.remove('hidden');
+    } else {
+      invoiceMeta.classList.add('hidden');
+    }
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    itemsList.innerHTML = '';
+    if (!items.length){
+      itemsEmpty.classList.remove('hidden');
+      itemsList.classList.add('hidden');
+      btnToBatch.disabled = true;
+      storeRaw([]);
+      return;
+    }
+    itemsEmpty.classList.add('hidden');
+    itemsList.classList.remove('hidden');
+    storeRaw(items);
+
+    items.forEach((it, idx) => {
+      const id = `itm_${idx}`;
+      const title = safeText(it.part_name) || safeText(it.mpn) || `Item ${idx+1}`;
+      const mf = safeText(it.manufacturer);
+      const mpn = safeText(it.mpn);
+      const desc = safeText(it.description);
+      const qty = it.quantity == null ? '' : String(it.quantity);
+      const uom = safeText(it.uom);
+      const price = it.unit_price == null ? '' : String(it.unit_price);
+      const cur = safeText(it.currency);
+      const notes = safeText(it.notes);
+      const tags = Array.isArray(it.tags) ? it.tags.join(', ') : safeText(it.tags);
+      const card = document.createElement('div');
+      card.className = 'border border-gray-200 rounded-md p-4';
+      card.innerHTML = `
+        <div class=\"flex items-start justify-between\"> 
+          <label class=\"inline-flex items-center gap-2\"><input type=\"checkbox\" id=\"sel_${id}\" class=\"h-4 w-4 text-blue-600\" checked> <span class=\"font-medium text-gray-900\">${escapeHtml(title)}</span></label>
+          <span class=\"text-xs text-gray-400\">#${idx+1}</span>
+        </div>
+        ${mf || mpn ? `<div class=\"text-sm text-gray-600\">${escapeHtml([mf, mpn].filter(Boolean).join(' · '))}</div>` : ''}
+        ${desc ? `<div class=\"text-sm text-gray-700 mt-2\">${escapeHtml(desc)}</div>`: ''}
+        <div class=\"grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mt-3\">
+          <div><span class=\"text-gray-500\">Qty</span><div class=\"text-gray-900\">${escapeHtml(qty)}</div></div>
+          <div><span class=\"text-gray-500\">UOM</span><div class=\"text-gray-900\">${escapeHtml(uom)}</div></div>
+          <div><span class=\"text-gray-500\">Unit Price</span><div class=\"text-gray-900\">${escapeHtml(price)}</div></div>
+          <div><span class=\"text-gray-500\">Currency</span><div class=\"text-gray-900\">${escapeHtml(cur)}</div></div>
+        </div>
+        ${(notes||tags)? `<div class=\"text-xs text-gray-500 mt-2\">${escapeHtml([notes, tags].filter(Boolean).join(' • '))}</div>`:''}
+      `;
+      itemsList.appendChild(card);
+    });
+
+    btnToBatch.disabled = false;
+  }
+})();
+</script>
+{% endblock %}

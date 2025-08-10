@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Create Entities - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="mb-8">
+    <nav class="flex" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-4">
+        <li>
+          <a href="{{ url_for('vision_invoice_page') }}" class="text-gray-400 hover:text-gray-500">
+            <i class="fas fa-file-invoice mr-1"></i>Invoice Scan
+          </a>
+        </li>
+        <li>
+          <div class="flex items-center">
+            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
+            <span class="text-gray-900 font-medium">Batch Create</span>
+          </div>
+        </li>
+      </ol>
+    </nav>
+    <h1 class="text-3xl font-bold text-gray-900 mt-2">Batch Create Entities</h1>
+    <p class="mt-2 text-gray-600">Review extracted items, adjust suggested SFIDs and fields, then create all selected entities.</p>
+  </div>
+
+  <div id="empty-state" class="hidden">
+    <div class="bg-white rounded-lg border border-gray-200 p-8 text-center">
+      <p class="text-gray-600">No prefilled items found. Start from the invoice scanner.</p>
+      <a href="{{ url_for('vision_invoice_page') }}" class="inline-flex items-center mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+        <i class="fas fa-arrow-left mr-2"></i>Back to Invoice Scan
+      </a>
+    </div>
+  </div>
+
+  <div id="prefill" class="space-y-6 hidden">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">Shared Invoice Metadata</h2>
+      <div id="shared-meta" class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm"></div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-900">Items</h2>
+        <div class="text-sm text-gray-500"><span id="count"></span></div>
+      </div>
+
+      <div id="items" class="space-y-4"></div>
+
+      <div class="mt-6 flex items-center justify-between">
+        <div class="text-sm text-gray-500">Tip: Ensure each SFID is unique and follows your naming convention (e.g., p_my-part).</div>
+        <div class="flex gap-3">
+          <button id="btn-create" class="px-4 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 disabled:opacity-50" disabled>
+            <i class="fas fa-plus-circle mr-2"></i>Create Selected
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="results" class="hidden bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <h2 class="text-lg font-semibold text-gray-900 mb-4">Results</h2>
+      <div id="results-list" class="space-y-3"></div>
+      <div class="mt-4 flex gap-3">
+        <a href="{{ url_for('entities_list') }}" class="px-4 py-2 bg-gray-100 rounded-md hover:bg-gray-200">Back to Entities</a>
+        <a href="{{ url_for('inventory_add') }}" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add Stock</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const prefillWrap = $('#prefill');
+  const emptyState = $('#empty-state');
+  const sharedMeta = $('#shared-meta');
+  const itemsWrap = $('#items');
+  const btnCreate = $('#btn-create');
+  const countEl = $('#count');
+  const results = $('#results');
+  const resultsList = $('#results-list');
+
+  let payload = null;
+  try {
+    payload = JSON.parse(sessionStorage.getItem('sf_batch_prefill') || '');
+  } catch(e) {
+    payload = null;
+  }
+
+  if (!payload || !Array.isArray(payload.entities) || !payload.entities.length){
+    emptyState.classList.remove('hidden');
+    return;
+  }
+
+  prefillWrap.classList.remove('hidden');
+
+  // Render shared invoice metadata
+  const shared = payload.shared || {};
+  const metaFields = [
+    ['Supplier', safe(shared.supplier_name)],
+    ['Invoice #', safe(shared.invoice_number)],
+    ['Date', safe(shared.invoice_date)],
+  ];
+  sharedMeta.innerHTML = metaFields.map(([k,v]) => (
+    `<div><span class="text-gray-500">${escapeHtml(k)}:</span> <span class="text-gray-900">${escapeHtml(v)}</span></div>`
+  )).join('');
+
+  // Render items
+  const entities = payload.entities || [];
+  countEl.textContent = `${entities.length} item${entities.length===1?'':'s'}`;
+
+  entities.forEach((ent, idx) => {
+    const fields = ent.fields || {};
+    const mpn = safe(fields.mpn);
+    const pname = safe(fields.part_name);
+    const suggested = ent.suggested_sfid || suggestFrom(fields);
+    const id = `e_${idx}`;
+
+    const card = document.createElement('div');
+    card.className = 'border border-gray-200 rounded-md p-4';
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-4">
+        <label class="inline-flex items-center gap-2">
+          <input type="checkbox" id="sel_${id}" class="h-4 w-4 text-blue-600" checked>
+          <span class="font-medium text-gray-900">${escapeHtml(pname || mpn || `Item ${idx+1}`)}</span>
+          <span class="text-xs text-gray-400">#${idx+1}</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-500">SFID</label>
+          <input id="sfid_${id}" type="text" class="sf-input px-2 py-1 border rounded-md text-sm w-72" placeholder="p_my-part" value="${escapeAttr(suggested)}">
+          <button type="button" class="px-2 py-1 text-xs border rounded-md" id="slug_${id}">Suggest</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+        <div>
+          <div class="text-xs text-gray-500 mb-1">Quick preview</div>
+          <div class="text-sm text-gray-800">
+            ${pname ? `<div><span class='text-gray-500'>Name</span>: ${escapeHtml(pname)}</div>`:''}
+            ${mpn ? `<div><span class='text-gray-500'>MPN</span>: ${escapeHtml(mpn)}</div>`:''}
+            ${safe(fields.manufacturer) ? `<div><span class='text-gray-500'>MFR</span>: ${escapeHtml(safe(fields.manufacturer))}</div>`:''}
+            ${safe(fields.description) ? `<div class='mt-1 text-gray-600'>${escapeHtml(safe(fields.description))}</div>`:''}
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <div class="text-xs text-gray-500">Fields (JSON)</div>
+            <button type="button" class="px-2 py-1 text-xs border rounded-md" id="fmt_${id}">Format</button>
+          </div>
+          <textarea id="fields_${id}" class="w-full h-40 text-sm font-mono border rounded-md p-2">${escapeHtml(JSON.stringify(fields))}</textarea>
+          <div class="text-xs text-gray-500 mt-1">You can edit fields. Unknown keys are allowed; canonical schema is flexible.</div>
+        </div>
+      </div>
+    `;
+
+    itemsWrap.appendChild(card);
+
+    // Wire up helpers
+    const $sel = card.querySelector(`#sel_${id}`);
+    const $sfid = card.querySelector(`#sfid_${id}`);
+    const $fmt = card.querySelector(`#fmt_${id}`);
+    const $slug = card.querySelector(`#slug_${id}`);
+    const $ta = card.querySelector(`#fields_${id}`);
+
+    const updateBtnState = () => {
+      btnCreate.disabled = itemsWrap.querySelectorAll('input[type="checkbox"]:checked').length === 0;
+    };
+    $sel.addEventListener('change', updateBtnState);
+
+    $fmt.addEventListener('click', () => {
+      try {
+        const obj = JSON.parse($ta.value);
+        $ta.value = JSON.stringify(obj, null, 2);
+      } catch(e) {
+        alert('Invalid JSON; fix before formatting.');
+      }
+    });
+
+    $slug.addEventListener('click', () => {
+      const fields = safeParse($ta.value) || {};
+      const s = suggestFrom(fields);
+      if (s) $sfid.value = s;
+    });
+  });
+
+  btnCreate.disabled = false;
+
+  btnCreate.addEventListener('click', async () => {
+    const cards = Array.from(itemsWrap.children || []);
+    const entities = [];
+    for (const card of cards){
+      const $sel = card.querySelector('input[type="checkbox"]');
+      if (!$sel || !$sel.checked) continue;
+      const $sfid = card.querySelector('input[type="text"]');
+      const $ta = card.querySelector('textarea');
+      const sfid = ($sfid.value || '').trim();
+      if (!sfid){ alert('SFID is required for all selected items.'); return; }
+      if (!/^[-a-z0-9_\.]+$/i.test(sfid)) { alert(`Invalid SFID: ${sfid}`); return; }
+      const fields = safeParse($ta.value);
+      if (fields == null){ alert('Fix invalid JSON in fields.'); return; }
+      entities.push({ sfid, fields });
+    }
+    if (!entities.length){ alert('Select at least one item.'); return; }
+
+    btnCreate.disabled = true;
+    try{
+      const res = await fetch('/api/entities/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entities })
+      });
+      const j = await res.json();
+      renderResults(j && j.results ? j.results : [], Boolean(j && j.success));
+    }catch(e){
+      alert('Batch create failed.');
+    }finally{
+      btnCreate.disabled = false;
+    }
+  });
+
+  function renderResults(resultsArr, ok){
+    results.classList.remove('hidden');
+    resultsList.innerHTML = '';
+    if (!Array.isArray(resultsArr) || !resultsArr.length){
+      resultsList.innerHTML = '<div class="text-gray-600">No results to display.</div>';
+      return;
+    }
+    for (const r of resultsArr){
+      const ok = !!r.success;
+      const sfid = safe(r.sfid);
+      const row = document.createElement('div');
+      row.className = 'flex items-start justify-between gap-4 p-3 rounded border ' + (ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50');
+      row.innerHTML = `
+        <div class="text-sm">
+          <div class="font-medium ${ok?'text-green-700':'text-red-700'}">${ok?'Created':'Failed'}: ${escapeHtml(sfid || `#${(r.index ?? 0)+1}`)}</div>
+          ${ok ? '' : `<div class="text-xs text-red-600 mt-1">${escapeHtml(safe(r.error))}</div>`}
+        </div>
+        <div class="text-sm">
+          ${ok && sfid ? `<a class="text-blue-600 hover:underline" href="/entities/${encodeURIComponent(sfid)}">View</a>` : ''}
+        </div>
+      `;
+      resultsList.appendChild(row);
+    }
+  }
+
+  function safe(v){ return v == null ? '' : String(v); }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHtml(s).replace(/"/g, '&quot;'); }
+  function safeParse(t){ try { return JSON.parse(t); } catch(e){ return null; } }
+  function slug(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+  function suggestFrom(fields){
+    const f = fields || {};
+    const base = f.mpn || f.part_name || f.name || '';
+    if (!base) return '';
+    const core = slug(base);
+    return core ? `p_${core}` : '';
+  }
+})();
+</script>
+{% endblock %}

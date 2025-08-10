@@ -29,6 +29,12 @@
         <a href="{{ url_for('entities_add') }}?sfid=p_&scan=1" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center md:hidden">
           <i class="fas fa-camera mr-2"></i>Scan a Part
         </a>
+        <a href="{{ url_for('vision_invoice_page') }}" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+          <i class="fas fa-file-invoice mr-2"></i>Invoice Scan (Batch)
+        </a>
+        <a href="{{ url_for('entities_batch_new') }}" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+          <i class="fas fa-layer-group mr-2"></i>Batch Create
+        </a>
         <a href="{{ url_for('entities_add') }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
           <i class="fas fa-user-plus mr-2"></i>Add Entity
         </a>

@@ -37,6 +37,7 @@ from smallfactory.core.v1.stickers import (
 from smallfactory.core.v1.vision import (
     ask_image as vlm_ask_image,
     extract_invoice_part as vlm_extract_invoice_part,
+    extract_invoice_parts as vlm_extract_invoice_parts,
 )
 
 app = Flask(__name__)
@@ -66,6 +67,11 @@ def index():
 def vision_page():
     """Mobile-friendly page to capture/upload an image and extract part info."""
     return render_template('vision.html')
+
+@app.route('/vision/invoice', methods=['GET'])
+def vision_invoice_page():
+    """Scan an invoice image and extract multiple parts (batch)."""
+    return render_template('vision_invoice.html')
 
 @app.route('/inventory')
 def inventory_list():
@@ -369,6 +375,15 @@ def api_entities_specs(sfid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/entities/batch/new', methods=['GET'])
+def entities_batch_new():
+    """Render batch entity creation page.
+
+    Prefill data is expected to be provided via sessionStorage on the client
+    (key: 'sf_batch_prefill') set by the invoice scanning page.
+    """
+    return render_template('entities/batch_add.html')
+
 # -----------------------
 # Vision API (Ollama-backed)
 # -----------------------
@@ -447,6 +462,53 @@ def api_vision_extract_part():
             "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
         )
         return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+
+@app.route('/api/vision/extract/parts', methods=['POST'])
+def api_vision_extract_parts():
+    """Extract multiple part line items from an invoice image."""
+    try:
+        img_bytes = _read_image_from_request(request)
+        result = vlm_extract_invoice_parts(img_bytes)
+        return jsonify({'success': True, 'result': result})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        hint = (
+            "Ensure Ollama is running and the model is available.\n"
+            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+            "Pull model: `ollama pull qwen2.5vl:3b`\n"
+            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+        )
+        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+
+@app.route('/api/entities/batch', methods=['POST'])
+def api_entities_batch():
+    """Create multiple entities from JSON payload.
+
+    Expected JSON body: {"entities": [{"sfid": str, "fields": {..}}, ...]}
+    Returns per-entity status list.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        items = payload.get('entities')
+        if not isinstance(items, list) or not items:
+            return jsonify({'success': False, 'error': 'Body must include non-empty list at key "entities"'}), 400
+        datarepo_path = get_datarepo_path()
+        results = []
+        for idx, item in enumerate(items):
+            sfid = (item or {}).get('sfid', '').strip()
+            fields = (item or {}).get('fields') or {}
+            try:
+                if not sfid:
+                    raise ValueError('sfid is required')
+                created = create_entity(datarepo_path, sfid, fields=fields)
+                results.append({'index': idx, 'sfid': sfid, 'success': True, 'entity': created})
+            except Exception as e:
+                results.append({'index': idx, 'sfid': sfid, 'success': False, 'error': str(e)})
+        ok = all(r.get('success') for r in results)
+        return jsonify({'success': ok, 'results': results})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # -----------------------
 # Stickers (QR only) routes

@@ -1,7 +1,7 @@
 import base64
 import json
 import re
-from typing import Optional, Type
+from typing import Optional, Type, List
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,22 @@ class InvoicePart(BaseModel):
 
     notes: Optional[str] = None
     tags: Optional[list[str]] = None
+
+    class Config:
+        extra = "ignore"
+
+class InvoiceParts(BaseModel):
+    """Structured extraction for invoices containing multiple line items.
+
+    Top-level carries shared invoice metadata; `items` lists one or more
+    part line items using the `InvoicePart` schema.
+    """
+
+    supplier_name: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[str] = None
+
+    items: List[InvoicePart]
 
     class Config:
         extra = "ignore"
@@ -151,3 +167,21 @@ def extract_invoice_part(image_bytes: bytes) -> dict:
         "If multiple line items exist, pick the most relevant hardware/electronic part."
     )
     return ask_image(user_prompt, image_bytes, schema=InvoicePart)
+
+
+def extract_invoice_parts(image_bytes: bytes) -> dict:
+    """Extract multiple part line items from an invoice image.
+
+    Returns {"data": <InvoiceParts dict>, "model": <model>} where
+    data has optional shared invoice fields and an `items` array of
+    one or more `InvoicePart` objects.
+    """
+    user_prompt = (
+        "From this invoice, extract ALL hardware/electronic part line items. "
+        "Return a JSON object with optional shared invoice fields at the top-level "
+        "(supplier_name, invoice_number, invoice_date) and an 'items' array where each item "
+        "follows the single-part schema (part_name, manufacturer, mpn, description, unit_price, "
+        "currency, quantity, uom, location_l_sfid, notes, tags). Use null for unknowns. "
+        "Do not include any extra keys or text outside the JSON."
+    )
+    return ask_image(user_prompt, image_bytes, schema=InvoiceParts)
