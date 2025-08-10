@@ -292,11 +292,50 @@ def main():
                     sys.exit(1)
             target_path = datarepos_dir / repo_name
 
-        if target_path.exists() and os.listdir(str(target_path)):
-            print(f"[smallFactory] Error: Target directory '{target_path}' already exists and is not empty.")
+        # Guard against collisions
+        if target_path.exists():
+            if os.listdir(str(target_path)):
+                print(f"[smallFactory] Error: Target directory '{target_path}' already exists and is not empty.")
+                sys.exit(1)
+            if github_url:
+                print(f"[smallFactory] Error: Target directory '{target_path}' already exists. Please provide a non-existing path or omit --path.")
+                sys.exit(1)
+
+        try:
+            # Ensure parent directory exists, but do not pre-create the clone directory
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if github_url:
+                repo_path = repo_ops.create_or_clone(target_path, github_url)
+                has_remote = True
+            else:
+                repo_path = repo_ops.create_or_clone(target_path, None)
+                has_remote = False
+
+            # Write initial datarepo config and scaffold
+            repo_ops.write_datarepo_config(repo_path)
+
+            # Set as default datarepo in user config
+            repo_ops.set_default_datarepo(repo_path)
+
+            # Initial commit and optional push
+            repo_ops.initial_commit_and_optional_push(repo_path, has_remote=has_remote)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
             sys.exit(1)
 
-    
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps({"repo_path": str(repo_path), "remote": github_url or None}, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump({"repo_path": str(repo_path), "remote": github_url or None}, sort_keys=False))
+        else:
+            if github_url:
+                print(f"[smallFactory] Cloned and initialized datarepo at '{repo_path}'")
+            else:
+                print(f"[smallFactory] Initialized new datarepo at '{repo_path}'")
+            print(f"[smallFactory] Default datarepo set in '{CONFIG_FILENAME}'")
+
     def _parse_size(sz: str, dpi: int):
         if not sz:
             return (600, 300)  # 2x1 inches @ 300 DPI
