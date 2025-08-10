@@ -68,9 +68,15 @@
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Active</span>
               {% endif %}
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-right text-sm">
-              <a href="{{ url_for('entities_view', sfid=e.sfid) }}" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-              <a href="{{ url_for('entities_edit', sfid=e.sfid) }}" class="text-gray-600 hover:text-gray-900">Edit</a>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+              <div class="flex space-x-2 justify-end">
+                <a href="{{ url_for('entities_view', sfid=e.sfid) }}" class="text-blue-600 hover:text-blue-900" title="View">
+                  <i class="fas fa-eye"></i>
+                </a>
+                <a href="{{ url_for('entities_edit', sfid=e.sfid) }}" class="text-yellow-600 hover:text-yellow-900" title="Edit">
+                  <i class="fas fa-edit"></i>
+                </a>
+              </div>
             </td>
           </tr>
           {% endfor %}
