@@ -203,39 +203,45 @@
 <script>
 let currentDeleteId = null;
 
-// Search functionality
-document.getElementById('search').addEventListener('input', function() {
-    const searchTerm = this.value.toLowerCase();
+// Unified filtering (search + category + location)
+function applyFilters() {
+    const searchTerm = document.getElementById('search').value.toLowerCase();
+    const selectedCategory = document.getElementById('category-filter').value.toLowerCase();
+    const selectedLocation = document.getElementById('location-filter').value; // keep original case
     const rows = document.querySelectorAll('.inventory-row');
-    
-    rows.forEach(row => {
-        const sfid = row.dataset.sfid.toLowerCase();
-        const name = row.dataset.name.toLowerCase();
-        const description = row.dataset.description.toLowerCase();
-        
-        if (sfid.includes(searchTerm) || name.includes(searchTerm) || description.includes(searchTerm)) {
-            row.style.display = '';
-        } else {
-            row.style.display = 'none';
-        }
-    });
-});
 
-// Category filter
-document.getElementById('category-filter').addEventListener('change', function() {
-    const selectedCategory = this.value.toLowerCase();
-    const rows = document.querySelectorAll('.inventory-row');
-    
     rows.forEach(row => {
-        const category = row.dataset.category.toLowerCase();
-        
-        if (!selectedCategory || category === selectedCategory) {
-            row.style.display = '';
-        } else {
-            row.style.display = 'none';
+        // Search match (sfid/name/description)
+        const sfid = (row.dataset.sfid || '').toLowerCase();
+        const name = (row.dataset.name || '').toLowerCase();
+        const description = (row.dataset.description || '').toLowerCase();
+        const matchesSearch = !searchTerm || sfid.includes(searchTerm) || name.includes(searchTerm) || description.includes(searchTerm);
+
+        // Category match
+        const category = (row.dataset.category || '').toLowerCase();
+        const matchesCategory = !selectedCategory || category === selectedCategory;
+
+        // Location match (parse locations column spans)
+        let matchesLocation = true;
+        if (selectedLocation) {
+            matchesLocation = false;
+            const locationSpans = row.querySelectorAll('td:nth-child(4) span');
+            locationSpans.forEach(span => {
+                const location = span.textContent.split(':')[0].trim();
+                if (location === selectedLocation) {
+                    matchesLocation = true;
+                }
+            });
         }
+
+        row.style.display = (matchesSearch && matchesCategory && matchesLocation) ? '' : 'none';
     });
-});
+}
+
+// Wire inputs to unified filter
+document.getElementById('search').addEventListener('input', applyFilters);
+document.getElementById('category-filter').addEventListener('change', applyFilters);
+document.getElementById('location-filter').addEventListener('change', applyFilters);
 
 // Populate category filter options
 function populateFilters() {
@@ -365,6 +371,7 @@ document.getElementById('delete-modal').addEventListener('click', function(e) {
 // Initialize filters on page load
 document.addEventListener('DOMContentLoaded', function() {
     populateFilters();
+    applyFilters();
 });
 </script>
 {% endblock %}
