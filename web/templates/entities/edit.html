@@ -28,6 +28,16 @@
     </nav>
     <h1 class="text-3xl font-bold text-gray-900 mt-2">Edit Entity</h1>
     <p class="mt-2 text-gray-600">Update fields for <span class="font-mono">{{ entity.sfid }}</span>. The SFID is immutable.</p>
+    <div id="no-specs-callout" class="mt-4 hidden">
+      <div class="rounded-md bg-blue-50 p-4 border border-blue-200">
+        <div class="flex">
+          <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
+          <p class="ml-3 text-sm text-blue-800">
+            No field specifications were found for this entity type. You can still edit existing fields or add custom fields below.
+          </p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="max-w-2xl">
@@ -124,22 +134,34 @@ async function renderFields(){
   const optGrid = document.getElementById('optional-fields-grid');
   const reqWrap = document.getElementById('required-fields');
   const optWrap = document.getElementById('optional-fields');
+  const noSpecsCallout = document.getElementById('no-specs-callout');
   reqGrid.innerHTML = '';
   optGrid.innerHTML = '';
   const entityData = JSON.parse(document.getElementById('entity-json').textContent);
-  const entries = Object.entries(specs);
+  const entries = Object.entries(specs || {});
   const required = entries.filter(([k,v]) => v && v.required);
   const optional = entries.filter(([k,v]) => !v || !v.required);
   if(required.length){ reqWrap.classList.remove('hidden'); } else { reqWrap.classList.add('hidden'); }
-  if(optional.length){ optWrap.classList.remove('hidden'); } else { optWrap.classList.add('hidden'); }
+
+  // Determine unknown fields not present in specs
+  const known = new Set(Object.keys(specs || {}));
+  const unknown = Object.keys(entityData).filter(k => k !== 'sfid' && !known.has(k));
+
+  // Show/hide the callout if there are no specs defined
+  if(noSpecsCallout){
+    if(entries.length === 0){ noSpecsCallout.classList.remove('hidden'); }
+    else { noSpecsCallout.classList.add('hidden'); }
+  }
+
+  // Unhide optional section if there are optional spec fields, unknown fields, or no specs at all
+  const showOptional = (optional.length > 0) || (unknown.length > 0) || (entries.length === 0);
+  if(showOptional){ optWrap.classList.remove('hidden'); } else { optWrap.classList.add('hidden'); }
+
   required.forEach(([name, spec]) => { reqGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, entityData[name])); });
   optional.forEach(([name, spec]) => { optGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, entityData[name])); });
   // Add any existing unknown fields to optional grid for visibility
-  Object.keys(entityData).forEach(k => {
-    if(k === 'sfid') return;
-    if(!specs || specs[k] == null){
-      optGrid.insertAdjacentHTML('beforeend', makeInput(k, {}, entityData[k]));
-    }
+  unknown.forEach(k => {
+    optGrid.insertAdjacentHTML('beforeend', makeInput(k, {}, entityData[k]));
   });
 }
 
