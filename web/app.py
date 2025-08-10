@@ -20,7 +20,6 @@ from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_s
 from smallfactory.core.v1.inventory import (
     list_items,
     view_item,
-    add_item,
     delete_item,
     adjust_quantity
 )
@@ -41,7 +40,7 @@ from smallfactory.core.v1.vision import (
 )
 
 app = Flask(__name__)
-app.secret_key = 'smallfactory-web-ui-secret-key-change-in-production'
+app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
 
 @app.route('/')
 def index():

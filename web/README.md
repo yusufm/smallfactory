@@ -32,20 +32,21 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 
 3. **Start the web server**:
    ```bash
-   python run.py
+   # from project root
+   python sf.py web --port 8080
+   # development mode with auto-reload
+   FLASK_ENV=development python sf.py web --port 8080 --debug
    ```
 
 4. **Access the interface**:
-   Open your browser to `http://localhost:5000`
+   Open your browser to `http://localhost:8080`
 
 ## Development
 
 To run in development mode with auto-reload:
 
 ```bash
-FLASK_ENV=development python run.py
-# or
-python run.py --debug
+FLASK_ENV=development python sf.py web --port 8080 --debug
 ```
 
 ## Architecture
@@ -57,7 +58,7 @@ The web UI is built as a Flask application that uses the smallFactory core v1 AP
   - `base.html`: Base template with navigation and common elements
   - `index.html`: Dashboard page
   - `inventory/`: Inventory-specific templates
-- `run.py`: Development server launcher
+- `sf.py web`: CLI entrypoint for the development server
 
 ## API Integration
 
@@ -117,7 +118,7 @@ Defaults assume a local Ollama at `http://localhost:11434`. To override, set:
 
 ```bash
 export SF_OLLAMA_BASE_URL=http://<ollama-host>:11434
-export SF_VISION_MODEL=qwen2-vl:2b-instruct
+export SF_VISION_MODEL=qwen2.5vl:3b
 ```
 
 ### 3) Install web deps and run
