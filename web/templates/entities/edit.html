@@ -63,6 +63,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script id="entity-json" type="application/json">{{ entity | tojson }}</script>
 <script>
 async function fetchSpecsForSFID(sfid){
   if(!sfid) return null;
@@ -125,7 +126,7 @@ async function renderFields(){
   const optWrap = document.getElementById('optional-fields');
   reqGrid.innerHTML = '';
   optGrid.innerHTML = '';
-  const entityData = {{ entity | tojson }};
+  const entityData = JSON.parse(document.getElementById('entity-json').textContent);
   const entries = Object.entries(specs);
   const required = entries.filter(([k,v]) => v && v.required);
   const optional = entries.filter(([k,v]) => !v || !v.required);
