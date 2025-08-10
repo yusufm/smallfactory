@@ -25,9 +25,14 @@
         <h1 class="text-3xl font-bold text-gray-900">Entities</h1>
         <p class="mt-2 text-gray-600">Canonical metadata under <code>entities/&lt;SFID&gt;.yml</code></p>
       </div>
-      <a href="{{ url_for('entities_add') }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
-        <i class="fas fa-user-plus mr-2"></i>Add Entity
-      </a>
+      <div class="flex items-center gap-2">
+        <a href="{{ url_for('entities_add') }}?sfid=p_&scan=1" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center md:hidden">
+          <i class="fas fa-camera mr-2"></i>Scan a Part
+        </a>
+        <a href="{{ url_for('entities_add') }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+          <i class="fas fa-user-plus mr-2"></i>Add Entity
+        </a>
+      </div>
     </div>
   </div>
 
