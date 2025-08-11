@@ -105,6 +105,103 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
             })
         # Missing 'uom' on parts is allowed; defaults to 'ea' at read time per SPEC.
 
+        # If BOM is present, validate structure and referenced SFIDs exist
+        if "bom" in data:
+            bom = data.get("bom")
+            if not isinstance(bom, list):
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_BOM_NOT_LIST",
+                    "path": _rel(entity_yml, repo),
+                    "message": "'bom' must be a list of line objects"
+                })
+            else:
+                # Only deeply validate content for parts (we already flagged non-parts above)
+                if is_part:
+                    for idx, line in enumerate(bom, start=1):
+                        if not isinstance(line, dict):
+                            issues.append({
+                                "severity": "error",
+                                "code": "ENT_BOM_LINE_NOT_MAP",
+                                "path": _rel(entity_yml, repo),
+                                "message": f"bom item {idx}: must be a mapping/object"
+                            })
+                            continue
+                        use = line.get("use")
+                        if not isinstance(use, str) or not use.strip():
+                            issues.append({
+                                "severity": "error",
+                                "code": "ENT_BOM_USE_REQUIRED",
+                                "path": _rel(entity_yml, repo),
+                                "message": f"bom item {idx}: 'use' is required and must be an SFID string"
+                            })
+                        else:
+                            try:
+                                validate_sfid(use)
+                            except Exception as e:
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_USE_SFID_INVALID",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: invalid SFID in 'use': {e}"
+                                })
+                            if not (repo / "entities" / use / "entity.yml").exists():
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_USE_ENTITY_MISSING",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: referenced entity '{use}' does not exist under entities/"
+                                })
+                        # Alternates validation (if present)
+                        if "alternates" in line:
+                            alts = line.get("alternates")
+                            if not isinstance(alts, list):
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_ALT_NOT_LIST",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: 'alternates' must be a list"
+                                })
+                            else:
+                                for a_idx, alt in enumerate(alts, start=1):
+                                    if not isinstance(alt, dict):
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_ITEM_NOT_MAP",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: must be a mapping/object"
+                                        })
+                                        continue
+                                    aus = alt.get("use")
+                                    if aus is None:
+                                        # Alternates without 'use' are ignored; not an error.
+                                        continue
+                                    if not isinstance(aus, str) or not aus.strip():
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_USE_REQUIRED",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: 'use' must be an SFID string"
+                                        })
+                                        continue
+                                    try:
+                                        validate_sfid(aus)
+                                    except Exception as e:
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_SFID_INVALID",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: invalid SFID in 'use': {e}"
+                                        })
+                                        continue
+                                    if not (repo / "entities" / aus / "entity.yml").exists():
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_ENTITY_MISSING",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: referenced entity '{aus}' does not exist under entities/"
+                                        })
+
 
 def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
     inv_root = repo / "inventory"
