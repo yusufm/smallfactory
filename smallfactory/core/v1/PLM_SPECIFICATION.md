@@ -1,5 +1,7 @@
 # smallFactory PLM: Minimal Spec (v0.1)
 
+Status: DRAFT — breaking changes permitted until PROD.
+
 ## Goals
 - Single, flat `entities/` namespace — no separate parts vs assemblies.
 - **Parts** are entities with an optional `bom` (i.e., assemblies) — one schema.
@@ -332,7 +334,7 @@ sf part revision release <sfid> <revision>
 sf resolve finished_goods/<sku>
 sf lock finished_goods/<sku> [--output <path>]
 sf serial mint --workorder <workorder> --qty <n>
-sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--uom <uom>] [--reason <text>]
+sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
 sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
@@ -350,7 +352,18 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - Revision directories under `revisions/` are **immutable** once released.
 - `refs/released` is the **only pointer** you flip to advance the world.
 - Large binaries (`*.step`, `*.stl`, `*.pdf`) should be tracked with **Git LFS**.
-- SFIDs should be globally unique; prefixes recommended (e.g., `p_`, `l_`, `sup_`).
+- SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `sup_`).
+
+- Auto-commit history:
+  - All mutating operations auto-commit with clear messages including the required `::sfid::` tokens.
+
+- Commit metadata tokens:
+  - Commits that affect an entity MUST include `::sfid::<SFID>` in the message.
+  - For inventory posts, include both tokens: `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
+- Output modes: CLI and API support `human`, `json`, and `yaml` outputs; field shapes are stable within a major version.
+- Determinism: Given the same repo state and inputs, operations produce the same results.
+- Branding: User-facing name is "smallFactory" (lowercase s, uppercase F).
+- Predictable layout: Top-level directories (e.g., `entities/`, `inventory/`, `finished_goods/`, `workorders/`) are stable; new capabilities add new top-level dirs.
 
 Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `sup_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`), change record `eco` ID, or supplier-provided IDs.
 
