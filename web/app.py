@@ -28,6 +28,10 @@ from smallfactory.core.v1.entities import (
     create_entity,
     update_entity_fields,
     retire_entity,
+    # Revisions
+    get_revisions,
+    bump_revision,
+    release_revision,
     # BOM management
     bom_list,
     bom_add_line,
@@ -489,6 +493,44 @@ def api_entities_update(sfid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@app.route('/api/entities/<sfid>/revisions', methods=['GET'])
+def api_revisions_get(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        info = get_revisions(datarepo_path, sfid)
+        return jsonify({'success': True, 'rev': info.get('rev'), 'revisions': info.get('revisions', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/entities/<sfid>/revisions/bump', methods=['POST'])
+def api_revisions_bump(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        notes = payload.get('notes') if isinstance(payload, dict) else None
+        released_at = payload.get('released_at') if isinstance(payload, dict) else None
+        # Cut next snapshot, then immediately release it
+        bumped = bump_revision(datarepo_path, sfid, notes=notes)
+        new_rev = bumped.get('new_rev')
+        if not new_rev:
+            raise RuntimeError('Failed to determine new revision label after bump')
+        ent = release_revision(datarepo_path, sfid, new_rev, released_at=released_at, notes=notes)
+        return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/entities/<sfid>/revisions/<rev>/release', methods=['POST'])
+def api_revisions_release(sfid, rev):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        notes = payload.get('notes') if isinstance(payload, dict) else None
+        released_at = payload.get('released_at') if isinstance(payload, dict) else None
+        ent = release_revision(datarepo_path, sfid, rev, released_at=released_at, notes=notes)
+        return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 # -----------------------
 # BOM API endpoints (AJAX)
 # -----------------------
@@ -580,6 +622,17 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
                 continue
             qty = line.get('qty', 1) or 1
             rev = line.get('rev', 'released') or 'released'
+            # Resolve 'released' pointer to concrete label if available (SPEC)
+            resolved_rev = rev
+            if rev == 'released' and use.startswith('p_'):
+                try:
+                    ptr = (datarepo_path / 'entities' / use / 'refs' / 'released')
+                    if ptr.exists():
+                        val = ptr.read_text(encoding='utf-8').strip()
+                        if val:
+                            resolved_rev = val
+                except Exception:
+                    pass
             is_cycle = use in path_stack
             cqty = _mul(cum_qty if cum_qty is not None else 1, qty)
             node = {
@@ -588,6 +641,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
                 'name': _get_name(use),
                 'qty': qty,
                 'rev': rev,
+                'resolved_rev': resolved_rev,
                 'level': level,
                 'is_alt': False,
                 'alternates_group': line.get('alternates_group'),
@@ -612,12 +666,24 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
                         continue
                     a_cycle = aus in path_stack
                     acqty = _mul(cum_qty if cum_qty is not None else 1, qty)
+                    # Resolve released pointer for alternate
+                    a_resolved_rev = rev
+                    if rev == 'released' and aus.startswith('p_'):
+                        try:
+                            aptr = (datarepo_path / 'entities' / aus / 'refs' / 'released')
+                            if aptr.exists():
+                                aval = aptr.read_text(encoding='utf-8').strip()
+                                if aval:
+                                    a_resolved_rev = aval
+                        except Exception:
+                            pass
                     a_node = {
                         'parent': cur_parent,
                         'use': aus,
                         'name': _get_name(aus),
                         'qty': qty,
                         'rev': rev,
+                        'resolved_rev': a_resolved_rev,
                         'level': level + 1,
                         'is_alt': True,
                         'alternates_group': line.get('alternates_group'),

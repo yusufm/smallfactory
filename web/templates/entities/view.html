@@ -361,13 +361,26 @@
           {% endif %}
         </div>
         <div class="px-6 py-4 text-sm text-gray-700">
-          {% if structure and structure.has_revisions %}
-            <div class="text-gray-600">Revision snapshots are present under <code class="font-mono text-xs bg-gray-50 px-1 py-0.5 rounded">revisions/</code>.</div>
-          {% else %}
-            <div class="text-gray-500">No revision snapshots yet.</div>
-          {% endif %}
-          <div class="mt-3 flex gap-2">
-            <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Create snapshot</button>
+          <div class="flex flex-wrap items-end gap-2">
+            <div class="text-xs text-gray-600">current: <span id="revisions-current-rev" class="font-mono">—</span></div>
+            <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
+            <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="bumpRevision()">Create & release revision</button>
+          </div>
+          <div id="revisions-error" class="mt-2 text-sm text-red-600"></div>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">ID</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Status</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Created</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Released</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Notes</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="revisions-tbody" class="divide-y divide-gray-100"></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -678,7 +691,84 @@ function showBomError(msg){
   if(el) el.textContent = msg||'';
 }
 
+// -----------------
+// Revisions
+// -----------------
+function showRevError(msg){
+  const el = document.getElementById('revisions-error');
+  if(el) el.textContent = msg||'';
+}
+
+async function loadRevisions(){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load revisions');
+    const cur = document.getElementById('revisions-current-rev');
+    if(cur) cur.textContent = data.rev || '—';
+    renderRevisionsRows(data.revisions||[]);
+    showRevError('');
+  }catch(e){ showRevError(e.message||String(e)); }
+}
+
+function renderRevisionsRows(list){
+  const tbody = document.getElementById('revisions-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  const releasedOnly = Array.isArray(list) ? list.filter(r => r && r.released_at) : [];
+  if(releasedOnly.length===0){
+    tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-2 text-sm text-gray-500">No releases yet.</td></tr>';
+    return;
+  }
+  releasedOnly.forEach(r => {
+    const id = r.id||'—';
+    const ra = r.released_at||'—';
+    const st = (r && r.released_at) ? 'released' : (r && r.status ? r.status : '—');
+    const ca = r.created_at||'—';
+    const notes = r.notes?String(r.notes):'';
+    const actions = '<span class="text-gray-400">—</span>';
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="odd:bg-gray-50">
+        <td class="px-3 py-1.5 font-mono text-blue-700">${id}</td>
+        <td class="px-3 py-1.5 text-gray-800">${st}</td>
+        <td class="px-3 py-1.5 text-gray-700">${ca}</td>
+        <td class="px-3 py-1.5 text-gray-700">${ra}</td>
+        <td class="px-3 py-1.5 text-gray-700">${notes||'<span class=\'text-gray-400\'>—</span>'}</td>
+        <td class="px-3 py-1.5">${actions}</td>
+      </tr>`);
+  });
+}
+
+async function bumpRevision(){
+  const notes = (document.getElementById('rev-notes')?.value||'').trim();
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions/bump`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(notes?{notes}:{})
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to bump revision');
+    if(document.getElementById('rev-notes')) document.getElementById('rev-notes').value = '';
+    // Refresh
+    await loadRevisions();
+  }catch(e){ showRevError(e.message||String(e)); }
+}
+
+async function releaseRevision(rev){
+  const notes = prompt('Optional release notes (leave blank for none):')||'';
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(rev)}/release`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(notes?{notes}:{})
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to release revision');
+    await loadRevisions();
+  }catch(e){ showRevError(e.message||String(e)); }
+}
+
 // Initial load
+loadRevisions();
 if(isPart){ bomLoad(); }
 </script>
 <script>
