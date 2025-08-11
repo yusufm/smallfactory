@@ -24,6 +24,13 @@ from smallfactory.core.v1.entities import (
     create_entity as ent_create_entity,
     update_entity_fields as ent_update_entity_fields,
     retire_entity as ent_retire_entity,
+    # BOM APIs
+    bom_list as ent_bom_list,
+    bom_add_line as ent_bom_add_line,
+    bom_remove_line as ent_bom_remove_line,
+    bom_set_line as ent_bom_set_line,
+    bom_alt_add as ent_bom_alt_add,
+    bom_alt_remove as ent_bom_alt_remove,
 )
 
 # Stickers generation (QR only)
@@ -107,6 +114,52 @@ def main():
     ent_retire = ent_sub.add_parser("retire", help="Retire (soft-delete) an entity")
     ent_retire.add_argument("sfid", help="Entity SFID")
     ent_retire.add_argument("--reason", default=None, help="Retirement reason")
+
+    # bom group (bill of materials ops)
+    bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
+    bom_sub = bom_parser.add_subparsers(dest="bom_cmd", required=False, parser_class=SFArgumentParser)
+
+    bom_ls = bom_sub.add_parser("ls", aliases=["list"], help="List BOM lines for a parent part")
+    bom_ls.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+
+    bom_add = bom_sub.add_parser("add", help="Add a BOM line to a parent part")
+    bom_add.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    bom_add.add_argument("--use", required=True, help="Child entity SFID to reference")
+    bom_add.add_argument("--qty", type=int, default=1, help="Quantity (default 1)")
+    bom_add.add_argument("--rev", default="released", help="Revision selector (default 'released')")
+    bom_add.add_argument("--index", type=int, default=None, help="Insert at index (default append)")
+    bom_add.add_argument("--alt", dest="alts", action="append", default=None, help="Alternate child SFID (repeatable)")
+    bom_add.add_argument("--alternates-group", dest="alternates_group", default=None, help="Optional alternates group name")
+    bom_add.add_argument("--no-check-exists", dest="check_exists", action="store_false", help="Do not enforce that child exists")
+
+    bom_rm = bom_sub.add_parser("rm", aliases=["remove"], help="Remove a BOM line by index or by child sfid")
+    grp_rm = bom_rm.add_mutually_exclusive_group(required=True)
+    bom_rm.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    grp_rm.add_argument("--index", type=int, help="Index of BOM line to remove")
+    grp_rm.add_argument("--use", help="Child SFID to remove (removes first match unless --all)")
+    bom_rm.add_argument("--all", dest="remove_all", action="store_true", help="Remove all matching uses (with --use)")
+
+    bom_set = bom_sub.add_parser("set", help="Edit a BOM line by index")
+    bom_set.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    bom_set.add_argument("--index", type=int, required=True, help="Index of BOM line to edit")
+    bom_set.add_argument("--use", help="Set child SFID")
+    bom_set.add_argument("--qty", type=int, help="Set quantity")
+    bom_set.add_argument("--rev", help="Set revision selector")
+    bom_set.add_argument("--alternates-group", dest="alternates_group", help="Set alternates group")
+    bom_set.add_argument("--no-check-exists", dest="check_exists", action="store_false", help="Do not enforce that child exists")
+
+    bom_alt_add = bom_sub.add_parser("alt-add", help="Append an alternate to a BOM line")
+    bom_alt_add.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    bom_alt_add.add_argument("--index", type=int, required=True, help="Index of BOM line")
+    bom_alt_add.add_argument("--use", dest="alt_use", required=True, help="Alternate child SFID to add")
+    bom_alt_add.add_argument("--no-check-exists", dest="check_exists", action="store_false", help="Do not enforce that alternate exists")
+
+    bom_alt_rm = bom_sub.add_parser("alt-rm", help="Remove an alternate from a BOM line")
+    bom_alt_rm.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    bom_alt_rm_grp = bom_alt_rm.add_mutually_exclusive_group(required=True)
+    bom_alt_rm.add_argument("--index", type=int, required=True, help="Index of BOM line")
+    bom_alt_rm_grp.add_argument("--alt-index", type=int, dest="alt_index", help="Alternate index to remove")
+    bom_alt_rm_grp.add_argument("--alt-use", dest="alt_use", help="Alternate child SFID to remove")
 
     # web command (kept top-level)
     web_parser = subparsers.add_parser("web", help="Start the web UI server")
@@ -216,6 +269,8 @@ def main():
             inventory_parser.print_help()
         elif cmd == "entities":
             entities_parser.print_help()
+        elif cmd == "bom":
+            bom_parser.print_help()
         else:
             parser.print_help()
         sys.exit(2)
@@ -635,6 +690,156 @@ def main():
         else:
             print(f"[smallFactory] Retired entity '{args.sfid}'")
 
+    # BOM command handlers
+    def _normalize_bom_line(line: dict) -> dict:
+        out = dict(line or {})
+        # compress None entries
+        return {k: v for k, v in out.items() if v is not None}
+
+    def cmd_bom_ls(args):
+        datarepo_path = _repo_path()
+        try:
+            bom = ent_bom_list(datarepo_path, args.parent)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(bom, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(bom, sort_keys=False))
+        else:
+            if not bom:
+                print(f"[smallFactory] No BOM lines on '{args.parent}'")
+            else:
+                for i, line in enumerate(bom):
+                    use = line.get("use", "?")
+                    qty = line.get("qty", 1)
+                    rev = line.get("rev", "released")
+                    print(f"[{i}] use={use} qty={qty} rev={rev}")
+
+    def cmd_bom_add(args):
+        datarepo_path = _repo_path()
+        alts = None
+        if args.alts:
+            alts = [{"use": a} for a in args.alts]
+        try:
+            res = ent_bom_add_line(
+                datarepo_path,
+                args.parent,
+                use=args.use,
+                qty=args.qty,
+                rev=args.rev,
+                alternates=alts,
+                alternates_group=getattr(args, "alternates_group", None),
+                index=args.index,
+                check_exists=getattr(args, "check_exists", True),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Added BOM line to '{args.parent}' at index {res.get('index')}: use={args.use} qty={args.qty}")
+
+    def cmd_bom_rm(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_bom_remove_line(
+                datarepo_path,
+                args.parent,
+                index=getattr(args, "index", None),
+                use=getattr(args, "use", None),
+                remove_all=getattr(args, "remove_all", False),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            removed = res.get("removed")
+            print(f"[smallFactory] Removed BOM line(s) from '{args.parent}': {removed}")
+
+    def cmd_bom_set(args):
+        datarepo_path = _repo_path()
+        updates = {}
+        for key in ("use", "qty", "rev", "alternates_group"):
+            val = getattr(args, key, None)
+            if val is not None:
+                updates[key] = val
+        if not updates:
+            print("[smallFactory] Error: no fields to update (--use/--qty/--rev/--alternates-group)")
+            sys.exit(2)
+        try:
+            res = ent_bom_set_line(
+                datarepo_path,
+                args.parent,
+                index=args.index,
+                updates=updates,
+                check_exists=getattr(args, "check_exists", True),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            line = _normalize_bom_line(res.get("line", {}))
+            print(f"[smallFactory] Updated BOM line {args.index} on '{args.parent}': {line}")
+
+    def cmd_bom_alt_add(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_bom_alt_add(
+                datarepo_path,
+                args.parent,
+                index=args.index,
+                alt_use=args.alt_use,
+                check_exists=getattr(args, "check_exists", True),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Added alternate {args.alt_use} to line {args.index} on '{args.parent}'")
+
+    def cmd_bom_alt_rm(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_bom_alt_remove(
+                datarepo_path,
+                args.parent,
+                index=args.index,
+                alt_index=getattr(args, "alt_index", None),
+                alt_use=getattr(args, "alt_use", None),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Removed alternate from line {args.index} on '{args.parent}'")
+
     def cmd_web(args):
         try:
             # Import Flask app here to avoid import issues if Flask isn't installed
@@ -690,6 +895,8 @@ def main():
         sub = getattr(args, "inv_cmd", None)
     elif cmd == "entities":
         sub = getattr(args, "ent_cmd", None)
+    elif cmd == "bom":
+        sub = getattr(args, "bom_cmd", None)
     elif cmd == "stickers":
         sub = getattr(args, "st_cmd", None)
     else:
@@ -707,6 +914,14 @@ def main():
         ("entities", "show"): cmd_entities_show,
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
+        ("bom", "ls"): cmd_bom_ls,
+        ("bom", "list"): cmd_bom_ls,
+        ("bom", "add"): cmd_bom_add,
+        ("bom", "rm"): cmd_bom_rm,
+        ("bom", "remove"): cmd_bom_rm,
+        ("bom", "set"): cmd_bom_set,
+        ("bom", "alt-add"): cmd_bom_alt_add,
+        ("bom", "alt-rm"): cmd_bom_alt_rm,
         ("stickers", None): cmd_stickers_batch,
         ("stickers", "batch"): cmd_stickers_batch,
     }

@@ -164,6 +164,266 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     return data_ret
 
 
+# -------------------------------
+# BOM management helpers
+# -------------------------------
+def _ensure_part(datarepo_path: Path, parent_sfid: str) -> dict:
+    """Load parent entity and ensure it is a part (sfid starts with 'p_')."""
+    if not parent_sfid or not parent_sfid.startswith("p_"):
+        raise ValueError("BOM is only supported on part entities ('p_*')")
+    ent = get_entity(datarepo_path, parent_sfid)
+    if not isinstance(ent, dict):
+        ent = {"sfid": parent_sfid}
+    return ent
+
+
+def _bom_list_from_entity(ent: dict) -> List[dict]:
+    bom = ent.get("bom")
+    return list(bom) if isinstance(bom, list) else []
+
+
+def bom_list(datarepo_path: Path, parent_sfid: str) -> List[dict]:
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    return _bom_list_from_entity(ent)
+
+
+def bom_add_line(
+    datarepo_path: Path,
+    parent_sfid: str,
+    *,
+    use: str,
+    qty: int | str = 1,
+    rev: str | None = "released",
+    alternates: Optional[List[Dict]] = None,
+    alternates_group: Optional[str] = None,
+    index: Optional[int] = None,
+    check_exists: bool = True,
+) -> dict:
+    """Add a BOM line to a part entity and commit the change.
+
+    Returns a dict with keys: sfid, index, bom (updated list).
+    """
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    validate_sfid(use)
+    if check_exists:
+        fp = _entity_file(datarepo_path, use)
+        if not fp.exists():
+            raise FileNotFoundError(f"Referenced entity '{use}' does not exist under entities/")
+    # Build line
+    line: Dict = {"use": use}
+    if qty is not None:
+        line["qty"] = qty
+    if rev:
+        line["rev"] = rev
+    if isinstance(alternates, list):
+        line["alternates"] = alternates
+    if alternates_group:
+        line["alternates_group"] = alternates_group
+    bom = _bom_list_from_entity(ent)
+    # Insert
+    if index is None or index >= len(bom):
+        bom.append(line)
+        ix = len(bom) - 1
+    else:
+        if index < 0:
+            index = 0
+        bom.insert(index, line)
+        ix = index
+    # Persist
+    fp_parent = _entity_file(datarepo_path, parent_sfid)
+    data_to_write = dict(ent)
+    data_to_write.pop("sfid", None)
+    data_to_write["bom"] = bom
+    _write_yaml(fp_parent, data_to_write)
+    msg = (
+        f"[smallFactory] BOM add line to {parent_sfid} at index {ix}\n::sfid::{parent_sfid}\n::sf-op::bom-add\n::sf-child::{use}"
+    )
+    git_commit_and_push(datarepo_path, fp_parent, msg)
+    return {"sfid": parent_sfid, "index": ix, "bom": bom}
+
+
+def bom_remove_line(
+    datarepo_path: Path,
+    parent_sfid: str,
+    *,
+    index: Optional[int] = None,
+    use: Optional[str] = None,
+    remove_all: bool = False,
+) -> dict:
+    """Remove a BOM line by index or first/All matching use. Returns updated bom.
+    Exactly one of index or use must be provided.
+    """
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    bom = _bom_list_from_entity(ent)
+    if (index is None) == (use is None):
+        raise ValueError("Provide exactly one of 'index' or 'use'")
+    removed_indexes: List[int] = []
+    if index is not None:
+        if index < 0 or index >= len(bom):
+            raise IndexError("index out of range")
+        bom.pop(index)
+        removed_indexes.append(index)
+    else:
+        # remove by use
+        if not isinstance(use, str) or not use:
+            raise ValueError("'use' must be a non-empty string")
+        i = 0
+        while i < len(bom):
+            if isinstance(bom[i], dict) and bom[i].get("use") == use:
+                bom.pop(i)
+                removed_indexes.append(i)
+                if not remove_all:
+                    break
+                # do not increment i; list shrank
+                continue
+            i += 1
+        if not removed_indexes:
+            raise ValueError(f"No BOM line found with use='{use}'")
+    # Persist
+    fp_parent = _entity_file(datarepo_path, parent_sfid)
+    data_to_write = dict(ent)
+    data_to_write.pop("sfid", None)
+    if bom:
+        data_to_write["bom"] = bom
+    else:
+        data_to_write.pop("bom", None)
+    _write_yaml(fp_parent, data_to_write)
+    msg = (
+        f"[smallFactory] BOM remove line(s) from {parent_sfid} at {removed_indexes}\n::sfid::{parent_sfid}\n::sf-op::bom-remove"
+    )
+    git_commit_and_push(datarepo_path, fp_parent, msg)
+    return {"sfid": parent_sfid, "removed": removed_indexes, "bom": bom}
+
+
+def bom_set_line(
+    datarepo_path: Path,
+    parent_sfid: str,
+    *,
+    index: int,
+    updates: Dict,
+    check_exists: bool = True,
+) -> dict:
+    """Update fields on a BOM line by index. Returns updated line and bom."""
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    bom = _bom_list_from_entity(ent)
+    if index < 0 or index >= len(bom):
+        raise IndexError("index out of range")
+    line = dict(bom[index]) if isinstance(bom[index], dict) else {}
+    # Allowed fields
+    allowed = {"use", "qty", "rev", "alternates", "alternates_group"}
+    for k in list(updates.keys()):
+        if k not in allowed:
+            raise ValueError(f"Unsupported BOM field: {k}")
+    if "use" in updates:
+        new_use = updates["use"]
+        if not isinstance(new_use, str) or not new_use:
+            raise ValueError("'use' must be a non-empty string")
+        validate_sfid(new_use)
+        if check_exists and not _entity_file(datarepo_path, new_use).exists():
+            raise FileNotFoundError(f"Referenced entity '{new_use}' does not exist under entities/")
+    if "alternates" in updates and updates["alternates"] is not None and not isinstance(updates["alternates"], list):
+        raise ValueError("'alternates' must be a list of objects if provided")
+    line.update({k: v for k, v in updates.items() if v is not None})
+    bom[index] = line
+    # Persist
+    fp_parent = _entity_file(datarepo_path, parent_sfid)
+    data_to_write = dict(ent)
+    data_to_write.pop("sfid", None)
+    data_to_write["bom"] = bom
+    _write_yaml(fp_parent, data_to_write)
+    msg = (
+        f"[smallFactory] BOM edit line {index} on {parent_sfid}\n::sfid::{parent_sfid}\n::sf-op::bom-set"
+    )
+    git_commit_and_push(datarepo_path, fp_parent, msg)
+    return {"sfid": parent_sfid, "index": index, "line": line, "bom": bom}
+
+
+def bom_alt_add(
+    datarepo_path: Path,
+    parent_sfid: str,
+    *,
+    index: int,
+    alt_use: str,
+    check_exists: bool = True,
+) -> dict:
+    """Append an alternate to a BOM line's alternates list."""
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    bom = _bom_list_from_entity(ent)
+    if index < 0 or index >= len(bom):
+        raise IndexError("index out of range")
+    validate_sfid(alt_use)
+    if check_exists and not _entity_file(datarepo_path, alt_use).exists():
+        raise FileNotFoundError(f"Alternate entity '{alt_use}' does not exist under entities/")
+    line = dict(bom[index]) if isinstance(bom[index], dict) else {}
+    alts = line.get("alternates")
+    if not isinstance(alts, list):
+        alts = []
+    alts.append({"use": alt_use})
+    line["alternates"] = alts
+    bom[index] = line
+    # Persist
+    fp_parent = _entity_file(datarepo_path, parent_sfid)
+    data_to_write = dict(ent)
+    data_to_write.pop("sfid", None)
+    data_to_write["bom"] = bom
+    _write_yaml(fp_parent, data_to_write)
+    msg = (
+        f"[smallFactory] BOM alt add on {parent_sfid} line {index}\n::sfid::{parent_sfid}\n::sf-op::bom-alt-add\n::sf-child::{alt_use}"
+    )
+    git_commit_and_push(datarepo_path, fp_parent, msg)
+    return {"sfid": parent_sfid, "index": index, "line": line, "bom": bom}
+
+
+def bom_alt_remove(
+    datarepo_path: Path,
+    parent_sfid: str,
+    *,
+    index: int,
+    alt_index: Optional[int] = None,
+    alt_use: Optional[str] = None,
+) -> dict:
+    """Remove an alternate by index or by alt_use from a BOM line."""
+    ent = _ensure_part(datarepo_path, parent_sfid)
+    bom = _bom_list_from_entity(ent)
+    if index < 0 or index >= len(bom):
+        raise IndexError("index out of range")
+    line = dict(bom[index]) if isinstance(bom[index], dict) else {}
+    alts = line.get("alternates")
+    if not isinstance(alts, list) or not alts:
+        raise ValueError("No alternates to remove")
+    if (alt_index is None) == (alt_use is None):
+        raise ValueError("Provide exactly one of 'alt_index' or 'alt_use'")
+    removed = None
+    if alt_index is not None:
+        if alt_index < 0 or alt_index >= len(alts):
+            raise IndexError("alt_index out of range")
+        removed = alts.pop(alt_index)
+    else:
+        # by alt_use
+        for i, a in enumerate(alts):
+            if isinstance(a, dict) and a.get("use") == alt_use:
+                removed = alts.pop(i)
+                break
+        if removed is None:
+            raise ValueError(f"No alternate with use='{alt_use}' found")
+    if alts:
+        line["alternates"] = alts
+    else:
+        line.pop("alternates", None)
+    bom[index] = line
+    # Persist
+    fp_parent = _entity_file(datarepo_path, parent_sfid)
+    data_to_write = dict(ent)
+    data_to_write.pop("sfid", None)
+    data_to_write["bom"] = bom
+    _write_yaml(fp_parent, data_to_write)
+    msg = (
+        f"[smallFactory] BOM alt remove on {parent_sfid} line {index}\n::sfid::{parent_sfid}\n::sf-op::bom-alt-remove"
+    )
+    git_commit_and_push(datarepo_path, fp_parent, msg)
+    return {"sfid": parent_sfid, "index": index, "removed": removed, "line": line, "bom": bom}
+
+
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
     if not field or field == "sfid":
         raise ValueError("Invalid or immutable field: 'sfid'")
