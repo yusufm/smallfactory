@@ -60,7 +60,9 @@ def ensure_entities_dir(datarepo_path: Path) -> Path:
 
 
 def entity_meta_path(datarepo_path: Path, sfid: str) -> Path:
-    return ensure_entities_dir(datarepo_path) / f"{sfid}.yml"
+    # Canonical entity metadata path per SPEC v1
+    # entities/<sfid>/entity.yml
+    return ensure_entities_dir(datarepo_path) / sfid / "entity.yml"
 
 
 def location_dir(datarepo_path: Path, location_sfid: str) -> Path:
@@ -142,10 +144,11 @@ def generate(
         sfid = f"{id_prefix}{i:05d}"
         pname = f"{name_prefix}{i:05d}"
 
-        # Create/ensure canonical entity metadata for the item under entities/<sfid>.yml
+        # Create/ensure canonical entity metadata for the item under entities/<sfid>/entity.yml
         item_entity_path = entity_meta_path(datarepo_path, sfid)
         if not item_entity_path.exists():
-            write_yaml(item_entity_path, {"sfid": sfid, "name": pname})
+            # Do not persist 'sfid' in entity.yml; identity is directory name
+            write_yaml(item_entity_path, {"name": pname})
             paths_to_commit.append(item_entity_path)
             # Track item token as well
             batch_item_sfids.add(sfid)
@@ -168,7 +171,8 @@ def generate(
             # Ensure a canonical entity file exists for the location SFID as well
             loc_entity_path = entity_meta_path(datarepo_path, loc_sfid)
             if not loc_entity_path.exists():
-                write_yaml(loc_entity_path, {"sfid": loc_sfid, "name": loc_sfid})
+                # Do not persist 'sfid' in entity.yml; identity is directory name
+                write_yaml(loc_entity_path, {"name": loc_sfid})
                 paths_to_commit.append(loc_entity_path)
                 batch_location_sfids.add(loc_sfid)
 

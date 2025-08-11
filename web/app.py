@@ -18,10 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid
 from smallfactory.core.v1.inventory import (
-    list_items,
-    view_item,
-    delete_item,
-    adjust_quantity
+    inventory_post,
+    inventory_onhand,
 )
 from smallfactory.core.v1.entities import (
     list_entities,
@@ -47,18 +45,21 @@ def index():
     """Main dashboard showing overview of the system."""
     try:
         datarepo_path = get_datarepo_path()
-        items = list_items(datarepo_path)
-        total_items = len(items)
-        total_quantity = sum(item.get('quantity', 0) for item in items)
-        
-        # Get recent items (last 5)
-        recent_items = items[-5:] if items else []
-        
-        return render_template('index.html', 
-                             total_items=total_items,
-                             total_quantity=total_quantity,
-                             recent_items=recent_items,
-                             datarepo_path=str(datarepo_path))
+        summary = inventory_onhand(datarepo_path)
+        parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        total_items = len(parts)
+        total_quantity = int(summary.get('total', 0)) if isinstance(summary, dict) else 0
+
+        # Recent heuristic: first 5 entries (sorted by sfid already)
+        recent_items = parts[:5]
+
+        return render_template(
+            'index.html',
+            total_items=total_items,
+            total_quantity=total_quantity,
+            recent_items=recent_items,
+            datarepo_path=str(datarepo_path)
+        )
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -72,7 +73,39 @@ def inventory_list():
     """Display all inventory items in a table."""
     try:
         datarepo_path = get_datarepo_path()
-        items = list_items(datarepo_path)
+        summary = inventory_onhand(datarepo_path)
+        parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        # Enrich with entity names and per-location breakdown
+        items = []
+        for p in parts:
+            sfid = p.get('sfid')
+            if not sfid:
+                continue
+            # Entity metadata for name (best-effort)
+            try:
+                ent = get_entity(datarepo_path, sfid)
+                name = ent.get('name', sfid)
+                description = ent.get('description', '')
+                category = ent.get('category', '')
+            except Exception:
+                name = sfid
+                description = ''
+                category = ''
+            # Per-part onhand cache for by-location and total
+            try:
+                cache = inventory_onhand(datarepo_path, part=sfid)
+            except Exception:
+                cache = {}
+            items.append({
+                'sfid': sfid,
+                'name': name,
+                'description': description,
+                'category': category,
+                'uom': cache.get('uom', 'ea'),
+                'total': int(cache.get('total', 0) or 0),
+                'by_location': cache.get('by_location', {}) or {},
+                'as_of': cache.get('as_of'),
+            })
         field_specs = get_inventory_field_specs()
         return render_template('inventory/list.html', items=items, field_specs=field_specs)
     except Exception as e:
@@ -83,8 +116,20 @@ def inventory_view(item_id):
     """View details of a specific inventory item."""
     try:
         datarepo_path = get_datarepo_path()
-        item = view_item(datarepo_path, item_id)
+        cache = inventory_onhand(datarepo_path, part=item_id)
+        # Combine with entity metadata for UX if desired
+        entity = get_entity(datarepo_path, item_id)
         field_specs = get_inventory_field_specs()
+        item = {
+            "sfid": item_id,
+            "name": entity.get("name", item_id),
+            "description": entity.get("description", ""),
+            "category": entity.get("category", ""),
+            "uom": cache.get("uom"),
+            "total": cache.get("total", 0),
+            "by_location": cache.get("by_location", {}),
+            "as_of": cache.get("as_of"),
+        }
         return render_template('inventory/view.html', item=item, field_specs=field_specs)
     except Exception as e:
         flash(f'Error viewing item: {e}', 'error')
@@ -102,10 +147,16 @@ def inventory_add():
 
     # Prefill from query params on GET (e.g., after creating entity and returning)
     if request.method == 'GET':
-        for k in ('sfid', 'location', 'delta'):
-            v = request.args.get(k, '').strip()
-            if v:
-                form_data[k] = v
+        # Canonical field for location is l_sfid; accept legacy 'location' too
+        pre_sfid = request.args.get('sfid', '').strip()
+        pre_l_sfid = request.args.get('l_sfid', '').strip() or request.args.get('location', '').strip()
+        pre_delta = request.args.get('delta', '').strip()
+        if pre_sfid:
+            form_data['sfid'] = pre_sfid
+        if pre_l_sfid:
+            form_data['l_sfid'] = pre_l_sfid
+        if pre_delta:
+            form_data['delta'] = pre_delta
     
     if request.method == 'POST':
         # Always preserve form data for potential re-display
@@ -114,21 +165,22 @@ def inventory_add():
         try:
             # Extract required fields for adjustment
             sfid = request.form.get('sfid', '').strip()
-            location = request.form.get('location', '').strip()
+            # Canonical field name is l_sfid; support legacy 'location' as fallback
+            location = request.form.get('l_sfid', '').strip() or request.form.get('location', '').strip() or None
             delta_raw = request.form.get('delta', '0').strip()
 
             if not sfid:
                 raise ValueError("Missing required field: sfid")
-            if not location:
-                raise ValueError("Missing required field: location")
             try:
                 delta = int(delta_raw)
             except Exception:
                 raise ValueError("delta must be an integer (can be negative)")
 
             datarepo_path = get_datarepo_path()
-            adjust_quantity(datarepo_path, sfid, delta, location)
-            flash(f"Successfully adjusted '{sfid}' at {location} by {delta}", 'success')
+            # Use default location from sfdatarepo.yml if location omitted
+            inventory_post(datarepo_path, sfid, delta, location)
+            loc_msg = location or 'default location'
+            flash(f"Successfully adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
             return redirect(url_for('inventory_view', item_id=sfid))
         except Exception as e:
             flash(f'Error adjusting quantity: {e}', 'error')
@@ -145,7 +197,7 @@ def inventory_edit(item_id):
     try:
         datarepo_path = get_datarepo_path()
         # Ensure item exists for a nicer redirect target
-        _ = view_item(datarepo_path, item_id)
+        _ = get_entity(datarepo_path, item_id)
         flash('Editing entity metadata is handled by the Entities module. Inventory only manages quantities per location.', 'error')
         return redirect(url_for('inventory_view', item_id=item_id))
     except Exception as e:
@@ -158,9 +210,9 @@ def inventory_adjust(item_id):
     try:
         datarepo_path = get_datarepo_path()
         delta = int(request.form.get('delta', 0))
-        location = request.form.get('location', '').strip() or None
-        
-        adjust_quantity(datarepo_path, item_id, delta, location)
+        # Canonical field name is l_sfid; support legacy 'location' as fallback
+        location = request.form.get('l_sfid', '').strip() or request.form.get('location', '').strip() or None
+        inventory_post(datarepo_path, item_id, delta, location)
         flash(f'Successfully adjusted quantity by {delta}', 'success')
     except Exception as e:
         flash(f'Error adjusting quantity: {e}', 'error')
@@ -171,10 +223,9 @@ def inventory_adjust(item_id):
 def inventory_delete(item_id):
     """Delete an inventory item."""
     try:
-        datarepo_path = get_datarepo_path()
-        delete_item(datarepo_path, item_id)
-        flash(f'Successfully deleted inventory item: {item_id}', 'success')
-        return redirect(url_for('inventory_list'))
+        # Journal model does not support deleting inventory items; they are derived from journals
+        flash('Deleting inventory items is not supported in the journal model. Use negative adjustments instead.', 'error')
+        return redirect(url_for('inventory_view', item_id=item_id))
     except Exception as e:
         flash(f'Error deleting item: {e}', 'error')
         return redirect(url_for('inventory_view', item_id=item_id))
@@ -237,7 +288,7 @@ def entities_add():
         if next_arg and _is_safe_next(next_arg):
             next_url = next_arg
         up = request.args.get('update_param', '').strip()
-        if up in ('sfid', 'location'):
+        if up in ('sfid', 'l_sfid', 'location'):
             update_param = up
 
     if request.method == 'POST':
@@ -263,7 +314,7 @@ def entities_add():
             if next_url and _is_safe_next(next_url):
                 # If caller indicated which param to update, rewrite the next URL
                 try:
-                    if update_param in ('sfid', 'location'):
+                    if update_param in ('sfid', 'l_sfid', 'location'):
                         parsed = urlparse(next_url)
                         qs = parse_qs(parsed.query)
                         qs[update_param] = [sfid]
@@ -615,8 +666,18 @@ if __name__ == '__main__':
     import os
     import sys
     
+    # Determine port (env PORT or --port flag), default 8080
+    port = int(os.environ.get('PORT', '8080'))
+    if '--port' in sys.argv:
+        try:
+            idx = sys.argv.index('--port')
+            if idx + 1 < len(sys.argv):
+                port = int(sys.argv[idx + 1])
+        except Exception:
+            pass
+
     print("🏭 Starting smallFactory Web UI...")
-    print("📍 Access the interface at: http://localhost:8080")
+    print(f"📍 Access the interface at: http://localhost:{port}")
     print("🔧 Git-native PLM for 1-4 person teams")
     print("=" * 50)
     
@@ -627,7 +688,7 @@ if __name__ == '__main__':
         app.run(
             debug=debug_mode,
             host='0.0.0.0',
-            port=8080,
+            port=port,
             use_reloader=debug_mode
         )
     except KeyboardInterrupt:

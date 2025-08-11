@@ -10,7 +10,9 @@ from .config import (
     load_config,
     save_config,
     INVENTORY_DEFAULT_FIELD_SPECS,
+    validate_sfid,
 )
+from .gitutils import git_commit_paths
 
 
 # Default entity field specs for part type (sfid prefix 'p_')
@@ -97,11 +99,25 @@ def write_datarepo_config(repo_path: Path) -> Path:
     entities_dir = repo_path / "entities"
     inventory_dir.mkdir(parents=True, exist_ok=True)
     entities_dir.mkdir(parents=True, exist_ok=True)
-    # Create .gitkeep files so empty dirs are committed
-    for d in (inventory_dir, entities_dir):
-        gitkeep = d / ".gitkeep"
-        if not gitkeep.exists():
-            gitkeep.write_text("")
+    # inventory.default_location is set later by scaffold_default_location() in sfdatarepo.yml
+    # Ensure recommended .gitattributes for inventory journals (idempotent)
+    gia = repo_path / ".gitattributes"
+    union_line = "inventory/p_*/journal.ndjson merge=union\n"
+    try:
+        if gia.exists():
+            content = gia.read_text()
+            if union_line.strip() not in content:
+                with open(gia, "a") as gf:
+                    gf.write("\n# smallFactory recommended union merge for inventory journals\n")
+                    gf.write(union_line)
+        else:
+            with open(gia, "w") as gf:
+                gf.write("# Git attributes for smallFactory datarepo\n")
+                gf.write("# Use union merge for inventory journals to reduce conflicts\n")
+                gf.write(union_line)
+    except Exception:
+        # Non-fatal; validator will still recommend adding this
+        pass
     return config_file
 
 
@@ -112,12 +128,12 @@ def set_default_datarepo(repo_path: Path) -> None:
 
 
 def initial_commit_and_optional_push(repo_path: Path, has_remote: bool) -> None:
+    # Only commit the repo config file and .gitattributes; avoid touching
+    # entities/ or inventory/ so the initial commit doesn't require ::sfid:: tokens.
     subprocess.run(["git", "add", DATAREPO_CONFIG_FILENAME], cwd=repo_path)
-    # Add .gitkeep placeholders if present so directories are tracked
-    for rel in ["inventory/.gitkeep", "entities/.gitkeep"]:
-        p = repo_path / rel
-        if p.exists():
-            subprocess.run(["git", "add", rel], cwd=repo_path)
+    gia = repo_path / ".gitattributes"
+    if gia.exists():
+        subprocess.run(["git", "add", ".gitattributes"], cwd=repo_path)
     subprocess.run(["git", "commit", "-m", "Initial smallFactory datarepo config"], cwd=repo_path)
     remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
     if has_remote and "origin" in remotes.stdout:
@@ -126,6 +142,65 @@ def initial_commit_and_optional_push(repo_path: Path, has_remote: bool) -> None:
             subprocess.run(["git", "push", "-u", "origin", "main"], cwd=repo_path)
         except Exception:
             print("[smallFactory] Warning: Could not push to GitHub remote.")
+
+
+def scaffold_default_location(repo_path: Path, location_sfid: str = "l_inbox") -> None:
+    """Create a minimal default location entity and set default in sfdatarepo.yml.
+
+    - Writes entities/<location_sfid>/entity.yml if missing.
+    - Ensures sfdatarepo.yml has inventory.default_location=<location_sfid> (sets or updates).
+    - Commits touched files with a message including ::sfid::<location_sfid>.
+    - Idempotent: skips commit if nothing changed.
+    """
+    try:
+        validate_sfid(location_sfid)
+    except Exception as e:
+        raise ValueError(f"Invalid default location sfid '{location_sfid}': {e}")
+
+    ent_fp = repo_path / "entities" / location_sfid / "entity.yml"
+    dr_cfg_fp = repo_path / DATAREPO_CONFIG_FILENAME
+
+    # Track which paths we actually create
+    created_paths = []
+
+    # Ensure parent dir for entity
+    ent_fp.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create minimal location entity if absent
+    if not ent_fp.exists():
+        ent_fp.write_text("name: Inbox\n")
+        created_paths.append(ent_fp)
+
+    # Ensure sfdatarepo.yml has inventory.default_location
+    dr_changed = False
+    dr_data = {}
+    if dr_cfg_fp.exists():
+        try:
+            with open(dr_cfg_fp) as f:
+                dr_data = yaml.safe_load(f) or {}
+        except Exception:
+            dr_data = {}
+    inv_block = dr_data.get("inventory") or {}
+    cur = inv_block.get("default_location")
+    if cur != location_sfid:
+        inv_block["default_location"] = location_sfid
+        dr_data["inventory"] = inv_block
+        with open(dr_cfg_fp, "w") as f:
+            yaml.safe_dump(dr_data, f, sort_keys=False)
+        created_paths.append(dr_cfg_fp)
+        dr_changed = True
+
+    if not created_paths:
+        return  # nothing to do
+
+    msg = (
+        f"[smallFactory] Scaffold default location {location_sfid} and set repo default\n"
+        f"::sfid::{location_sfid}"
+    )
+    try:
+        git_commit_paths(repo_path, created_paths, msg)
+    except Exception:
+        print("[smallFactory] Warning: Failed to commit scaffolded default location/config.")
 
 
 def create_or_clone(target_path: Path, github_url: str | None) -> Path:

@@ -12,7 +12,7 @@ from .config import get_entity_field_specs_for_sfid, validate_sfid
 
 # -------------------------------
 # Canonical Entities API (SPEC v1)
-#   - Canonical metadata lives under: entities/<SFID>.yml
+#   - Canonical metadata lives under: entities/<sfid>/entity.yml
 #   - No other module must modify these files
 # -------------------------------
 
@@ -26,7 +26,7 @@ def _entities_dir(datarepo_path: Path) -> Path:
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     # Validate sfid conforms to SPEC (regex and safety)
     validate_sfid(sfid)
-    return _entities_dir(datarepo_path) / f"{sfid}.yml"
+    return _entities_dir(datarepo_path) / sfid / "entity.yml"
 
 
 def _read_yaml(p: Path) -> dict:
@@ -77,10 +77,14 @@ def _validate_against_specs(datarepo_path: Path, sfid: str, data: dict) -> None:
 
 def list_entities(datarepo_path: Path) -> List[dict]:
     ents: List[dict] = []
-    for fp in sorted(_entities_dir(datarepo_path).glob("*.yml")):
+    root = _entities_dir(datarepo_path)
+    for d in sorted([p for p in root.iterdir() if p.is_dir()]):
+        sfid = d.name
+        fp = d / "entity.yml"
+        if not fp.exists():
+            continue
         try:
             data = _read_yaml(fp)
-            sfid = fp.stem
             if not isinstance(data, dict):
                 data = {}
             data.setdefault("sfid", sfid)
@@ -111,16 +115,21 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     if fp.exists():
         raise FileExistsError(f"Entity '{sfid}' already exists")
     fp.parent.mkdir(parents=True, exist_ok=True)
-    data: Dict = {"sfid": sfid}
+    data: Dict = {}
     if fields:
-        # Avoid overriding sfid if provided
+        # Do not persist 'sfid' within entity.yml; identity is directory name
         data.update({k: v for k, v in fields.items() if k != "sfid"})
     # Validate against type-aware specs before writing
     _validate_against_specs(datarepo_path, sfid, data)
-    _write_yaml(fp, data)
+    # Ensure 'sfid' not written
+    data_to_write = dict(data)
+    data_to_write.pop("sfid", None)
+    _write_yaml(fp, data_to_write)
     commit_msg = f"[smallFactory] Created entity {sfid}\n::sfid::{sfid}"
     git_commit_and_push(datarepo_path, fp, commit_msg)
-    return data
+    data_ret = dict(data_to_write)
+    data_ret["sfid"] = sfid
+    return data_ret
 
 
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
@@ -132,17 +141,21 @@ def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> di
         raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
-        data = {"sfid": sfid}
+        data = {}
     data[field] = value
     # Validate entire record against specs post-update
     _validate_against_specs(datarepo_path, sfid, data)
-    _write_yaml(fp, data)
+    data_to_write = dict(data)
+    data_to_write.pop("sfid", None)
+    _write_yaml(fp, data_to_write)
     commit_msg = (
         f"[smallFactory] Updated entity {sfid} field {field}\n"
         f"::sfid::{sfid}\n::sf-field::{field}\n::sf-value::{value}"
     )
     git_commit_and_push(datarepo_path, fp, commit_msg)
-    return data
+    data_ret = dict(data_to_write)
+    data_ret["sfid"] = sfid
+    return data_ret
 
 
 def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
@@ -156,16 +169,20 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
         raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
-        data = {"sfid": sfid}
+        data = {}
     data.update(updates)
     # Validate merged record against type-aware specs
     _validate_against_specs(datarepo_path, sfid, data)
-    _write_yaml(fp, data)
+    data_to_write = dict(data)
+    data_to_write.pop("sfid", None)
+    _write_yaml(fp, data_to_write)
     # Summarize updated keys
     keys = ", ".join(sorted(updates.keys()))
     commit_msg = f"[smallFactory] Updated entity {sfid} fields: {keys}\n::sfid::{sfid}"
     git_commit_and_push(datarepo_path, fp, commit_msg)
-    return data
+    data_ret = dict(data_to_write)
+    data_ret["sfid"] = sfid
+    return data_ret
 
 
 def delete_entity(datarepo_path: Path, sfid: str, *, force: bool = False) -> dict:
@@ -186,7 +203,7 @@ def retire_entity(
     reason: Optional[str] = None,
     retired_at: Optional[str] = None,
 ) -> dict:
-    """Soft-delete an entity by marking it retired in entities/<sfid>.yml.
+    """Soft-delete an entity by marking it retired in entities/<sfid>/entity.yml.
 
     - Sets fields: retired: true, retired_at: ISO-8601 UTC, retired_reason: <reason?>
     - Does not touch inventory; references remain valid historically.
@@ -197,17 +214,21 @@ def retire_entity(
         raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
-        data = {"sfid": sfid}
+        data = {}
     if retired_at is None:
         retired_at = datetime.now(timezone.utc).isoformat()
     data["retired"] = True
     data["retired_at"] = retired_at
     if reason:
         data["retired_reason"] = str(reason)
-    _write_yaml(fp, data)
+    data_to_write = dict(data)
+    data_to_write.pop("sfid", None)
+    _write_yaml(fp, data_to_write)
     # Commit
     base_msg = f"[smallFactory] Retired entity {sfid}\n::sfid::{sfid}\n::sf-retired::true"
     if reason:
         base_msg += f"\n::sf-reason::{reason}"
     git_commit_and_push(datarepo_path, fp, base_msg)
-    return data
+    data_ret = dict(data_to_write)
+    data_ret["sfid"] = sfid
+    return data_ret

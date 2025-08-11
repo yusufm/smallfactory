@@ -7,19 +7,14 @@ import yaml
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
-    ensure_config,
     get_datarepo_path,
     CONFIG_FILENAME,
-    load_datarepo_config,
-    INVENTORY_DEFAULT_FIELD_SPECS,
 )
 from smallfactory.core.v1 import repo as repo_ops
 from smallfactory.core.v1.inventory import (
-    add_item,
-    list_items,
-    view_item,
-    delete_item,
-    adjust_quantity,
+    inventory_post,
+    inventory_onhand,
+    inventory_rebuild,
 )
 
 # Entities core API
@@ -36,6 +31,9 @@ from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity as st_generate_sticker_for_entity,
     check_dependencies as st_check_dependencies,
 )
+
+# Validator (PLM SPEC compliance)
+from smallfactory.core.v1.validate import validate_repo
 
 
 class SFArgumentParser(argparse.ArgumentParser):
@@ -66,34 +64,28 @@ def main():
     # init
     init_parser = subparsers.add_parser("init", help="Initialize a new datarepo at PATH")
     init_parser.add_argument("path", nargs="?", default=None, help="Target directory for new datarepo (optional)")
+    init_parser.add_argument("--github-url", dest="github_url", default=None, help="GitHub repository URL to clone (optional)")
+    init_parser.add_argument("--name", dest="name", default=None, help="Name for the new local datarepo when not cloning (optional)")
 
     # inventory group (nested subcommands)
-    inventory_parser = subparsers.add_parser("inventory", aliases=["inv"], help="Inventory operations")
+    inventory_parser = subparsers.add_parser("inventory", help="Inventory operations")
     inv_sub = inventory_parser.add_subparsers(dest="inv_cmd", required=False, parser_class=SFArgumentParser)
 
-    inv_add = inv_sub.add_parser("add", help="Add a new inventory item")
-    # Core required fields per SPEC/Core API
-    inv_add.add_argument("--sfid", required=True, metavar="sfid", help="Entity SFID (e.g., p_m3x10)")
-    inv_add.add_argument("--l_sfid", dest="location", required=True, metavar="l_sfid", help="Location SFID (e.g., l_a1)")
-    inv_add.add_argument("--quantity", required=True, type=int, metavar="qty", help="On-hand quantity (>= 0)")
-    # Additional optional metadata via key=value pairs
-    inv_add.add_argument("--set", dest="set_pairs", action="append", default=[], help="Extra metadata key=value (repeatable)")
+    # post: append a journal entry
+    inv_post = inv_sub.add_parser("post", help="Append an inventory journal entry for a part")
+    inv_post.add_argument("--part", required=True, metavar="sfid", help="Part SFID (e.g., p_m3x10)")
+    inv_post.add_argument("--qty-delta", dest="qty_delta", required=True, type=int, metavar="delta", help="Signed quantity delta (e.g., +5 or -2)")
+    inv_post.add_argument("--l_sfid", required=False, metavar="l_sfid", help="Location SFID (e.g., l_a1). If omitted, uses sfdatarepo.yml: inventory.default_location")
+    inv_post.add_argument("--reason", required=False, help="Optional reason string for the journal entry")
 
-    inv_ls = inv_sub.add_parser("ls", aliases=["list"], help="List inventory items")
+    # onhand: report on-hand quantities
+    inv_onhand = inv_sub.add_parser("onhand", help="Report on-hand quantities (by part, by location, or summary)")
+    grp = inv_onhand.add_mutually_exclusive_group(required=False)
+    grp.add_argument("--part", metavar="sfid", help="Part SFID to report on")
+    grp.add_argument("--l_sfid", metavar="l_sfid", help="Location SFID to report on")
 
-    inv_show = inv_sub.add_parser("show", aliases=["view"], help="Show an inventory item")
-    inv_show.add_argument("sfid", help="Item SFID")
-
-    # NOTE: Inventory no longer supports setting entity metadata; use entities module instead.
-
-    inv_rm = inv_sub.add_parser("rm", aliases=["delete"], help="Remove an inventory item")
-    inv_rm.add_argument("sfid", help="Item SFID")
-    inv_rm.add_argument("-y", "--yes", action="store_true", help="Confirm deletion without prompt")
-
-    inv_adjust = inv_sub.add_parser("adjust", help="Adjust quantity for an item at a location")
-    inv_adjust.add_argument("location", metavar="l_sfid", help="Location SFID (e.g., l_a1)")
-    inv_adjust.add_argument("sfid", metavar="sfid", help="Item SFID (e.g., p_m3x10)")
-    inv_adjust.add_argument("delta", type=int, metavar="delta", help="Signed quantity delta (e.g. +5, -2)")
+    # rebuild: rebuild caches from journals
+    inv_rebuild = inv_sub.add_parser("rebuild", help="Rebuild inventory on-hand caches from journals")
 
     # entities group (canonical metadata operations)
     entities_parser = subparsers.add_parser("entities", help="Entities (canonical metadata) operations")
@@ -121,6 +113,10 @@ def main():
     web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
+
+    # validate command (repo linter)
+    validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
+    validate_parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
 
     # stickers group (generate codes for entities)
     stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
@@ -209,46 +205,7 @@ def main():
         help="Output PDF filename (default: stickers.pdf)",
     )
 
-    # Pre-inject dynamic required flags for `inventory add` by inspecting argv
-    ensure_config()
-    argv = sys.argv[1:]
-    positional_tokens = [t for t in argv if not t.startswith("-")]
-    if len(positional_tokens) >= 2 and positional_tokens[0] in ("inventory", "inv") and positional_tokens[1] == "add":
-        repo_override = None
-        for i, a in enumerate(argv):
-            if a in ("-R", "--repo") and i + 1 < len(argv):
-                repo_override = argv[i + 1]
-        # Try to read repo config if a repo override is provided; otherwise
-        # attempt default repo, but fall back to defaults if not configured yet.
-        dr_cfg = {}
-        try:
-            if repo_override:
-                repo_path = pathlib.Path(repo_override).expanduser().resolve()
-                dr_cfg = load_datarepo_config(repo_path)
-            else:
-                # This may raise if no default repo exists yet.
-                dr_cfg = load_datarepo_config(None)
-        except Exception:
-            dr_cfg = {}
-        fields_cfg = (dr_cfg.get("inventory", {}) or {}).get("fields") or INVENTORY_DEFAULT_FIELD_SPECS
-        for fname, meta in fields_cfg.items():
-            if meta.get("required"):
-                # Map field name to canonical CLI option
-                if fname == "location":
-                    opt = "--l_sfid"
-                    kwargs = {"required": True, "help": meta.get("description", ""), "dest": "location", "metavar": "l_sfid"}
-                else:
-                    opt = f"--{fname}"
-                    kwargs = {"required": True, "help": meta.get("description", "")}
-                    if fname == "quantity":
-                        kwargs["type"] = int
-                # Skip if option already exists (by option string or destination)
-                existing_opts = [s for a in inv_add._actions for s in (a.option_strings or [])]
-                existing_dests = [getattr(a, "dest", None) for a in inv_add._actions]
-                desired_dest = kwargs.get("dest", fname.replace('-', '_'))
-                if (opt in existing_opts) or (desired_dest in existing_dests):
-                    continue
-                inv_add.add_argument(opt, **kwargs)
+    # (Removed legacy dynamic inventory add args injection; not applicable in journal model)
 
     args, unknown = parser.parse_known_args()
 
@@ -274,18 +231,26 @@ def main():
         return args.format
 
     def cmd_init(args):
-        github_url = input("Paste the GitHub repository URL to clone/use (or leave blank for a new local-only repo): ").strip()
+        # Prefer GitHub clone; prompt for URL first if not provided
+        github_url = (getattr(args, "github_url", None) or "").strip() or None
+        if github_url is None:
+            try:
+                gh_in = input("Enter GitHub repository URL to clone (or press Enter to create a local repo): ").strip()
+                github_url = gh_in or None
+            except Exception:
+                github_url = None
 
         if args.path:
             target_path = pathlib.Path(args.path)
         else:
-            datarepos_dir = pathlib.Path('datarepos')
+            datarepos_dir = pathlib.Path("datarepos")
             datarepos_dir.mkdir(exist_ok=True)
             if github_url:
-                # derive name from URL
-                repo_name = github_url.split('/')[-1].replace('.git', '')
+                repo_name = github_url.split("/")[-1].replace(".git", "").strip() or None
             else:
-                # if no URL, ask for a name
+                repo_name = (getattr(args, "name", None) or "").strip() or None
+            if not repo_name:
+                # Prompt for local name only if we are not cloning and no name provided
                 repo_name = input("Enter a name for the new local datarepo: ").strip()
                 if not repo_name:
                     print("[smallFactory] Error: datarepo name cannot be empty.")
@@ -301,6 +266,7 @@ def main():
                 print(f"[smallFactory] Error: Target directory '{target_path}' already exists. Please provide a non-existing path or omit --path.")
                 sys.exit(1)
 
+        # Create or clone the repo and scaffold per PLM spec
         try:
             # Ensure parent directory exists, but do not pre-create the clone directory
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -320,6 +286,14 @@ def main():
 
             # Initial commit and optional push
             repo_ops.initial_commit_and_optional_push(repo_path, has_remote=has_remote)
+
+            # Scaffold minimal default location entity and set repo default in sfdatarepo.yml
+            # Only for freshly created local repos (avoid mutating cloned remotes automatically)
+            if not has_remote:
+                try:
+                    repo_ops.scaffold_default_location(repo_path, "l_inbox")
+                except Exception as e:
+                    print(f"[smallFactory] Warning: could not scaffold default location/config: {e}")
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -335,6 +309,33 @@ def main():
             else:
                 print(f"[smallFactory] Initialized new datarepo at '{repo_path}'")
             print(f"[smallFactory] Default datarepo set in '{CONFIG_FILENAME}'")
+
+    def cmd_validate(args):
+        datarepo_path = _repo_path()
+        try:
+            result = validate_repo(datarepo_path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        errors = int(result.get("errors", 0))
+        warnings = int(result.get("warnings", 0))
+        if fmt == "json":
+            print(json.dumps(result, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(result, sort_keys=False))
+        else:
+            # Human report
+            print(f"[smallFactory] Validation results for {datarepo_path}")
+            print(f"Errors: {errors}, Warnings: {warnings}")
+            for it in result.get("issues", []):
+                sev = it.get("severity", "?")
+                code = it.get("code", "?")
+                path = it.get("path", "")
+                msg = it.get("message", "")
+                print(f" - [{sev.upper()}] {code} :: {path} :: {msg}")
+        if errors > 0 or (getattr(args, "strict", False) and warnings > 0):
+            sys.exit(1)
 
     def _parse_size(sz: str, dpi: int):
         if not sz:
@@ -479,160 +480,63 @@ def main():
         else:
             print(f"[smallFactory] Wrote {out_pdf} with {success} page(s)")
 
-    def cmd_inventory_add(args):
-        datarepo_path = _repo_path()
-        # Load field specs for any additional required fields beyond the core ones
-        dr_cfg = load_datarepo_config(datarepo_path)
-        fields_cfg = (dr_cfg.get("inventory", {}) or {}).get("fields") or INVENTORY_DEFAULT_FIELD_SPECS
-        required_fields = [fname for fname, meta in fields_cfg.items() if meta.get("required")]
-        # Build base item from core required args
-        item = {
-            "sfid": args.sfid,
-            "location": args.location,
-            "quantity": args.quantity,
-        }
-        # Include any additional repo-required fields (if present)
-        for fname in required_fields:
-            if fname in ("sfid", "location", "quantity"):
-                continue
-            val = getattr(args, fname.replace('-', '_'), None)
-            if val is None:
-                print(f"[smallFactory] Error: missing required field '--{fname}'")
-                sys.exit(2)
-            item[fname] = val
-        # Parse extra --set key=value pairs
-        if args.set_pairs:
-            for pair in args.set_pairs:
-                if "=" not in pair:
-                    print(f"[smallFactory] Error: invalid --set pair '{pair}', expected key=value")
-                    sys.exit(1)
-                k, v = pair.split("=", 1)
-                item[k.strip()] = v.strip()
-        try:
-            added = add_item(datarepo_path, item)
-        except Exception as e:
-            print(f"[smallFactory] Error: {e}")
-            sys.exit(1)
-        # Output
-        fmt = _fmt()
-        if fmt == "json":
-            print(json.dumps(added, indent=2))
-        elif fmt == "yaml":
-            print(yaml.safe_dump(added, sort_keys=False))
-        else:
-            print(f"[smallFactory] Added inventory item '{added['sfid']}' to datarepo at {datarepo_path}")
-
-    def cmd_inventory_list(args):
-        datarepo_path = _repo_path()
-        items = list_items(datarepo_path)
-        fmt = _fmt()
-        if fmt == "json":
-            print(json.dumps(items, indent=2))
-        elif fmt == "yaml":
-            print(yaml.safe_dump(items, sort_keys=False))
-        else:
-            if not items:
-                print("[smallFactory] No inventory items found.")
-                sys.exit(0)
-            # Dynamically determine all fields
-            required = ["sfid", "name", "quantity", "location"]
-            extra_fields = set()
-            for item in items:
-                extra_fields.update(item.keys())
-            # Do not show the raw 'locations' list column in human view
-            extra_fields = [f for f in sorted(extra_fields) if f not in required + ["locations"]]
-            fields = required + extra_fields
-            # Print header
-            header = " | ".join(f"{f.title():<15}" for f in fields)
-            print(header)
-            print("-" * len(header))
-            # Print rows
-            for item in items:
-                # First, print the main summary row
-                row = []
-                for f in fields:
-                    val = item.get(f, "")
-                    if f == "name":
-                        val = str(val)[:20]
-                    row.append(f"{str(val):<15}")
-                print(" | ".join(row))
-
-                # Then, if multiple locations exist, print sub-lines for each location with its quantity
-                locs = item.get("locations", [])
-                if isinstance(locs, list) and len(locs) > 1:
-                    try:
-                        details = view_item(datarepo_path, item.get("sfid", ""))
-                        loc_map = details.get("locations", {})
-                    except Exception:
-                        loc_map = {}
-                    for loc_name in sorted(loc_map.keys()):
-                        qty = loc_map.get(loc_name, "")
-                        sub_row = []
-                        for f in fields:
-                            if f == "sfid" or f == "name":
-                                val = ""
-                            elif f == "quantity":
-                                val = qty
-                            elif f == "location":
-                                val = loc_name
-                            else:
-                                val = ""
-                            sub_row.append(f"{str(val):<15}")
-                        print(" | ".join(sub_row))
-
-    def cmd_inventory_view(args):
+    def cmd_inventory_post(args):
         datarepo_path = _repo_path()
         try:
-            item = view_item(datarepo_path, args.sfid)
+            res = inventory_post(
+                datarepo_path,
+                part=args.part,
+                qty_delta=args.qty_delta,
+                location=getattr(args, "l_sfid", None),
+                reason=getattr(args, "reason", None),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
-            print(json.dumps(item, indent=2))
+            print(json.dumps(res, indent=2))
         elif fmt == "yaml":
-            print(yaml.safe_dump(item, sort_keys=False))
+            print(yaml.safe_dump(res, sort_keys=False))
         else:
-            print(yaml.safe_dump(item, sort_keys=False))
+            print(f"[smallFactory] Posted inventory delta {res['qty_delta']} for part '{res['part']}' at '{res['location']}' (txn {res['txn']})")
 
-    # Removed: cmd_inventory_update; inventory does not edit entity metadata per SPEC.
-
-    def cmd_inventory_delete(args):
+    def cmd_inventory_onhand(args):
         datarepo_path = _repo_path()
-        fmt = _fmt()
-        if fmt == "human" and not getattr(args, "yes", False) and sys.stdout.isatty():
-            confirm = input(f"Are you sure you want to delete inventory item '{args.sfid}'? [y/N]: ").strip().lower()
-            if confirm not in ("y", "yes"):
-                print("[smallFactory] Delete cancelled.")
-                sys.exit(0)
         try:
-            item = delete_item(datarepo_path, args.sfid)
+            res = inventory_onhand(
+                datarepo_path,
+                part=getattr(args, "part", None),
+                location=getattr(args, "l_sfid", None),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        # Output
+        fmt = _fmt()
         if fmt == "json":
-            print(json.dumps(item, indent=2))
+            print(json.dumps(res, indent=2))
         elif fmt == "yaml":
-            print(yaml.safe_dump(item, sort_keys=False))
+            print(yaml.safe_dump(res, sort_keys=False))
         else:
-            print(f"[smallFactory] Deleted inventory item '{args.sfid}' from datarepo at {datarepo_path}")
+            # Simple human-readable dump
+            print(yaml.safe_dump(res, sort_keys=False))
 
-    def cmd_inventory_adjust(args):
+    def cmd_inventory_rebuild(args):
         datarepo_path = _repo_path()
         try:
-            item = adjust_quantity(datarepo_path, args.sfid, args.delta, location=args.location)
+            res = inventory_rebuild(datarepo_path)
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        # Output
         fmt = _fmt()
         if fmt == "json":
-            print(json.dumps(item, indent=2))
+            print(json.dumps(res, indent=2))
         elif fmt == "yaml":
-            print(yaml.safe_dump(item, sort_keys=False))
+            print(yaml.safe_dump(res, sort_keys=False))
         else:
-            print(f"[smallFactory] Adjusted quantity for inventory item '{args.sfid}' at '{args.location}' by {args.delta} in datarepo at {datarepo_path}")
+            parts = ", ".join(res.get("parts", [])) or "0 parts"
+            locs = ", ".join(res.get("locations", [])) or "0 locations"
+            print(f"[smallFactory] Rebuilt on-hand caches for {parts}; locations: {locs}")
 
     # Entities command handlers
     def _parse_pairs(pairs_list):
@@ -766,17 +670,20 @@ def main():
                 sys.exit(1)
                 
         except ImportError as e:
-            print("❌ Error: Flask is not installed.")
-            print("   Install web dependencies: pip install -r web/requirements.txt")
+            # Be specific: only claim Flask is missing if that's the failing module
+            missing = getattr(e, "name", "") or ""
+            if missing == "flask":
+                print("❌ Error: Flask is not installed.")
+                print("   Install web dependencies: pip install -r web/requirements.txt")
+            else:
+                print(f"❌ Import error starting web UI: {e}")
             sys.exit(1)
         except Exception as e:
             print(f"❌ Error starting web UI: {e}")
             sys.exit(1)
 
-    # Dispatch via table with alias normalization
+    # Dispatch via table
     cmd = args.command
-    if cmd == "inv":
-        cmd = "inventory"
 
     # Determine subcommand for the current group
     if cmd == "inventory":
@@ -787,21 +694,14 @@ def main():
         sub = getattr(args, "st_cmd", None)
     else:
         sub = None
-    if sub in ("ls", "list"):
-        sub = "ls"
-    elif sub in ("show", "view"):
-        sub = "show"
-    elif sub in ("rm", "delete"):
-        sub = "rm"
 
     DISPATCH = {
         ("init", None): cmd_init,
         ("web", None): cmd_web,
-        ("inventory", "add"): cmd_inventory_add,
-        ("inventory", "ls"): cmd_inventory_list,
-        ("inventory", "show"): cmd_inventory_view,
-        ("inventory", "rm"): cmd_inventory_delete,
-        ("inventory", "adjust"): cmd_inventory_adjust,
+        ("validate", None): cmd_validate,
+        ("inventory", "post"): cmd_inventory_post,
+        ("inventory", "onhand"): cmd_inventory_onhand,
+        ("inventory", "rebuild"): cmd_inventory_rebuild,
         ("entities", "add"): cmd_entities_add,
         ("entities", "ls"): cmd_entities_list,
         ("entities", "show"): cmd_entities_show,
@@ -820,3 +720,6 @@ def main():
         else:
             parser.print_help()
 
+
+if __name__ == "__main__":
+    main()
