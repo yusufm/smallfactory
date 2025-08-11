@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  smallfactory:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount external data repository directory
+      - "${SF_DATAREPO_PATH:-./data}:/app/data"
+    environment:
+      # Git repository URL (optional - for cloning/syncing)
+      - SF_GIT_REPO_URL=${SF_GIT_REPO_URL:-}
+      # Data repository path inside container
+      - SF_DATAREPO_PATH=/app/data
+      # Git configuration for commits
+      - SF_GIT_USER_NAME=${SF_GIT_USER_NAME:-SmallFactory Docker}
+      - SF_GIT_USER_EMAIL=${SF_GIT_USER_EMAIL:-docker@smallfactory.local}
+    restart: unless-stopped
