@@ -119,8 +119,18 @@ def main():
     bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
     bom_sub = bom_parser.add_subparsers(dest="bom_cmd", required=False, parser_class=SFArgumentParser)
 
-    bom_ls = bom_sub.add_parser("ls", aliases=["list"], help="List BOM lines for a parent part")
+    bom_ls = bom_sub.add_parser(
+        "ls",
+        aliases=["list"],
+        help="List BOM tree for a parent part (recursive by default; limit with --max-depth)",
+    )
     bom_ls.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
+    bom_ls.add_argument(
+        "--max-depth",
+        type=int,
+        default=None,
+        help="Optional max recursion depth (root level = 0; 0 = immediate children)",
+    )
 
     bom_add = bom_sub.add_parser("add", help="Add a BOM line to a parent part")
     bom_add.add_argument("parent", help="Parent part SFID (e.g., p_widget)")
@@ -696,27 +706,123 @@ def main():
         # compress None entries
         return {k: v for k, v in out.items() if v is not None}
 
+    def _to_int_or_none(val):
+        try:
+            if isinstance(val, bool):
+                return None
+            return int(val)
+        except Exception:
+            return None
+
+    def _walk_bom(datarepo_path: pathlib.Path, root_sfid: str, *, max_depth: int | None = None) -> list:
+        """Walk the BOM tree starting at root_sfid and return a flat list of nodes with level metadata.
+
+        Each node dict contains: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle.
+        """
+        nodes: list = []
+        name_cache: dict[str, str] = {}
+
+        def get_name(sfid: str) -> str:
+            if sfid in name_cache:
+                return name_cache[sfid]
+            try:
+                ent = ent_get_entity(datarepo_path, sfid)
+                name = str(ent.get("name", sfid))
+            except Exception:
+                name = sfid
+            name_cache[sfid] = name
+            return name
+
+        def recurse(parent_sfid: str, level: int, parent_mult: int | None, path_stack: list[str]):
+            if max_depth is not None and level > max_depth:
+                return
+            try:
+                lines = ent_bom_list(datarepo_path, parent_sfid)
+            except Exception:
+                return
+            for line in lines or []:
+                child = str(line.get("use", "")).strip()
+                if not child:
+                    continue
+                qty = line.get("qty", 1)
+                rev = line.get("rev", "released")
+                alts = line.get("alternates") if isinstance(line.get("alternates"), list) else []
+                alt_group = line.get("alternates_group")
+                qty_int = _to_int_or_none(qty)
+                cum = qty_int if parent_mult is None else (qty_int * parent_mult if (qty_int is not None and parent_mult is not None) else None)
+
+                cycle = child in path_stack
+                node = {
+                    "parent": parent_sfid,
+                    "use": child,
+                    "name": get_name(child),
+                    "qty": qty,
+                    "rev": rev,
+                    "level": level,
+                    "is_alt": False,
+                    "alternates_group": alt_group,
+                    "cumulative_qty": cum,
+                    "cycle": bool(cycle),
+                }
+                nodes.append(node)
+
+                # Recurse into child part BOMs unless cycle or not a part
+                if not cycle and child.startswith("p_"):
+                    recurse(child, level + 1, cum if (cum is not None) else parent_mult, path_stack + [child])
+
+                # Emit alternates and recurse into them too
+                for alt in alts:
+                    alt_use = str((alt or {}).get("use", "")).strip()
+                    if not alt_use:
+                        continue
+                    alt_node = {
+                        "parent": parent_sfid,
+                        "use": alt_use,
+                        "name": get_name(alt_use),
+                        "qty": qty,  # alternates inherit the same qty requirement
+                        "rev": rev,
+                        "level": level + 1,
+                        "is_alt": True,
+                        "alternates_group": alt_group,
+                        "cumulative_qty": cum,
+                        "cycle": alt_use in path_stack,
+                    }
+                    nodes.append(alt_node)
+                    if alt_use.startswith("p_") and alt_use not in path_stack:
+                        recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use])
+
+        # Start traversal at root children (level 0 for first-level components)
+        recurse(root_sfid, 0, 1, [root_sfid])
+        return nodes
+
     def cmd_bom_ls(args):
         datarepo_path = _repo_path()
         try:
-            bom = ent_bom_list(datarepo_path, args.parent)
+            nodes = _walk_bom(datarepo_path, args.parent, max_depth=getattr(args, "max_depth", None))
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         fmt = _fmt()
         if fmt == "json":
-            print(json.dumps(bom, indent=2))
+            print(json.dumps(nodes, indent=2))
         elif fmt == "yaml":
-            print(yaml.safe_dump(bom, sort_keys=False))
+            print(yaml.safe_dump(nodes, sort_keys=False))
         else:
-            if not bom:
+            if not nodes:
                 print(f"[smallFactory] No BOM lines on '{args.parent}'")
             else:
-                for i, line in enumerate(bom):
-                    use = line.get("use", "?")
-                    qty = line.get("qty", 1)
-                    rev = line.get("rev", "released")
-                    print(f"[{i}] use={use} qty={qty} rev={rev}")
+                print(f"[smallFactory] Full BOM tree for '{args.parent}':")
+                for n in nodes:
+                    indent = "  " * n.get("level", 0)
+                    tag = "[ALT] " if n.get("is_alt") else ""
+                    use = n.get("use", "?")
+                    name = n.get("name") or ""
+                    show_name = f" [{name}]" if name and name != use else ""
+                    qty = n.get("qty", 1)
+                    rev = n.get("rev", "released")
+                    cum = n.get("cumulative_qty")
+                    cum_s = f" (cum={cum})" if cum is not None else ""
+                    print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{cum_s}")
 
     def cmd_bom_add(args):
         datarepo_path = _repo_path()
