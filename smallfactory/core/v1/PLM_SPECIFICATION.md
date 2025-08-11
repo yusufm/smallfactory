@@ -198,6 +198,14 @@ SFID quick reference:
   - Locations: `l_*` (e.g., `l_a1`, `l_bin7`, `l_line1`)
   - Parts: `p_*` (e.g., `p_m3x10`, `p_cap_10uf`)
 
+Recommended naming conventions (non-normative):
+
+- Parts (`p_*`):
+  - Structure: `p_<part-number>[ _<classification> ... ]`
+  - In `<part-number>`, prefer hyphens for subcodes (e.g., `stm32-c`, `m3x10`).
+  - Classifications are separated by `_`; inside each classification use `[a-z0-9-]` (no `_`).
+  - Examples: `p_m3x10`, `p_m3x10_lot23`, `p_stm32-c_sn39402`.
+
 Layout:
 ```
 inventory/
@@ -357,6 +365,13 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - Auto-commit history:
   - All mutating operations auto-commit with clear messages including the required `::sfid::` tokens.
 
+- Entity lifecycle:
+  - Each `entities/<sfid>/` directory persists forever (even if retired). Prefer marking `status: retired` over deletion.
+- Human-readable data formats:
+  - YAML is the primary storage format; JSON is supported for machine I/O.
+- Git-native and file-based:
+  - The Git repository is the source of truth; history serves as the audit trail.
+
 - Commit metadata tokens:
   - Commits that affect an entity MUST include `::sfid::<SFID>` in the message.
   - For inventory posts, include both tokens: `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
@@ -364,6 +379,10 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - Determinism: Given the same repo state and inputs, operations produce the same results.
 - Branding: User-facing name is "smallFactory" (lowercase s, uppercase F).
 - Predictable layout: Top-level directories (e.g., `entities/`, `inventory/`, `finished_goods/`, `workorders/`) are stable; new capabilities add new top-level dirs.
+
+- Single source of truth API:
+  - All tools and interfaces (CLI, Web, scripts, integrations) MUST call the Core API for all reads and writes.
+  - Direct file mutations are not supported; the API performs validation, defaulting, linting, and writes with required commit metadata.
 
 Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `sup_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`), change record `eco` ID, or supplier-provided IDs.
 
@@ -401,6 +420,36 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
    - Uses `rev: released` pointers; no product files edited.
 4) `sf lock finished_goods/fg_toaster_black_120v`
    - Produces a reproducible build recipe; work orders and serials reference it.
+
+---
+
+## Scope of Applicability
+
+- Applies to Core v1 under `smallfactory/core/v1/`.
+- Governs CLI behavior and Web UI features backed by Core v1.
+- Defines repository structure and file formats under this spec.
+
+---
+
+## Versioning Policy (SemVer)
+
+- We use Semantic Versioning: MAJOR.MINOR.PATCH.
+  - MAJOR: incompatible changes to the spec or API.
+  - MINOR: backward-compatible additions.
+  - PATCH: backward-compatible fixes and internal improvements.
+- Stability gates: DRAFT → RC → PROD.
+  - While DRAFT, breaking changes are permitted.
+  - Once PROD, breaking changes require a major version bump.
+
+---
+
+## Change Management Requirements
+
+- Assess every change against this specification.
+- If a change modifies or conflicts with this spec:
+  - Update this file in the same PR and bump version appropriately.
+  - Provide migration notes where feasible.
+- PRs should state: "Specification compliant? Yes/No" and link to this file.
 
 ---
 
