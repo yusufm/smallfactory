@@ -37,6 +37,9 @@ from smallfactory.core.v1.stickers import (
     check_dependencies as st_check_dependencies,
 )
 
+# Validator (PLM SPEC compliance)
+from smallfactory.core.v1.validate import validate_repo
+
 
 class SFArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on error instead of short usage."""
@@ -121,6 +124,10 @@ def main():
     web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
+
+    # validate command (repo linter)
+    validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
+    validate_parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
 
     # stickers group (generate codes for entities)
     stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
@@ -300,6 +307,33 @@ def main():
             if github_url:
                 print(f"[smallFactory] Error: Target directory '{target_path}' already exists. Please provide a non-existing path or omit --path.")
                 sys.exit(1)
+
+    def cmd_validate(args):
+        datarepo_path = _repo_path()
+        try:
+            result = validate_repo(datarepo_path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        errors = int(result.get("errors", 0))
+        warnings = int(result.get("warnings", 0))
+        if fmt == "json":
+            print(json.dumps(result, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(result, sort_keys=False))
+        else:
+            # Human report
+            print(f"[smallFactory] Validation results for {datarepo_path}")
+            print(f"Errors: {errors}, Warnings: {warnings}")
+            for it in result.get("issues", []):
+                sev = it.get("severity", "?")
+                code = it.get("code", "?")
+                path = it.get("path", "")
+                msg = it.get("message", "")
+                print(f" - [{sev.upper()}] {code} :: {path} :: {msg}")
+        if errors > 0 or (getattr(args, "strict", False) and warnings > 0):
+            sys.exit(1)
 
         try:
             # Ensure parent directory exists, but do not pre-create the clone directory
@@ -797,6 +831,7 @@ def main():
     DISPATCH = {
         ("init", None): cmd_init,
         ("web", None): cmd_web,
+        ("validate", None): cmd_validate,
         ("inventory", "add"): cmd_inventory_add,
         ("inventory", "ls"): cmd_inventory_list,
         ("inventory", "show"): cmd_inventory_view,
