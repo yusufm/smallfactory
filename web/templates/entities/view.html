@@ -42,8 +42,10 @@
         {% endif %}
       </div>
       <div class="flex items-center gap-2">
-        <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"><i class="fas fa-pen mr-2"></i>Edit</a>
         <a href="{{ url_for('stickers_batch', sfids=entity.sfid) }}" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"><i class="fas fa-qrcode mr-2"></i>Stickers</a>
+        {% if entity.sfid and entity.sfid[:2] == 'p_' %}
+        <button type="button" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50" onclick="openBomTreeModal()"><i class="fas fa-sitemap mr-2"></i>BOM Tree</button>
+        {% endif %}
         {% if not entity.get('retired') %}
         <form method="POST" action="{{ url_for('entities_retire', sfid=entity.sfid) }}" onsubmit="return confirmRetire();">
           <input type="hidden" name="reason" id="retire-reason-input">
@@ -59,27 +61,326 @@
     <div class="lg:col-span-2">
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
         <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h2 class="text-lg font-semibold text-gray-900">Fields</h2>
-          <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="text-blue-600 hover:text-blue-900 text-sm">Edit</a>
+          <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
+          <button id="ovw-edit-toggle" type="button" class="text-blue-600 hover:text-blue-900 text-sm" onclick="toggleOverviewMode()">Edit</button>
         </div>
-        <div class="divide-y divide-gray-200">
-          {% for k, v in entity.items() %}
-          <div class="px-6 py-4 grid grid-cols-3 gap-4">
-            <div class="col-span-1 text-sm font-medium text-gray-600">{{ k }}</div>
-            <div class="col-span-2 text-sm text-gray-900 break-all">{{ v }}</div>
+        <div class="px-6 py-4">
+          <div id="overview-display">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <dt class="text-sm font-medium text-gray-600">SFID</dt>
+              <dd class="mt-1 text-sm font-mono text-gray-900">{{ entity.sfid }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Name</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
+            </div>
+            {% if entity.get('description') %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Description</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('description') }}</dd>
+            </div>
+            {% endif %}
+            {% if entity.get('category') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Category</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('category') }}</dd>
+            </div>
+            {% endif %}
+            {% set a = entity.get('attrs') or {} %}
+            {% if a.get('manufacturer') or a.get('mfr') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Manufacturer</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ a.get('manufacturer') or a.get('mfr') }}</dd>
+            </div>
+            {% endif %}
+            {% if a.get('mpn') or a.get('mfr_pn') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">MPN</dt>
+              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('mpn') or a.get('mfr_pn') }}</span></dd>
+            </div>
+            {% endif %}
+            {% if a.get('vendor') or a.get('supplier') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Supplier</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ a.get('vendor') or a.get('supplier') }}</dd>
+            </div>
+            {% endif %}
+            {% if a.get('sku') or a.get('spn') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">SKU</dt>
+              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('sku') or a.get('spn') }}</span></dd>
+            </div>
+            {% endif %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Policy</dt>
+              <dd class="mt-1">
+                {% set policy = (entity.get('policy') or '').lower() %}
+                {% if policy == 'make' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">make</span>
+                {% elif policy == 'buy' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800">buy</span>
+                {% elif policy == 'phantom' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800">phantom</span>
+                {% else %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">unspecified</span>
+                {% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">UOM</dt>
+              <dd class="mt-1">
+                <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">{{ entity.get('uom', 'ea') }}</span>
+              </dd>
+            </div>
+            {% if entity.get('tags') %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Tags</dt>
+              <dd class="mt-1 space-x-1">
+                {% for t in entity.get('tags') %}
+                  <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">{{ t }}</span>
+                {% endfor %}
+              </dd>
+            </div>
+            {% endif %}
+          </dl>
           </div>
-          {% endfor %}
+
+          <div id="overview-editor" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-700">SFID</label>
+                <div class="mt-1 text-sm font-mono text-gray-500">{{ entity.sfid }}</div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Name</label>
+                <input id="ovw-name" type="text" value="{{ entity.get('name', '') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Description</label>
+                <textarea id="ovw-description" rows="3" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">{{ entity.get('description','') }}</textarea>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Category</label>
+                <input id="ovw-category" type="text" value="{{ entity.get('category','') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Policy</label>
+                {% set psel = (entity.get('policy') or '') %}
+                <select id="ovw-policy" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+                  <option value="" {% if not psel %}selected{% endif %}>(unspecified)</option>
+                  <option value="make" {% if psel=='make' %}selected{% endif %}>make</option>
+                  <option value="buy" {% if psel=='buy' %}selected{% endif %}>buy</option>
+                  <option value="phantom" {% if psel=='phantom' %}selected{% endif %}>phantom</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">UOM</label>
+                <input id="ovw-uom" type="text" value="{{ entity.get('uom','ea') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Tags (comma-separated)</label>
+                <input id="ovw-tags" type="text" value="{% if entity.get('tags') %}{{ entity.get('tags')|join(', ') }}{% endif %}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveOverview()">Save</button>
+              <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="cancelOverview()">Cancel</button>
+              <span id="ovw-error" class="ml-2 text-sm text-red-600"></span>
+            </div>
+          </div>
         </div>
       </div>
+
+      <!-- Attributes -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Attributes</h2>
+          <button id="attrs-edit-toggle" type="button" class="text-blue-600 hover:text-blue-900 text-sm" onclick="toggleAttrsMode()">Edit</button>
+        </div>
+        <div class="px-6 py-4">
+          <div id="attrs-display">
+          {% set attrs = entity.get('attrs') %}
+          {% if attrs and attrs.items() %}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {% for k, v in attrs.items() %}
+            <div class="border border-gray-100 rounded p-3">
+              <div class="text-xs font-medium text-gray-500">{{ k }}</div>
+              <div class="mt-1 text-sm text-gray-900 break-words">{{ v }}</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-gray-500">No attributes defined.</div>
+          {% endif %}
+          </div>
+
+          <div id="attrs-editor" class="hidden">
+            <div id="attrs-editor-list" class="space-y-2">
+              {% set attrs = entity.get('attrs') or {} %}
+              {% for k, v in attrs.items() %}
+              <div class="grid grid-cols-12 gap-2 items-center">
+                <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key" value="{{ k }}">
+                <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value" value="{{ v }}">
+                <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-2">
+              <button type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="addAttrRow()">Add attribute</button>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveAttrs()">Save</button>
+              <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="cancelAttrs()">Cancel</button>
+              <span id="attrs-error" class="ml-2 text-sm text-red-600"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% set is_part = (entity.sfid and entity.sfid[:2] == 'p_') %}
+      {% if is_part %}
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" id="bom-card">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-gray-900">Bill of Materials</h2>
+            <span id="bom-count" class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
+          </div>
+          <button id="bom-edit-toggle" type="button" class="text-sm text-blue-700 hover:underline" onclick="toggleBomMode()">
+            <i class="fas fa-toolbox mr-1"></i><span>Edit BOM</span>
+          </button>
+        </div>
+        <div id="bom-add-toolbar" class="px-6 py-4 border-b border-gray-100 hidden">
+          <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Child SFID (use)</label>
+              <input id="bom-add-use" type="text" placeholder="p_child" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-mono">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Qty</label>
+              <input id="bom-add-qty" type="number" value="1" min="1" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Rev</label>
+              <input id="bom-add-rev" type="text" value="released" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Alt Group</label>
+              <input id="bom-add-altgrp" type="text" placeholder="groupA" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-gray-700">Alternates (comma-separated)</label>
+              <input id="bom-add-alts" type="text" placeholder="p_alt1, p_alt2" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
+            </div>
+            <div class="md:col-span-6 flex justify-end">
+              <button type="button" onclick="bomAddLine()" class="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i>Add Line</button>
+            </div>
+          </div>
+        </div>
+        <div class="px-6 py-4 overflow-x-auto">
+          <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">#</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Part</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Name</th>
+                <th class="px-3 py-1.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Qty</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Rev</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alternates</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alt Group</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="bom-tbody" class="divide-y divide-gray-100"></tbody>
+          </table>
+          <div id="bom-error" class="mt-2 text-sm text-red-600"></div>
+        </div>
+      </div>
+      {% endif %}
     </div>
 
-    <!-- JSON -->
+    <!-- Structure + Revisions + JSON -->
     <div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Structure</h2>
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">design/</span>
+              {% if structure and structure.has_design %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_design_src else 'n' }}, exports: {{ 'y' if structure.has_design_exports else 'n' }}, docs: {{ 'y' if structure.has_design_docs else 'n' }}</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">revisions/</span>
+              {% if structure and structure.has_revisions %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">refs/</span>
+              {% if structure and structure.has_refs %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+              {% if structure and structure.released_rev %}
+                <span class="ml-2 text-xs text-gray-600">released: {{ structure.released_rev }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if structure and structure.has_design %}
+          <div class="pt-3">
+            <div class="text-xs text-gray-500 mb-1">Design actions</div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open src</button>
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open exports</button>
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open docs</button>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
+          {% if structure and structure.released_rev %}
+            <span class="text-xs text-gray-600">released: {{ structure.released_rev }}</span>
+          {% endif %}
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-700">
+          {% if structure and structure.has_revisions %}
+            <div class="text-gray-600">Revision snapshots are present under <code class="font-mono text-xs bg-gray-50 px-1 py-0.5 rounded">revisions/</code>.</div>
+          {% else %}
+            <div class="text-gray-500">No revision snapshots yet.</div>
+          {% endif %}
+          <div class="mt-3 flex gap-2">
+            <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Create snapshot</button>
+          </div>
+        </div>
+      </div>
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
         <div class="px-6 py-4 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Raw JSON</h2>
         </div>
-        <pre class="p-4 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
+        <div class="p-4">
+          <details>
+            <summary class="cursor-pointer text-sm text-blue-700 hover:underline">Show raw JSON</summary>
+            <pre class="mt-2 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
+          </details>
+        </div>
       </div>
     </div>
   </div>
@@ -94,5 +395,401 @@ function confirmRetire(){
   document.getElementById('retire-reason-input').value = (reason||'').trim();
   return true;
 }
+
+// -----------------
+// BOM Editor logic (in-place)
+// -----------------
+const SFID = '{{ entity.sfid }}';
+const isPart = SFID && SFID.startsWith('p_');
+let bomEditMode = false;
+
+// -----------------
+// Overview inline edit
+// -----------------
+let ovwEditMode = false;
+function toggleOverviewMode(){
+  ovwEditMode = !ovwEditMode;
+  const disp = document.getElementById('overview-display');
+  const ed = document.getElementById('overview-editor');
+  const btn = document.getElementById('ovw-edit-toggle');
+  if(disp) disp.classList.toggle('hidden', ovwEditMode);
+  if(ed) ed.classList.toggle('hidden', !ovwEditMode);
+  if(btn) btn.textContent = ovwEditMode ? 'Done' : 'Edit';
+}
+function cancelOverview(){
+  ovwEditMode = false;
+  const disp = document.getElementById('overview-display');
+  const ed = document.getElementById('overview-editor');
+  const btn = document.getElementById('ovw-edit-toggle');
+  if(disp) disp.classList.remove('hidden');
+  if(ed) ed.classList.add('hidden');
+  if(btn) btn.textContent = 'Edit';
+  const err = document.getElementById('ovw-error');
+  if(err) err.textContent = '';
+}
+async function saveOverview(){
+  const name = document.getElementById('ovw-name').value;
+  const description = document.getElementById('ovw-description').value;
+  const category = document.getElementById('ovw-category').value;
+  const policy = document.getElementById('ovw-policy').value;
+  const uom = document.getElementById('ovw-uom').value;
+  const tags = document.getElementById('ovw-tags').value;
+  const err = document.getElementById('ovw-error');
+  if(err) err.textContent = '';
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ updates: { name, description, category, policy, uom, tags } })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to update');
+    window.location.reload();
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
+// -----------------
+// Attributes inline edit
+// -----------------
+let attrsEditMode = false;
+function toggleAttrsMode(){
+  attrsEditMode = !attrsEditMode;
+  const disp = document.getElementById('attrs-display');
+  const ed = document.getElementById('attrs-editor');
+  const btn = document.getElementById('attrs-edit-toggle');
+  if(disp) disp.classList.toggle('hidden', attrsEditMode);
+  if(ed) ed.classList.toggle('hidden', !attrsEditMode);
+  if(btn) btn.textContent = attrsEditMode ? 'Done' : 'Edit';
+}
+function cancelAttrs(){
+  attrsEditMode = false;
+  const disp = document.getElementById('attrs-display');
+  const ed = document.getElementById('attrs-editor');
+  const btn = document.getElementById('attrs-edit-toggle');
+  if(disp) disp.classList.remove('hidden');
+  if(ed) ed.classList.add('hidden');
+  if(btn) btn.textContent = 'Edit';
+  const err = document.getElementById('attrs-error');
+  if(err) err.textContent = '';
+}
+function addAttrRow(){
+  const list = document.getElementById('attrs-editor-list');
+  if(!list) return;
+  const div = document.createElement('div');
+  div.className = 'grid grid-cols-12 gap-2 items-center';
+  div.innerHTML = `
+    <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key">
+    <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value">
+    <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+  `;
+  list.appendChild(div);
+}
+async function saveAttrs(){
+  const err = document.getElementById('attrs-error');
+  if(err) err.textContent = '';
+  try{
+    const list = document.getElementById('attrs-editor-list');
+    const rows = Array.from(list ? list.children : []);
+    const attrs = {};
+    rows.forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      if(inputs.length >= 2){
+        const k = (inputs[0].value||'').trim();
+        const v = inputs[1].value;
+        if(k){ attrs[k] = v; }
+      }
+    });
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ updates: { attrs } })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to update attributes');
+    window.location.reload();
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
+function toggleBomMode(){
+  bomEditMode = !bomEditMode;
+  const toolbar = document.getElementById('bom-add-toolbar');
+  if(toolbar){ toolbar.classList.toggle('hidden', !bomEditMode); }
+  const btn = document.getElementById('bom-edit-toggle');
+  if(btn){ btn.querySelector('span').textContent = bomEditMode ? 'Done' : 'Edit BOM'; }
+  bomLoad();
+}
+
+async function bomLoad(){
+  if(!isPart) return;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load BOM');
+    renderBomRows(data.rows||[]);
+    const count = document.getElementById('bom-count');
+    if(count){
+      const n = (data.rows||[]).length;
+      count.textContent = `${n} item${n===1?'':'s'}`;
+    }
+    const err = document.getElementById('bom-error');
+    if(err) err.textContent = '';
+  }catch(e){
+    const err = document.getElementById('bom-error');
+    if(err) err.textContent = e.message||String(e);
+  }
+}
+
+function renderBomRows(rows){
+  if(bomEditMode){ return renderBomEditorRows(rows); }
+  return renderBomStaticRows(rows);
+}
+
+function renderBomStaticRows(rows){
+  const tbody = document.getElementById('bom-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const alts = (r.alternates||[]).map(a=>`<a href="/entities/${a}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">${a}</a>`).join('') || '<span class="text-gray-400">—</span>';
+    const altgrp = r.alternates_group ? `<span class=\"inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800\">${r.alternates_group}</span>` : '<span class="text-gray-400">—</span>';
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="odd:bg-gray-50 hover:bg-gray-50">
+        <td class="px-3 py-1.5 text-gray-500">${idx}</td>
+        <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="/entities/${r.use}">${r.use}</a></td>
+        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
+        <td class="px-3 py-1.5 text-gray-900 text-right">${r.qty}</td>
+        <td class="px-3 py-1.5 text-gray-700">${r.rev||'released'}</td>
+        <td class="px-3 py-1.5">${alts}</td>
+        <td class="px-3 py-1.5 text-gray-700">${altgrp}</td>
+        <td class="px-3 py-1.5 text-gray-400">—</td>
+      </tr>`);
+  });
+}
+
+function renderBomEditorRows(rows){
+  const tbody = document.getElementById('bom-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const alts = (r.alternates||[]);
+    const altsHtml = alts.map((a, ai)=>`<span class="inline-flex items-center mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono">${a}<button type="button" class="ml-1 text-blue-700 hover:text-blue-900" title="Remove" onclick="bomAltRemove(${idx}, '${a}', ${ai})">×</button></span>`).join('');
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td class="px-3 py-1.5 text-gray-500">${idx}</td>
+        <td class="px-3 py-1.5 font-mono">${r.use}</td>
+        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
+        <td class="px-3 py-1.5"><input id="bom-edit-qty-${idx}" type="number" min="1" value="${r.qty||1}" class="w-20 border border-gray-300 rounded px-2 py-1 text-right"></td>
+        <td class="px-3 py-1.5"><input id="bom-edit-rev-${idx}" type="text" value="${r.rev||'released'}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5">
+          <div class="flex flex-wrap">${altsHtml||'<span class=\"text-gray-400\">—</span>'}</div>
+          <div class="mt-1 flex gap-1">
+            <input id="bom-alt-add-${idx}" type="text" placeholder="p_alt" class="flex-1 min-w-[8rem] border border-gray-300 rounded px-2 py-1 font-mono">
+            <button type="button" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onclick="bomAltAdd(${idx})">Add Alt</button>
+          </div>
+        </td>
+        <td class="px-3 py-1.5"><input id="bom-edit-altgrp-${idx}" type="text" value="${r.alternates_group||''}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5">
+          <div class="flex gap-2">
+            <button type="button" class="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700" onclick="bomSave(${idx})">Save</button>
+            <button type="button" class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onclick="bomRemove(${idx})">Delete</button>
+          </div>
+        </td>
+      </tr>`);
+  });
+}
+
+async function bomAddLine(){
+  const use = document.getElementById('bom-add-use').value.trim();
+  const qty = parseInt(document.getElementById('bom-add-qty').value||'1', 10);
+  const rev = document.getElementById('bom-add-rev').value.trim()||'released';
+  const alternates_group = document.getElementById('bom-add-altgrp').value.trim()||undefined;
+  const alts = document.getElementById('bom-add-alts').value.trim();
+  if(!use){ return showBomError('Child SFID (use) is required'); }
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({use, qty, rev, alternates: alts, alternates_group})
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to add line');
+    clearBomAddInputs();
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+function clearBomAddInputs(){
+  ['bom-add-use','bom-add-qty','bom-add-rev','bom-add-altgrp','bom-add-alts'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(id==='bom-add-qty') el.value = '1';
+    else if(id==='bom-add-rev') el.value = 'released';
+    else el.value = '';
+  });
+}
+
+async function bomSave(index){
+  const qty = parseInt(document.getElementById(`bom-edit-qty-${index}`).value||'1',10);
+  const rev = document.getElementById(`bom-edit-rev-${index}`).value.trim()||'released';
+  const alternates_group = document.getElementById(`bom-edit-altgrp-${index}`).value.trim();
+  const payload = { index, qty, rev };
+  if(alternates_group) payload.alternates_group = alternates_group;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/set`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to save line');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomRemove(index){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/remove`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to remove line');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomAltAdd(index){
+  const alt_use = document.getElementById(`bom-alt-add-${index}`).value.trim();
+  if(!alt_use) return;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/alt-add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index, alt_use})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to add alternate');
+    document.getElementById(`bom-alt-add-${index}`).value = '';
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomAltRemove(index, alt_use, alt_index){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/alt-remove`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index, alt_use, alt_index})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to remove alternate');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+function showBomError(msg){
+  const el = document.getElementById('bom-error');
+  if(el) el.textContent = msg||'';
+}
+
+// Initial load
+if(isPart){ bomLoad(); }
 </script>
+<script>
+// -----------------
+// BOM Deep Tree modal
+// -----------------
+function openBomTreeModal(){
+  if(!isPart) return;
+  const m = document.getElementById('bom-tree-modal');
+  if(m){ m.classList.remove('hidden'); }
+  loadBomTree();
+}
+function closeBomTreeModal(){
+  const m = document.getElementById('bom-tree-modal');
+  if(m){ m.classList.add('hidden'); }
+}
+async function loadBomTree(){
+  const err = document.getElementById('bom-tree-error');
+  const cont = document.getElementById('bom-tree-container');
+  const md = document.getElementById('bom-tree-depth');
+  if(err) err.textContent = '';
+  if(cont) cont.innerHTML = '<div class="text-sm text-gray-500">Loading…</div>';
+  // keep download link in sync with current inputs
+  updateBomTreeDownloadHref();
+  try{
+    const q = md && md.value !== '' ? `?max_depth=${encodeURIComponent(md.value)}` : '';
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep${q}`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load deep BOM');
+    const nodes = data.nodes||[];
+    cont.innerHTML = renderDeepBomTree(nodes);
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
+function updateBomTreeDownloadHref(){
+  const a = document.getElementById('bom-tree-download');
+  if(!a) return;
+  const md = document.getElementById('bom-tree-depth');
+  const params = new URLSearchParams();
+  if(md && md.value !== '') params.set('max_depth', md.value);
+  params.set('format', 'csv');
+  const qs = params.toString();
+  a.href = `/api/entities/${encodeURIComponent(SFID)}/bom/deep${qs?('?' + qs):''}`;
+}
+
+function renderDeepBomTree(nodes){
+  if(!Array.isArray(nodes) || nodes.length===0){
+    return '<div class="text-sm text-gray-500">No BOM lines.</div>';
+  }
+  let html = '';
+  let cur = 0;
+  const esc = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  nodes.forEach((n, idx)=>{
+    const lvl = parseInt(n.level||1, 10) || 1;
+    const isAlt = !!n.is_alt;
+    const cyc = !!n.cycle;
+    const qty = (n.qty==null?1:n.qty);
+    const cqty = n.cumulative_qty!=null ? ` <span class="ml-1 text-xs text-gray-500">(cum ${esc(n.cumulative_qty)})</span>` : '';
+    const flags = `${isAlt?'<span class="ml-2 text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">ALT</span>':''}`+
+                  `${cyc?'<span class="ml-2 text-[10px] uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">CYCLE</span>':''}`;
+    // Close until target level
+    while(cur > 0 && cur >= lvl){ html += '</li></ul>'; cur--; }
+    if(lvl > cur){
+      for(let i=cur; i<lvl; i++){
+        html += '<ul class="ml-4 pl-3 border-l border-gray-200"><li>';
+      }
+      cur = lvl;
+    }else{
+      html += '</li><li>';
+    }
+    html += `<span class="font-mono text-blue-700"><a class="hover:underline" href="/entities/${esc(n.use)}">${esc(n.use)}</a></span>`+
+            ` <span class="text-gray-900">${esc(n.name||n.use)}</span>`+
+            ` <span class="text-gray-700">× ${esc(qty)}</span>`+
+            ` <span class="text-xs text-gray-500">${esc(n.rev||'released')}</span>`+
+            flags + cqty;
+  });
+  while(cur > 0){ html += '</li></ul>'; cur--; }
+  return html;
+}
+</script>
+{% endblock %}
+
+{% block modals %}
+<!-- BOM Tree Modal -->
+<div id="bom-tree-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeBomTreeModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sitemap mr-2"></i>Deep BOM Tree</h3>
+        <div class="flex items-center gap-2">
+          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
+            <i class="fas fa-download mr-1"></i>Download CSV
+          </a>
+          <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeBomTreeModal()">×</button>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2 text-sm">
+        <label class="text-gray-600">Max depth</label>
+        <input id="bom-tree-depth" type="number" min="0" class="w-24 border border-gray-300 rounded px-2 py-1" placeholder="(all)">
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="loadBomTree()">Apply</button>
+        <div id="bom-tree-error" class="ml-auto text-sm text-red-600"></div>
+      </div>
+      <div class="p-5 max-h-[70vh] overflow-auto">
+        <div id="bom-tree-container" class="text-sm leading-6"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeBomTreeModal()">Close</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeBomTreeModal(); });</script>
+  
+</div>
 {% endblock %}

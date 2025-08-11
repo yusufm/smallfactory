@@ -156,6 +156,42 @@ def get_entity_field_specs_for_sfid(sfid: str, repo_path: pathlib.Path | None = 
 
 
 # -------------------------------
+# Stickers configuration
+# -------------------------------
+def get_stickers_default_fields(repo_path: pathlib.Path | None = None) -> list[str]:
+    """Return default fields for stickers batch page from sfdatarepo.yml.
+
+    Expected structure in repo config:
+
+      stickers:
+        batch:
+          default_fields: [manufacturer, value, size]
+
+    Returns an empty list if not configured.
+    """
+    dr_cfg = load_datarepo_config(repo_path)
+    stickers_cfg = dr_cfg.get("stickers")
+    if not isinstance(stickers_cfg, dict):
+        return []
+    batch_cfg = stickers_cfg.get("batch")
+    if not isinstance(batch_cfg, dict):
+        return []
+    df = batch_cfg.get("default_fields")
+    if isinstance(df, (list, tuple)):
+        # Normalize to list[str] with trimmed entries and drop empties
+        out = []
+        for x in df:
+            try:
+                s = str(x).strip()
+            except Exception:
+                continue
+            if s:
+                out.append(s)
+        return out
+    return []
+
+
+# -------------------------------
 # Vision / VLM configuration
 # -------------------------------
 

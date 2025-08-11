@@ -4,11 +4,12 @@ smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response
 from pathlib import Path
 import json
 import sys
 import os
+import csv
 import base64
 import io
 from PIL import Image
@@ -16,7 +17,7 @@ from PIL import Image
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -27,6 +28,13 @@ from smallfactory.core.v1.entities import (
     create_entity,
     update_entity_fields,
     retire_entity,
+    # BOM management
+    bom_list,
+    bom_add_line,
+    bom_remove_line,
+    bom_set_line,
+    bom_alt_add,
+    bom_alt_remove,
 )
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
@@ -251,7 +259,67 @@ def entities_view(sfid):
     try:
         datarepo_path = get_datarepo_path()
         entity = get_entity(datarepo_path, sfid)
-        return render_template('entities/view.html', entity=entity)
+
+        # Structure presence per PLM SPEC (best-effort; directories may be optional)
+        ent_dir = Path(datarepo_path) / "entities" / sfid
+        design_dir = ent_dir / "design"
+        revisions_dir = ent_dir / "revisions"
+        refs_dir = ent_dir / "refs"
+        structure = {
+            'has_design': design_dir.exists(),
+            'has_design_src': (design_dir / "src").exists(),
+            'has_design_exports': (design_dir / "exports").exists(),
+            'has_design_docs': (design_dir / "docs").exists(),
+            'has_revisions': revisions_dir.exists(),
+            'has_refs': refs_dir.exists(),
+            'released_rev': None,
+        }
+        try:
+            rel_fp = refs_dir / "released"
+            if rel_fp.exists():
+                structure['released_rev'] = (rel_fp.read_text() or '').strip() or None
+        except Exception:
+            pass
+
+        # Enrich BOM for display (if present and valid)
+        bom_rows = []
+        bom = entity.get('bom')
+        if isinstance(bom, list):
+            for line in bom:
+                if not isinstance(line, dict):
+                    continue
+                use = str(line.get('use', '')).strip()
+                if not use:
+                    continue
+                qty = line.get('qty', 1) or 1
+                rev = line.get('rev', 'released') or 'released'
+                # Resolve child name best-effort
+                child_name = use
+                try:
+                    child = get_entity(datarepo_path, use)
+                    child_name = child.get('name', use)
+                except Exception:
+                    pass
+                alternates = []
+                if isinstance(line.get('alternates'), list):
+                    for alt in line['alternates']:
+                        if isinstance(alt, dict) and alt.get('use'):
+                            alternates.append(str(alt.get('use')))
+                alternates_group = line.get('alternates_group')
+                try:
+                    qty_disp = int(qty)
+                except Exception:
+                    qty_disp = qty
+                bom_rows.append({
+                    'use': use,
+                    'name': child_name,
+                    'qty': qty_disp,
+                    'rev': rev,
+                    'alternates': alternates,
+                    'alternates_group': alternates_group,
+                })
+
+        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, structure=structure)
     except Exception as e:
         flash(f'Error viewing entity: {e}', 'error')
         return redirect(url_for('entities_list'))
@@ -331,29 +399,16 @@ def entities_add():
 
 @app.route('/entities/<sfid>/edit', methods=['GET', 'POST'])
 def entities_edit(sfid):
-    """Edit fields for an existing entity (sfid is immutable)."""
+    """Deprecated: Inline editing is now supported on the entity view page."""
     try:
+        # Ensure entity exists for nicer UX, but always redirect to view
         datarepo_path = get_datarepo_path()
-        entity = get_entity(datarepo_path, sfid)
-        if request.method == 'POST':
-            # Collect updates (exclude sfid). Ignore blank values to avoid accidental clears.
-            updates = {}
-            for k, v in request.form.items():
-                if k == 'sfid':
-                    continue
-                val = v.strip()
-                if val != '':
-                    updates[k] = val
-            if updates:
-                entity = update_entity_fields(datarepo_path, sfid, updates)
-                flash('Entity updated successfully', 'success')
-                return redirect(url_for('entities_view', sfid=sfid))
-            else:
-                flash('No changes to update', 'info')
-        return render_template('entities/edit.html', entity=entity)
-    except Exception as e:
-        flash(f'Error editing entity: {e}', 'error')
-        return redirect(url_for('entities_view', sfid=sfid))
+        _ = get_entity(datarepo_path, sfid)
+    except Exception:
+        # fall through to redirect regardless
+        pass
+    flash('The Edit page has been removed. Use inline editing on the entity page.', 'info')
+    return redirect(url_for('entities_view', sfid=sfid))
 
 
 @app.route('/entities/<sfid>/retire', methods=['POST'])
@@ -408,6 +463,344 @@ def api_entities_view(sfid):
         return jsonify({'success': True, 'entity': entity})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
+
+@app.route('/api/entities/<sfid>/update', methods=['POST'])
+def api_entities_update(sfid):
+    """Update fields for an existing entity via JSON. Returns updated entity.
+
+    Accepts either a top-level object of fields to update, or {"updates": {...}}.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            raise ValueError('Invalid payload')
+        updates = payload.get('updates') if isinstance(payload.get('updates'), dict) else payload
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError('No updates provided')
+        # Disallow sfid mutation
+        updates.pop('sfid', None)
+        # Normalize tags if provided as a comma-separated string
+        if 'tags' in updates and isinstance(updates['tags'], str):
+            parts = [s.strip() for s in updates['tags'].split(',') if s.strip()]
+            updates['tags'] = parts
+        updated = update_entity_fields(datarepo_path, sfid, updates)
+        return jsonify({'success': True, 'entity': updated})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+# -----------------------
+# BOM API endpoints (AJAX)
+# -----------------------
+
+def _enrich_bom_rows(datarepo_path, bom):
+    rows = []
+    if isinstance(bom, list):
+        for line in bom:
+            if not isinstance(line, dict):
+                continue
+            use = str(line.get('use', '')).strip()
+            if not use:
+                continue
+            qty = line.get('qty', 1) or 1
+            rev = line.get('rev', 'released') or 'released'
+            # Resolve child name best-effort
+            child_name = use
+            try:
+                child = get_entity(datarepo_path, use)
+                child_name = child.get('name', use)
+            except Exception:
+                pass
+            alternates = []
+            if isinstance(line.get('alternates'), list):
+                for alt in line['alternates']:
+                    if isinstance(alt, dict) and alt.get('use'):
+                        alternates.append(str(alt.get('use')))
+            rows.append({
+                'use': use,
+                'name': child_name,
+                'qty': qty,
+                'rev': rev,
+                'alternates': alternates,
+                'alternates_group': line.get('alternates_group')
+            })
+    return rows
+
+
+@app.route('/api/entities/<sfid>/bom', methods=['GET'])
+def api_bom_get(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        bom = bom_list(datarepo_path, sfid)
+        return jsonify({'success': True, 'bom': bom, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+# Deep BOM traversal (recursive)
+def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
+    """Return a flat list of deep BOM nodes with metadata.
+
+    Each node: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle
+    - level: 1 for immediate children of parent
+    - is_alt: True if node came from an alternate list
+    - cumulative_qty: multiplied along the path when quantities are integers, else None
+    - cycle: True if 'use' already appears in the current path; recursion stops on cycles
+    """
+    nodes = []
+
+    def _get_name(sfid: str) -> str:
+        try:
+            ent = get_entity(datarepo_path, sfid)
+            return ent.get('name', sfid)
+        except Exception:
+            return sfid
+
+    def _mul(a, b):
+        try:
+            ai = int(a)
+            bi = int(b)
+            return ai * bi
+        except Exception:
+            return None
+
+    def _dfs(cur_parent: str, level: int, path_stack: list[str], cum_qty: int | None):
+        try:
+            blist = bom_list(datarepo_path, cur_parent)
+        except Exception:
+            blist = []
+        if not isinstance(blist, list):
+            blist = []
+
+        for line in blist:
+            if not isinstance(line, dict):
+                continue
+            use = str(line.get('use', '')).strip()
+            if not use:
+                continue
+            qty = line.get('qty', 1) or 1
+            rev = line.get('rev', 'released') or 'released'
+            is_cycle = use in path_stack
+            cqty = _mul(cum_qty if cum_qty is not None else 1, qty)
+            node = {
+                'parent': cur_parent,
+                'use': use,
+                'name': _get_name(use),
+                'qty': qty,
+                'rev': rev,
+                'level': level,
+                'is_alt': False,
+                'alternates_group': line.get('alternates_group'),
+                'cumulative_qty': cqty,
+                'cycle': bool(is_cycle),
+            }
+            nodes.append(node)
+
+            # Recurse into primary child if part and within depth and not a cycle
+            if not is_cycle and use.startswith('p_'):
+                if max_depth is None or level < max_depth:
+                    _dfs(use, level + 1, path_stack + [use], cqty)
+
+            # Alternates (each as its own node one level deeper)
+            alts = line.get('alternates')
+            if isinstance(alts, list):
+                for alt in alts:
+                    if not isinstance(alt, dict):
+                        continue
+                    aus = str(alt.get('use', '')).strip()
+                    if not aus:
+                        continue
+                    a_cycle = aus in path_stack
+                    acqty = _mul(cum_qty if cum_qty is not None else 1, qty)
+                    a_node = {
+                        'parent': cur_parent,
+                        'use': aus,
+                        'name': _get_name(aus),
+                        'qty': qty,
+                        'rev': rev,
+                        'level': level + 1,
+                        'is_alt': True,
+                        'alternates_group': line.get('alternates_group'),
+                        'cumulative_qty': acqty,
+                        'cycle': bool(a_cycle),
+                    }
+                    nodes.append(a_node)
+                    if not a_cycle and aus.startswith('p_'):
+                        if max_depth is None or (level + 1) < max_depth:
+                            _dfs(aus, level + 2, path_stack + [aus], acqty)
+
+    # Start traversal at level 1 (children of parent)
+    _dfs(parent_sfid, 1, [parent_sfid], 1)
+    return nodes
+
+
+@app.route('/api/entities/<sfid>/bom/deep', methods=['GET'])
+def api_bom_deep(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        # Query param: max_depth (int). 0 => only immediate children (no further recursion)
+        md_raw = request.args.get('max_depth')
+        max_depth = None
+        if md_raw is not None and str(md_raw).strip() != '':
+            try:
+                max_depth = int(md_raw)
+                if max_depth < 0:
+                    max_depth = None
+            except Exception:
+                max_depth = None
+        nodes = _walk_bom_deep(datarepo_path, sfid, max_depth=max_depth)
+        # Optional CSV output when format=csv
+        fmt = (request.args.get('format') or '').lower()
+        if fmt == 'csv':
+            # Build CSV from nodes
+            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle']
+            sio = io.StringIO()
+            writer = csv.DictWriter(sio, fieldnames=headers)
+            writer.writeheader()
+            for n in nodes:
+                # Ensure only known headers are written
+                row = {k: n.get(k) for k in headers}
+                writer.writerow(row)
+            csv_text = sio.getvalue()
+            return Response(
+                csv_text,
+                mimetype='text/csv',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{sfid}_bom_deep.csv"'
+                }
+            )
+        return jsonify({'success': True, 'nodes': nodes})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/add', methods=['POST'])
+def api_bom_add(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        use = (payload.get('use') or '').strip()
+        qty = payload.get('qty', 1)
+        rev = payload.get('rev') if 'rev' in payload else 'released'
+        alternates_group = (payload.get('alternates_group') or None)
+        index = payload.get('index')
+        check_exists = payload.get('check_exists')
+        if isinstance(check_exists, str):
+            check_exists = check_exists.lower() not in ('0', 'false', 'no')
+        if check_exists is None:
+            check_exists = True
+        # alternates may be list[str] or list[{'use': str}] or comma string
+        alts_raw = payload.get('alternates')
+        alts = None
+        if isinstance(alts_raw, str):
+            parts = [s.strip() for s in alts_raw.split(',') if s.strip()]
+            alts = [{'use': s} for s in parts] if parts else None
+        elif isinstance(alts_raw, list):
+            tmp = []
+            for a in alts_raw:
+                if isinstance(a, dict) and a.get('use'):
+                    tmp.append({'use': str(a['use'])})
+                elif isinstance(a, str) and a.strip():
+                    tmp.append({'use': a.strip()})
+            alts = tmp or None
+        # index may come as string
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        res = bom_add_line(
+            datarepo_path,
+            sfid,
+            use=use,
+            qty=qty,
+            rev=rev,
+            alternates=alts,
+            alternates_group=alternates_group,
+            index=index,
+            check_exists=bool(check_exists),
+        )
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/remove', methods=['POST'])
+def api_bom_remove(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        use = (payload.get('use') or '').strip() or None
+        remove_all = payload.get('remove_all')
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        if isinstance(remove_all, str):
+            remove_all = remove_all.lower() in ('1', 'true', 'yes')
+        res = bom_remove_line(
+            datarepo_path,
+            sfid,
+            index=index,
+            use=use,
+            remove_all=bool(remove_all),
+        )
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/set', methods=['POST'])
+def api_bom_set(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        updates = {}
+        for k in ('use', 'qty', 'rev', 'alternates_group'):
+            if k in payload:
+                updates[k] = payload.get(k)
+        res = bom_set_line(datarepo_path, sfid, index=index, updates=updates, check_exists=bool(payload.get('check_exists', True)))
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/alt-add', methods=['POST'])
+def api_bom_alt_add(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        alt_use = (payload.get('alt_use') or '').strip()
+        check_exists = payload.get('check_exists', True)
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        res = bom_alt_add(datarepo_path, sfid, index=index, alt_use=alt_use, check_exists=bool(check_exists))
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/alt-remove', methods=['POST'])
+def api_bom_alt_remove(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        alt_index = payload.get('alt_index')
+        alt_use = (payload.get('alt_use') or '').strip() or None
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        if isinstance(alt_index, str) and alt_index.isdigit():
+            alt_index = int(alt_index)
+        res = bom_alt_remove(datarepo_path, sfid, index=index, alt_index=alt_index, alt_use=alt_use)
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @app.route('/api/entities/specs/<sfid>')
@@ -535,7 +928,13 @@ def stickers_batch():
         size_text = (request.args.get('size_in') or '2x1').strip()
         dpi_text = (request.args.get('dpi') or '300').strip()
         text_size_text = (request.args.get('text_size') or '24').strip()
-        fields_raw = (request.args.get('fields') or '').strip()
+        # Prefill fields from repo config: sfdatarepo.yml -> stickers.batch.default_fields
+        try:
+            default_fields = get_stickers_default_fields()
+        except Exception:
+            default_fields = []
+        fields_prefill = ", ".join(default_fields) if default_fields else ""
+        fields_raw = (request.args.get('fields') or fields_prefill).strip()
         sfids_text = (request.args.get('sfids') or '').strip()
 
     if request.method == 'GET':

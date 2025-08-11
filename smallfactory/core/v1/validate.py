@@ -42,6 +42,8 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
             "message": "Entity must live under entities/<sfid>/entity.yml (directory layout), not a single YAML file"
         })
     # Validate directory layout
+    # Build adjacency of part -> child parts to detect cycles later
+    part_children: Dict[str, set] = {}
     for child in sorted([p for p in ent_root.iterdir() if p.is_dir()]):
         sfid = child.name
         try:
@@ -103,13 +105,161 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 "path": _rel(entity_yml, repo),
                 "message": "'bom' is only allowed on parts (sfid starting with 'p_')"
             })
-        if is_part and "uom" not in data:
-            issues.append({
-                "severity": "error",
-                "code": "ENT_PART_UOM_REQUIRED",
-                "path": _rel(entity_yml, repo),
-                "message": "Parts must define 'uom' in entity.yml"
-            })
+        # Missing 'uom' on parts is allowed; defaults to 'ea' at read time per SPEC.
+
+        # If BOM is present, validate structure and referenced SFIDs exist
+        if "bom" in data:
+            bom = data.get("bom")
+            if not isinstance(bom, list):
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_BOM_NOT_LIST",
+                    "path": _rel(entity_yml, repo),
+                    "message": "'bom' must be a list of line objects"
+                })
+            else:
+                # Only deeply validate content for parts (we already flagged non-parts above)
+                if is_part:
+                    # Collect child part references for cycle detection
+                    children: set = set()
+                    for idx, line in enumerate(bom, start=1):
+                        if not isinstance(line, dict):
+                            issues.append({
+                                "severity": "error",
+                                "code": "ENT_BOM_LINE_NOT_MAP",
+                                "path": _rel(entity_yml, repo),
+                                "message": f"bom item {idx}: must be a mapping/object"
+                            })
+                            continue
+                        use = line.get("use")
+                        if not isinstance(use, str) or not use.strip():
+                            issues.append({
+                                "severity": "error",
+                                "code": "ENT_BOM_USE_REQUIRED",
+                                "path": _rel(entity_yml, repo),
+                                "message": f"bom item {idx}: 'use' is required and must be an SFID string"
+                            })
+                        else:
+                            try:
+                                validate_sfid(use)
+                            except Exception as e:
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_USE_SFID_INVALID",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: invalid SFID in 'use': {e}"
+                                })
+                            if not (repo / "entities" / use / "entity.yml").exists():
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_USE_ENTITY_MISSING",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: referenced entity '{use}' does not exist under entities/"
+                                })
+                            else:
+                                # For cycle detection, add only existing child parts
+                                if isinstance(use, str) and use.startswith("p_"):
+                                    children.add(use)
+                        # Alternates validation (if present)
+                        if "alternates" in line:
+                            alts = line.get("alternates")
+                            if not isinstance(alts, list):
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "ENT_BOM_ALT_NOT_LIST",
+                                    "path": _rel(entity_yml, repo),
+                                    "message": f"bom item {idx}: 'alternates' must be a list"
+                                })
+                            else:
+                                for a_idx, alt in enumerate(alts, start=1):
+                                    if not isinstance(alt, dict):
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_ITEM_NOT_MAP",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: must be a mapping/object"
+                                        })
+                                        continue
+                                    aus = alt.get("use")
+                                    if aus is None:
+                                        # Alternates without 'use' are ignored; not an error.
+                                        continue
+                                    if not isinstance(aus, str) or not aus.strip():
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_USE_REQUIRED",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: 'use' must be an SFID string"
+                                        })
+                                        continue
+                                    try:
+                                        validate_sfid(aus)
+                                    except Exception as e:
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_SFID_INVALID",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: invalid SFID in 'use': {e}"
+                                        })
+                                        continue
+                                    if not (repo / "entities" / aus / "entity.yml").exists():
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_ENTITY_MISSING",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: referenced entity '{aus}' does not exist under entities/"
+                                        })
+                                    else:
+                                        if isinstance(aus, str) and aus.startswith("p_"):
+                                            children.add(aus)
+                    # Save children set (may be empty)
+                    part_children[sfid] = children
+
+    # After scanning all entities, detect cyclic dependencies among parts
+    # Graph contains only parts that exist under entities/
+    visited: set = set()
+    stack: set = set()
+    path: List[str] = []
+    emitted: set = set()
+
+    def _report_cycle(cycle_nodes: List[str]):
+        key = frozenset(cycle_nodes)
+        if key in emitted:
+            return
+        emitted.add(key)
+        cycle_str = " -> ".join(cycle_nodes + [cycle_nodes[0]]) if cycle_nodes else ""
+        # Report the issue on the first part's entity.yml for context
+        first = cycle_nodes[0]
+        issues.append({
+            "severity": "error",
+            "code": "ENT_BOM_CYCLE",
+            "path": _rel(ent_root / first / "entity.yml", repo),
+            "message": f"Cyclic BOM dependency detected: {cycle_str}"
+        })
+
+    def _dfs(u: str):
+        visited.add(u)
+        stack.add(u)
+        path.append(u)
+        for v in part_children.get(u, set()):
+            if v not in part_children:
+                # child is not a part with its own directory, ignore here
+                continue
+            if v not in visited:
+                _dfs(v)
+            elif v in stack:
+                # Found a back edge, extract cycle
+                try:
+                    i = path.index(v)
+                    _report_cycle(path[i:])
+                except ValueError:
+                    pass
+        path.pop()
+        stack.remove(u)
+
+    for node in part_children.keys():
+        if node not in visited:
+            _dfs(node)
 
 
 def _scan_inventory(repo: Path, issues: List[Dict]) -> None:

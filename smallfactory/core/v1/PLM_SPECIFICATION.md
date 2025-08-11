@@ -43,7 +43,7 @@ entities/<sfid>/
 
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
-uom: ea                    # required for parts
+uom: ea                    # optional; defaults to 'ea' if omitted
 policy: make               # optional (make|buy|phantom)
 attrs:                     # free-form attributes (string|number|bool|array|object)
   voltage: [120, 240]
@@ -69,7 +69,7 @@ Note on kind inference and validation:
 - Do not include a `kind` field; tooling infers kind from the `sfid` prefix.
 - Recognized prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier. More may be added later.
 - If a `kind` field appears, the linter errors; kinds are prefix-inferred only.
-- For parts (explicit or inferred), `uom` is required. Only parts may define `bom`, `design/`, `revisions/`, and `refs/`.
+- For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `design/`, `revisions/`, and `refs/`.
 - No legacy aliases: `children` is invalid; only `bom` is accepted.
 
 BOM defaults (to minimize boilerplate):
@@ -77,7 +77,8 @@ BOM defaults (to minimize boilerplate):
 - On each `bom` line:
   - `qty` should not be omitted; default is `1`.
   - `rev` should not be omitted; default is `released`.
-  - `when` may be omitted; default is included (no gating).
+  - Omitted `when` means the line is always included.
+  - `bom` is only allowed on parts.
 
 ### Minimal purchased part (no revisions)
 Buy parts can be very sparse. If a part has `policy: buy` and there is no `revisions/` directory and no `refs/released`, the resolver treats it as having an implicit released snapshot.
@@ -354,7 +355,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 ## Conventions & constraints
 - `entities/<sfid>/entity.yml` is **required** and must include:
   - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `sup_`). The prefix determines the kind.
-  - For parts (explicit or inferred), `uom` is required.
+  - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
   - Only parts (explicit or inferred) may define `bom`, `design/`, `revisions/`, and `refs/`.
   - No legacy aliases: the `children` key MUST NOT appear.
   - For `policy: buy` parts, `revisions/` and `refs/` may be omitted; such parts are treated as having an implicit released snapshot.
@@ -393,7 +394,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 
 - Minimal required fields:
   - All entities: omit the `sfid` field; identity is the directory name and must be a valid SFID with a recognized prefix. Do not include a `kind` field.
-  - Parts (explicit or inferred): `uom` is required.
+  - Parts (explicit or inferred): `uom` is optional; default 'ea'.
 - Kind inference:
   - Prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier.
 - BOM defaults (applied by resolver and validated by linter):
@@ -409,7 +410,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 - Finished goods defaults:
   - In `finished_goods/<sku>/sku.yml`, `rev` defaults to `released` if omitted.
 - Linter behavior (friendly but strict):
-  - Explain inferred kinds and defaulted fields; error on kind/prefix mismatch, invalid keys, `bom` on non-part, missing `uom`, and any legacy keys.
+  - Explain inferred kinds and defaulted fields; error on kind/prefix mismatch, invalid keys, `bom` on non-part, and any legacy keys. Do not error on missing `uom`; default to 'ea' at read time.
 
 ---
 
