@@ -47,6 +47,81 @@ $ python3 sf.py inventory ls
 
 ---
 
+## 🐳 Docker Setup
+
+For easy deployment and consistent environments, smallFactory can be run using Docker:
+
+### Quick Start with Docker Compose
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/yourusername/smallfactory.git
+   cd smallfactory
+   ```
+
+2. **Configure your environment** (optional):
+   ```bash
+   cp docker/.env.example .env
+   # Edit .env to set your git repository and user details
+   ```
+
+3. **Start with docker-compose**:
+   ```bash
+   docker-compose -f docker/docker-compose.yml up -d
+   ```
+
+4. **Access the web interface**:
+   Open `http://localhost:8080` in your browser
+
+### Configuration Options
+
+The Docker setup supports several configuration options via environment variables:
+
+- **`SF_DATAREPO_PATH`**: Path to your local data repository (default: `./data`)
+- **`SF_GIT_REPO_URL`**: Git repository URL for automatic cloning (optional)
+- **`SF_GIT_USER_NAME`**: Git user name for commits (default: "SmallFactory Docker")
+- **`SF_GIT_USER_EMAIL`**: Git user email for commits (default: "docker@smallfactory.local")
+
+### Usage Scenarios
+
+**Scenario 1: Using an existing local git repository**
+```bash
+SF_DATAREPO_PATH=/path/to/your/existing/plm-repo docker-compose -f docker/docker-compose.yml up
+```
+
+**Scenario 2: Clone from a remote repository**
+```bash
+echo "SF_GIT_REPO_URL=https://github.com/yourusername/plm-data.git" > .env
+docker-compose -f docker/docker-compose.yml up
+```
+
+**Scenario 3: Start fresh**
+```bash
+# Just run with defaults - creates ./data directory
+docker-compose -f docker/docker-compose.yml up
+# Initialize repository via web interface or CLI
+```
+
+### Docker Features
+
+The Docker container includes:
+- **Production-ready web server** (Gunicorn)
+- **Ollama with qwen2.5vl:3b model** for AI-powered image recognition
+- **Git integration** with automatic repository setup
+- **Persistent data** via volume mounts
+- **Security**: Non-root user for web application
+
+### Data Persistence
+
+Your PLM data is stored outside the container in the mounted volume, so it persists when you:
+- Stop/start containers
+- Update the Docker image
+- Recreate containers
+
+Simply backup your local data directory to preserve all your PLM data and git history.
+
+---
+
 ## 🧠 Philosophy
 
 Every decision in smallfactory is guided by this rule:
