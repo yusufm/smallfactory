@@ -103,13 +103,7 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 "path": _rel(entity_yml, repo),
                 "message": "'bom' is only allowed on parts (sfid starting with 'p_')"
             })
-        if is_part and "uom" not in data:
-            issues.append({
-                "severity": "error",
-                "code": "ENT_PART_UOM_REQUIRED",
-                "path": _rel(entity_yml, repo),
-                "message": "Parts must define 'uom' in entity.yml"
-            })
+        # Missing 'uom' on parts is allowed; defaults to 'ea' at read time per SPEC.
 
 
 def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
