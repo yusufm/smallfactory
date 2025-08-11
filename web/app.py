@@ -16,7 +16,7 @@ from PIL import Image
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -535,7 +535,13 @@ def stickers_batch():
         size_text = (request.args.get('size_in') or '2x1').strip()
         dpi_text = (request.args.get('dpi') or '300').strip()
         text_size_text = (request.args.get('text_size') or '24').strip()
-        fields_raw = (request.args.get('fields') or '').strip()
+        # Prefill fields from repo config: sfdatarepo.yml -> stickers.batch.default_fields
+        try:
+            default_fields = get_stickers_default_fields()
+        except Exception:
+            default_fields = []
+        fields_prefill = ", ".join(default_fields) if default_fields else ""
+        fields_raw = (request.args.get('fields') or fields_prefill).strip()
         sfids_text = (request.args.get('sfids') or '').strip()
 
     if request.method == 'GET':
