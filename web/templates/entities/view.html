@@ -59,27 +59,245 @@
     <div class="lg:col-span-2">
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
         <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h2 class="text-lg font-semibold text-gray-900">Fields</h2>
+          <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
           <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="text-blue-600 hover:text-blue-900 text-sm">Edit</a>
         </div>
-        <div class="divide-y divide-gray-200">
-          {% for k, v in entity.items() %}
-          <div class="px-6 py-4 grid grid-cols-3 gap-4">
-            <div class="col-span-1 text-sm font-medium text-gray-600">{{ k }}</div>
-            <div class="col-span-2 text-sm text-gray-900 break-all">{{ v }}</div>
-          </div>
-          {% endfor %}
+        <div class="px-6 py-4">
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <dt class="text-sm font-medium text-gray-600">SFID</dt>
+              <dd class="mt-1 text-sm font-mono text-gray-900">{{ entity.sfid }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Name</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
+            </div>
+            {% if entity.get('description') %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Description</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('description') }}</dd>
+            </div>
+            {% endif %}
+            {% if entity.get('category') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Category</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('category') }}</dd>
+            </div>
+            {% endif %}
+            {% set a = entity.get('attrs') or {} %}
+            {% if a.get('manufacturer') or a.get('mfr') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Manufacturer</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ a.get('manufacturer') or a.get('mfr') }}</dd>
+            </div>
+            {% endif %}
+            {% if a.get('mpn') or a.get('mfr_pn') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">MPN</dt>
+              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('mpn') or a.get('mfr_pn') }}</span></dd>
+            </div>
+            {% endif %}
+            {% if a.get('vendor') or a.get('supplier') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Supplier</dt>
+              <dd class="mt-1 text-sm text-gray-900">{{ a.get('vendor') or a.get('supplier') }}</dd>
+            </div>
+            {% endif %}
+            {% if a.get('sku') or a.get('spn') %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">SKU</dt>
+              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('sku') or a.get('spn') }}</span></dd>
+            </div>
+            {% endif %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Policy</dt>
+              <dd class="mt-1">
+                {% set policy = (entity.get('policy') or '').lower() %}
+                {% if policy == 'make' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">make</span>
+                {% elif policy == 'buy' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800">buy</span>
+                {% elif policy == 'phantom' %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800">phantom</span>
+                {% else %}
+                  <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">unspecified</span>
+                {% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">UOM</dt>
+              <dd class="mt-1">
+                <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">{{ entity.get('uom', 'ea') }}</span>
+              </dd>
+            </div>
+            {% if entity.get('tags') %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Tags</dt>
+              <dd class="mt-1 space-x-1">
+                {% for t in entity.get('tags') %}
+                  <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">{{ t }}</span>
+                {% endfor %}
+              </dd>
+            </div>
+            {% endif %}
+          </dl>
         </div>
       </div>
+
+      <!-- Attributes -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Attributes</h2>
+        </div>
+        <div class="px-6 py-4">
+          {% set attrs = entity.get('attrs') %}
+          {% if attrs and attrs.items() %}
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {% for k, v in attrs.items() %}
+            <div class="border border-gray-100 rounded p-3">
+              <div class="text-xs font-medium text-gray-500">{{ k }}</div>
+              <div class="mt-1 text-sm text-gray-900 break-words">{{ v }}</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-sm text-gray-500">No attributes defined.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if bom_rows and bom_rows|length > 0 %}
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Bill of Materials</h2>
+          <span class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
+        </div>
+        <div class="px-6 py-4 overflow-x-auto">
+          <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Part</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Name</th>
+                <th class="px-3 py-1.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Qty</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Rev</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alternates</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alt Group</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for row in bom_rows %}
+              <tr class="odd:bg-gray-50 hover:bg-gray-50">
+                <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="{{ url_for('entities_view', sfid=row.use) }}">{{ row.use }}</a></td>
+                <td class="px-3 py-1.5 text-gray-900">{{ row.name }}</td>
+                <td class="px-3 py-1.5 text-gray-900 text-right">{{ row.qty }}</td>
+                <td class="px-3 py-1.5 text-gray-700">{{ row.rev }}</td>
+                <td class="px-3 py-1.5">
+                  {% if row.alternates and row.alternates|length > 0 %}
+                    {% for alt in row.alternates %}
+                      <a href="{{ url_for('entities_view', sfid=alt) }}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">{{ alt }}</a>
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-gray-400">—</span>
+                  {% endif %}
+                </td>
+                <td class="px-3 py-1.5 text-gray-700">
+                  {% if row.alternates_group %}
+                    <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">{{ row.alternates_group }}</span>
+                  {% else %}
+                    <span class="text-gray-400">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
     </div>
 
-    <!-- JSON -->
+    <!-- Structure + Revisions + JSON -->
     <div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200">
+          <h2 class="text-lg font-semibold text-gray-900">Structure</h2>
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">design/</span>
+              {% if structure and structure.has_design %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_design_src else 'n' }}, exports: {{ 'y' if structure.has_design_exports else 'n' }}, docs: {{ 'y' if structure.has_design_docs else 'n' }}</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">revisions/</span>
+              {% if structure and structure.has_revisions %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="font-medium">refs/</span>
+              {% if structure and structure.has_refs %}
+                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
+              {% else %}
+                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
+              {% endif %}
+              {% if structure and structure.released_rev %}
+                <span class="ml-2 text-xs text-gray-600">released: {{ structure.released_rev }}</span>
+              {% endif %}
+            </div>
+          </div>
+          {% if structure and structure.has_design %}
+          <div class="pt-3">
+            <div class="text-xs text-gray-500 mb-1">Design actions</div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open src</button>
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open exports</button>
+              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open docs</button>
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
+          {% if structure and structure.released_rev %}
+            <span class="text-xs text-gray-600">released: {{ structure.released_rev }}</span>
+          {% endif %}
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-700">
+          {% if structure and structure.has_revisions %}
+            <div class="text-gray-600">Revision snapshots are present under <code class="font-mono text-xs bg-gray-50 px-1 py-0.5 rounded">revisions/</code>.</div>
+          {% else %}
+            <div class="text-gray-500">No revision snapshots yet.</div>
+          {% endif %}
+          <div class="mt-3 flex gap-2">
+            <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Create snapshot</button>
+          </div>
+        </div>
+      </div>
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
         <div class="px-6 py-4 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Raw JSON</h2>
         </div>
-        <pre class="p-4 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
+        <div class="p-4">
+          <details>
+            <summary class="cursor-pointer text-sm text-blue-700 hover:underline">Show raw JSON</summary>
+            <pre class="mt-2 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
+          </details>
+        </div>
       </div>
     </div>
   </div>

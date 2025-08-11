@@ -251,7 +251,67 @@ def entities_view(sfid):
     try:
         datarepo_path = get_datarepo_path()
         entity = get_entity(datarepo_path, sfid)
-        return render_template('entities/view.html', entity=entity)
+
+        # Structure presence per PLM SPEC (best-effort; directories may be optional)
+        ent_dir = Path(datarepo_path) / "entities" / sfid
+        design_dir = ent_dir / "design"
+        revisions_dir = ent_dir / "revisions"
+        refs_dir = ent_dir / "refs"
+        structure = {
+            'has_design': design_dir.exists(),
+            'has_design_src': (design_dir / "src").exists(),
+            'has_design_exports': (design_dir / "exports").exists(),
+            'has_design_docs': (design_dir / "docs").exists(),
+            'has_revisions': revisions_dir.exists(),
+            'has_refs': refs_dir.exists(),
+            'released_rev': None,
+        }
+        try:
+            rel_fp = refs_dir / "released"
+            if rel_fp.exists():
+                structure['released_rev'] = (rel_fp.read_text() or '').strip() or None
+        except Exception:
+            pass
+
+        # Enrich BOM for display (if present and valid)
+        bom_rows = []
+        bom = entity.get('bom')
+        if isinstance(bom, list):
+            for line in bom:
+                if not isinstance(line, dict):
+                    continue
+                use = str(line.get('use', '')).strip()
+                if not use:
+                    continue
+                qty = line.get('qty', 1) or 1
+                rev = line.get('rev', 'released') or 'released'
+                # Resolve child name best-effort
+                child_name = use
+                try:
+                    child = get_entity(datarepo_path, use)
+                    child_name = child.get('name', use)
+                except Exception:
+                    pass
+                alternates = []
+                if isinstance(line.get('alternates'), list):
+                    for alt in line['alternates']:
+                        if isinstance(alt, dict) and alt.get('use'):
+                            alternates.append(str(alt.get('use')))
+                alternates_group = line.get('alternates_group')
+                try:
+                    qty_disp = int(qty)
+                except Exception:
+                    qty_disp = qty
+                bom_rows.append({
+                    'use': use,
+                    'name': child_name,
+                    'qty': qty_disp,
+                    'rev': rev,
+                    'alternates': alternates,
+                    'alternates_group': alternates_group,
+                })
+
+        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, structure=structure)
     except Exception as e:
         flash(f'Error viewing entity: {e}', 'error')
         return redirect(url_for('entities_list'))
