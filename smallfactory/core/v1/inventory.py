@@ -17,6 +17,7 @@ def ensure_inventory_dir(datarepo_path: Path) -> Path:
 # -------------------------------
 # Helpers for SPEC v1 layout
 # inventory/<l_*>/<SFID>.yml
+# entities/<sfid>/entity.yml
 # -------------------------------
 
 def _entities_dir(datarepo_path: Path) -> Path:
@@ -26,7 +27,7 @@ def _entities_dir(datarepo_path: Path) -> Path:
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
-    return _entities_dir(datarepo_path) / f"{sfid}.yml"
+    return _entities_dir(datarepo_path) / sfid / "entity.yml"
 
 
 def _entity_exists(datarepo_path: Path, sfid: str) -> bool:
@@ -157,7 +158,7 @@ def list_items(datarepo_path: Path) -> list[dict]:
             totals[sfid] += qty
             locs[sfid].append(location)
 
-    # Compose results; include entity name from entities/<sfid>.yml if present
+    # Compose results; include entity name from entities/<sfid>/entity.yml if present
     results: List[Dict] = []
     for sfid in sorted(totals.keys()):
         name = ""

@@ -326,7 +326,7 @@ def _scan_git_commits(repo: Path, issues: List[Dict]) -> None:
     Rule: Any commit that changes files under entities/ or inventory/ must include
     at least one '::sfid::<SFID>' token in its commit message.
     """
-    def _git(args: list[str]) -> str:
+    def _git(args: List[str]) -> str:
         return subprocess.check_output(["git", "-C", str(repo)] + args, text=True)
 
     try:

@@ -64,10 +64,10 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 
 - Entity store and lifecycle
   - The data repository MUST contain a root directory `entities/`.
-  - Each `sfid` MUST have a canonical entity file at `entities/<SFID>.yml` that persists forever, even if the entity is retired.
+  - Each `sfid` MUST have a canonical entity file at `entities/<sfid>/entity.yml` that persists forever, even if the entity is retired.
   - This file is the canonical metadata for the entity and enforces temporal uniqueness.
 
-  Example `entities/l_a1.yml`:
+  Example `entities/l_a1/entity.yml`:
 
   ```yaml
   status: active # or 'retired'
@@ -101,7 +101,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
 ### Module: inventory
 
 - Top-level directory: `inventory/`
-- Purpose: Represent on-hand quantities per location (`l_*`) by entity `sfid`. These files are operational state; canonical entity metadata lives in `entities/<SFID>.yml`.
+- Purpose: Represent on-hand quantities per location (`l_*`) by entity `sfid`. These files are operational state; canonical entity metadata lives in `entities/<sfid>/entity.yml`.
 - Scope: Location (`l_*`) and any storable entity (`p_*` typically, but any valid `sfid` allowed).
 
 #### Repository layout
@@ -149,7 +149,7 @@ quantity: 1
 
 Additional guidance:
 - Zero quantities are permitted to stage planned placements, but it is RECOMMENDED to remove the file to represent no stock at a location.
-- Do not duplicate entity metadata here (name, description, manufacturer, lot/serial); that lives in `entities/<SFID>.yml`.
+- Do not duplicate entity metadata here (name, description, manufacturer, lot/serial); that lives in `entities/<sfid>/entity.yml`.
 - Git history is the audit trail; avoid redundant timestamps. Commit history provides change chronology.
 - Commit messages for inventory changes MUST include both tokens: `::sfid::<ENTITY_SFID>` and `::sfid::<LOCATION_SFID>`.
 

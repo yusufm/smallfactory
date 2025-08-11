@@ -153,7 +153,7 @@ $ python3 sf.py inventory add --sfid p_m3x10 --l_sfid l_a1 --quantity 100
 Adds or stages inventory for an existing entity at a specific location. The file is stored under `inventory/<l_*>/<SFID>.yml` and holds operational quantity state (non-canonical).
 
 > **Required fields:** `sfid`, `location` (must start with `l_`), and `quantity` (integer ≥ 0).
-> **Canonical metadata:** Item names/attributes live under `entities/<SFID>.yml` and can be set via `sf entities add/set`.
+> **Canonical metadata:** Item names/attributes live under `entities/<sfid>/entity.yml` and can be set via `sf entities add/set`.
 
 
 ### Adjust Quantity
