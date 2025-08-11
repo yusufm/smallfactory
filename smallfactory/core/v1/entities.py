@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import yaml
 import re
 
-from .gitutils import git_commit_and_push
+from .gitutils import git_commit_and_push, git_commit_paths
 from .config import get_entity_field_specs_for_sfid, validate_sfid
 
 
@@ -125,8 +125,40 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     data_to_write = dict(data)
     data_to_write.pop("sfid", None)
     _write_yaml(fp, data_to_write)
+    # Optional scaffold for parts (p_*) per PLM SPEC (design/, revisions/, refs/)
+    # We create empty directories with .gitkeep files so Git tracks them.
+    paths_to_commit = [fp]
+    try:
+        if sfid.startswith("p_"):
+            root_dir = fp.parent
+            # design subtree
+            design = root_dir / "design"
+            for sub in (design / "src", design / "exports", design / "docs"):
+                sub.mkdir(parents=True, exist_ok=True)
+                keep = sub / ".gitkeep"
+                if not keep.exists():
+                    keep.write_text("")
+                paths_to_commit.append(keep)
+            # revisions dir (no snapshots yet)
+            revisions = root_dir / "revisions"
+            revisions.mkdir(parents=True, exist_ok=True)
+            rev_keep = revisions / ".gitkeep"
+            if not rev_keep.exists():
+                rev_keep.write_text("")
+            paths_to_commit.append(rev_keep)
+            # refs dir (no 'released' pointer yet)
+            refs = root_dir / "refs"
+            refs.mkdir(parents=True, exist_ok=True)
+            refs_keep = refs / ".gitkeep"
+            if not refs_keep.exists():
+                refs_keep.write_text("")
+            paths_to_commit.append(refs_keep)
+    except Exception:
+        # Non-fatal: scaffolding is optional; proceed with entity creation even if it fails.
+        pass
     commit_msg = f"[smallFactory] Created entity {sfid}\n::sfid::{sfid}"
-    git_commit_and_push(datarepo_path, fp, commit_msg)
+    # Commit entity.yml and any scaffold placeholders
+    git_commit_paths(datarepo_path, paths_to_commit, commit_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
     return data_ret
