@@ -399,29 +399,16 @@ def entities_add():
 
 @app.route('/entities/<sfid>/edit', methods=['GET', 'POST'])
 def entities_edit(sfid):
-    """Edit fields for an existing entity (sfid is immutable)."""
+    """Deprecated: Inline editing is now supported on the entity view page."""
     try:
+        # Ensure entity exists for nicer UX, but always redirect to view
         datarepo_path = get_datarepo_path()
-        entity = get_entity(datarepo_path, sfid)
-        if request.method == 'POST':
-            # Collect updates (exclude sfid). Ignore blank values to avoid accidental clears.
-            updates = {}
-            for k, v in request.form.items():
-                if k == 'sfid':
-                    continue
-                val = v.strip()
-                if val != '':
-                    updates[k] = val
-            if updates:
-                entity = update_entity_fields(datarepo_path, sfid, updates)
-                flash('Entity updated successfully', 'success')
-                return redirect(url_for('entities_view', sfid=sfid))
-            else:
-                flash('No changes to update', 'info')
-        return render_template('entities/edit.html', entity=entity)
-    except Exception as e:
-        flash(f'Error editing entity: {e}', 'error')
-        return redirect(url_for('entities_view', sfid=sfid))
+        _ = get_entity(datarepo_path, sfid)
+    except Exception:
+        # fall through to redirect regardless
+        pass
+    flash('The Edit page has been removed. Use inline editing on the entity page.', 'info')
+    return redirect(url_for('entities_view', sfid=sfid))
 
 
 @app.route('/entities/<sfid>/retire', methods=['POST'])
