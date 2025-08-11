@@ -166,51 +166,62 @@
         </div>
       </div>
 
-      {% if bom_rows and bom_rows|length > 0 %}
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+      {% set is_part = (entity.sfid and entity.sfid[:2] == 'p_') %}
+      {% if is_part %}
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" id="bom-card">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Bill of Materials</h2>
-          <span class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-gray-900">Bill of Materials</h2>
+            <span id="bom-count" class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
+          </div>
+          <button id="bom-edit-toggle" type="button" class="text-sm text-blue-700 hover:underline" onclick="toggleBomMode()">
+            <i class="fas fa-toolbox mr-1"></i><span>Edit BOM</span>
+          </button>
+        </div>
+        <div id="bom-add-toolbar" class="px-6 py-4 border-b border-gray-100 hidden">
+          <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Child SFID (use)</label>
+              <input id="bom-add-use" type="text" placeholder="p_child" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-mono">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Qty</label>
+              <input id="bom-add-qty" type="number" value="1" min="1" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Rev</label>
+              <input id="bom-add-rev" type="text" value="released" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700">Alt Group</label>
+              <input id="bom-add-altgrp" type="text" placeholder="groupA" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-xs font-medium text-gray-700">Alternates (comma-separated)</label>
+              <input id="bom-add-alts" type="text" placeholder="p_alt1, p_alt2" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
+            </div>
+            <div class="md:col-span-6 flex justify-end">
+              <button type="button" onclick="bomAddLine()" class="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i>Add Line</button>
+            </div>
+          </div>
         </div>
         <div class="px-6 py-4 overflow-x-auto">
           <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
             <thead>
               <tr>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">#</th>
                 <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Part</th>
                 <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Name</th>
                 <th class="px-3 py-1.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Qty</th>
                 <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Rev</th>
                 <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alternates</th>
                 <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Alt Group</th>
+                <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100">
-              {% for row in bom_rows %}
-              <tr class="odd:bg-gray-50 hover:bg-gray-50">
-                <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="{{ url_for('entities_view', sfid=row.use) }}">{{ row.use }}</a></td>
-                <td class="px-3 py-1.5 text-gray-900">{{ row.name }}</td>
-                <td class="px-3 py-1.5 text-gray-900 text-right">{{ row.qty }}</td>
-                <td class="px-3 py-1.5 text-gray-700">{{ row.rev }}</td>
-                <td class="px-3 py-1.5">
-                  {% if row.alternates and row.alternates|length > 0 %}
-                    {% for alt in row.alternates %}
-                      <a href="{{ url_for('entities_view', sfid=alt) }}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">{{ alt }}</a>
-                    {% endfor %}
-                  {% else %}
-                    <span class="text-gray-400">—</span>
-                  {% endif %}
-                </td>
-                <td class="px-3 py-1.5 text-gray-700">
-                  {% if row.alternates_group %}
-                    <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">{{ row.alternates_group }}</span>
-                  {% else %}
-                    <span class="text-gray-400">—</span>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
+            <tbody id="bom-tbody" class="divide-y divide-gray-100"></tbody>
           </table>
+          <div id="bom-error" class="mt-2 text-sm text-red-600"></div>
         </div>
       </div>
       {% endif %}
@@ -312,5 +323,185 @@ function confirmRetire(){
   document.getElementById('retire-reason-input').value = (reason||'').trim();
   return true;
 }
+
+// -----------------
+// BOM Editor logic (in-place)
+// -----------------
+const SFID = '{{ entity.sfid }}';
+const isPart = SFID && SFID.startsWith('p_');
+let bomEditMode = false;
+
+function toggleBomMode(){
+  bomEditMode = !bomEditMode;
+  const toolbar = document.getElementById('bom-add-toolbar');
+  if(toolbar){ toolbar.classList.toggle('hidden', !bomEditMode); }
+  const btn = document.getElementById('bom-edit-toggle');
+  if(btn){ btn.querySelector('span').textContent = bomEditMode ? 'Done' : 'Edit BOM'; }
+  bomLoad();
+}
+
+async function bomLoad(){
+  if(!isPart) return;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load BOM');
+    renderBomRows(data.rows||[]);
+    const count = document.getElementById('bom-count');
+    if(count){
+      const n = (data.rows||[]).length;
+      count.textContent = `${n} item${n===1?'':'s'}`;
+    }
+    const err = document.getElementById('bom-error');
+    if(err) err.textContent = '';
+  }catch(e){
+    const err = document.getElementById('bom-error');
+    if(err) err.textContent = e.message||String(e);
+  }
+}
+
+function renderBomRows(rows){
+  if(bomEditMode){ return renderBomEditorRows(rows); }
+  return renderBomStaticRows(rows);
+}
+
+function renderBomStaticRows(rows){
+  const tbody = document.getElementById('bom-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const alts = (r.alternates||[]).map(a=>`<a href="/entities/${a}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">${a}</a>`).join('') || '<span class="text-gray-400">—</span>';
+    const altgrp = r.alternates_group ? `<span class=\"inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800\">${r.alternates_group}</span>` : '<span class="text-gray-400">—</span>';
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="odd:bg-gray-50 hover:bg-gray-50">
+        <td class="px-3 py-1.5 text-gray-500">${idx}</td>
+        <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="/entities/${r.use}">${r.use}</a></td>
+        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
+        <td class="px-3 py-1.5 text-gray-900 text-right">${r.qty}</td>
+        <td class="px-3 py-1.5 text-gray-700">${r.rev||'released'}</td>
+        <td class="px-3 py-1.5">${alts}</td>
+        <td class="px-3 py-1.5 text-gray-700">${altgrp}</td>
+        <td class="px-3 py-1.5 text-gray-400">—</td>
+      </tr>`);
+  });
+}
+
+function renderBomEditorRows(rows){
+  const tbody = document.getElementById('bom-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const alts = (r.alternates||[]);
+    const altsHtml = alts.map((a, ai)=>`<span class="inline-flex items-center mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono">${a}<button type="button" class="ml-1 text-blue-700 hover:text-blue-900" title="Remove" onclick="bomAltRemove(${idx}, '${a}', ${ai})">×</button></span>`).join('');
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td class="px-3 py-1.5 text-gray-500">${idx}</td>
+        <td class="px-3 py-1.5 font-mono">${r.use}</td>
+        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
+        <td class="px-3 py-1.5"><input id="bom-edit-qty-${idx}" type="number" min="1" value="${r.qty||1}" class="w-20 border border-gray-300 rounded px-2 py-1 text-right"></td>
+        <td class="px-3 py-1.5"><input id="bom-edit-rev-${idx}" type="text" value="${r.rev||'released'}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5">
+          <div class="flex flex-wrap">${altsHtml||'<span class=\"text-gray-400\">—</span>'}</div>
+          <div class="mt-1 flex gap-1">
+            <input id="bom-alt-add-${idx}" type="text" placeholder="p_alt" class="flex-1 min-w-[8rem] border border-gray-300 rounded px-2 py-1 font-mono">
+            <button type="button" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onclick="bomAltAdd(${idx})">Add Alt</button>
+          </div>
+        </td>
+        <td class="px-3 py-1.5"><input id="bom-edit-altgrp-${idx}" type="text" value="${r.alternates_group||''}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5">
+          <div class="flex gap-2">
+            <button type="button" class="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700" onclick="bomSave(${idx})">Save</button>
+            <button type="button" class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700" onclick="bomRemove(${idx})">Delete</button>
+          </div>
+        </td>
+      </tr>`);
+  });
+}
+
+async function bomAddLine(){
+  const use = document.getElementById('bom-add-use').value.trim();
+  const qty = parseInt(document.getElementById('bom-add-qty').value||'1', 10);
+  const rev = document.getElementById('bom-add-rev').value.trim()||'released';
+  const alternates_group = document.getElementById('bom-add-altgrp').value.trim()||undefined;
+  const alts = document.getElementById('bom-add-alts').value.trim();
+  if(!use){ return showBomError('Child SFID (use) is required'); }
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({use, qty, rev, alternates: alts, alternates_group})
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to add line');
+    clearBomAddInputs();
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+function clearBomAddInputs(){
+  ['bom-add-use','bom-add-qty','bom-add-rev','bom-add-altgrp','bom-add-alts'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(id==='bom-add-qty') el.value = '1';
+    else if(id==='bom-add-rev') el.value = 'released';
+    else el.value = '';
+  });
+}
+
+async function bomSave(index){
+  const qty = parseInt(document.getElementById(`bom-edit-qty-${index}`).value||'1',10);
+  const rev = document.getElementById(`bom-edit-rev-${index}`).value.trim()||'released';
+  const alternates_group = document.getElementById(`bom-edit-altgrp-${index}`).value.trim();
+  const payload = { index, qty, rev };
+  if(alternates_group) payload.alternates_group = alternates_group;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/set`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to save line');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomRemove(index){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/remove`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to remove line');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomAltAdd(index){
+  const alt_use = document.getElementById(`bom-alt-add-${index}`).value.trim();
+  if(!alt_use) return;
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/alt-add`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index, alt_use})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to add alternate');
+    document.getElementById(`bom-alt-add-${index}`).value = '';
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+async function bomAltRemove(index, alt_use, alt_index){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/alt-remove`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index, alt_use, alt_index})});
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to remove alternate');
+    renderBomRows(data.rows||[]);
+    showBomError('');
+  }catch(e){ showBomError(e.message||String(e)); }
+}
+
+function showBomError(msg){
+  const el = document.getElementById('bom-error');
+  if(el) el.textContent = msg||'';
+}
+
+// Initial load
+if(isPart){ bomLoad(); }
 </script>
 {% endblock %}

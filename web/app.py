@@ -27,6 +27,13 @@ from smallfactory.core.v1.entities import (
     create_entity,
     update_entity_fields,
     retire_entity,
+    # BOM management
+    bom_list,
+    bom_add_line,
+    bom_remove_line,
+    bom_set_line,
+    bom_alt_add,
+    bom_alt_remove,
 )
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
@@ -468,6 +475,182 @@ def api_entities_view(sfid):
         return jsonify({'success': True, 'entity': entity})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
+
+# -----------------------
+# BOM API endpoints (AJAX)
+# -----------------------
+
+def _enrich_bom_rows(datarepo_path, bom):
+    rows = []
+    if isinstance(bom, list):
+        for line in bom:
+            if not isinstance(line, dict):
+                continue
+            use = str(line.get('use', '')).strip()
+            if not use:
+                continue
+            qty = line.get('qty', 1) or 1
+            rev = line.get('rev', 'released') or 'released'
+            # Resolve child name best-effort
+            child_name = use
+            try:
+                child = get_entity(datarepo_path, use)
+                child_name = child.get('name', use)
+            except Exception:
+                pass
+            alternates = []
+            if isinstance(line.get('alternates'), list):
+                for alt in line['alternates']:
+                    if isinstance(alt, dict) and alt.get('use'):
+                        alternates.append(str(alt.get('use')))
+            rows.append({
+                'use': use,
+                'name': child_name,
+                'qty': qty,
+                'rev': rev,
+                'alternates': alternates,
+                'alternates_group': line.get('alternates_group')
+            })
+    return rows
+
+
+@app.route('/api/entities/<sfid>/bom', methods=['GET'])
+def api_bom_get(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        bom = bom_list(datarepo_path, sfid)
+        return jsonify({'success': True, 'bom': bom, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/add', methods=['POST'])
+def api_bom_add(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        use = (payload.get('use') or '').strip()
+        qty = payload.get('qty', 1)
+        rev = payload.get('rev') if 'rev' in payload else 'released'
+        alternates_group = (payload.get('alternates_group') or None)
+        index = payload.get('index')
+        check_exists = payload.get('check_exists')
+        if isinstance(check_exists, str):
+            check_exists = check_exists.lower() not in ('0', 'false', 'no')
+        if check_exists is None:
+            check_exists = True
+        # alternates may be list[str] or list[{'use': str}] or comma string
+        alts_raw = payload.get('alternates')
+        alts = None
+        if isinstance(alts_raw, str):
+            parts = [s.strip() for s in alts_raw.split(',') if s.strip()]
+            alts = [{'use': s} for s in parts] if parts else None
+        elif isinstance(alts_raw, list):
+            tmp = []
+            for a in alts_raw:
+                if isinstance(a, dict) and a.get('use'):
+                    tmp.append({'use': str(a['use'])})
+                elif isinstance(a, str) and a.strip():
+                    tmp.append({'use': a.strip()})
+            alts = tmp or None
+        # index may come as string
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        res = bom_add_line(
+            datarepo_path,
+            sfid,
+            use=use,
+            qty=qty,
+            rev=rev,
+            alternates=alts,
+            alternates_group=alternates_group,
+            index=index,
+            check_exists=bool(check_exists),
+        )
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/remove', methods=['POST'])
+def api_bom_remove(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        use = (payload.get('use') or '').strip() or None
+        remove_all = payload.get('remove_all')
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        if isinstance(remove_all, str):
+            remove_all = remove_all.lower() in ('1', 'true', 'yes')
+        res = bom_remove_line(
+            datarepo_path,
+            sfid,
+            index=index,
+            use=use,
+            remove_all=bool(remove_all),
+        )
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/set', methods=['POST'])
+def api_bom_set(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        updates = {}
+        for k in ('use', 'qty', 'rev', 'alternates_group'):
+            if k in payload:
+                updates[k] = payload.get(k)
+        res = bom_set_line(datarepo_path, sfid, index=index, updates=updates, check_exists=bool(payload.get('check_exists', True)))
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/alt-add', methods=['POST'])
+def api_bom_alt_add(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        alt_use = (payload.get('alt_use') or '').strip()
+        check_exists = payload.get('check_exists', True)
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        res = bom_alt_add(datarepo_path, sfid, index=index, alt_use=alt_use, check_exists=bool(check_exists))
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/bom/alt-remove', methods=['POST'])
+def api_bom_alt_remove(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        index = payload.get('index')
+        alt_index = payload.get('alt_index')
+        alt_use = (payload.get('alt_use') or '').strip() or None
+        if isinstance(index, str) and index.isdigit():
+            index = int(index)
+        if isinstance(alt_index, str) and alt_index.isdigit():
+            alt_index = int(alt_index)
+        res = bom_alt_remove(datarepo_path, sfid, index=index, alt_index=alt_index, alt_use=alt_use)
+        bom = res.get('bom')
+        return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @app.route('/api/entities/specs/<sfid>')
