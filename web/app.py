@@ -477,6 +477,31 @@ def api_entities_view(sfid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
 
+@app.route('/api/entities/<sfid>/update', methods=['POST'])
+def api_entities_update(sfid):
+    """Update fields for an existing entity via JSON. Returns updated entity.
+
+    Accepts either a top-level object of fields to update, or {"updates": {...}}.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            raise ValueError('Invalid payload')
+        updates = payload.get('updates') if isinstance(payload.get('updates'), dict) else payload
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError('No updates provided')
+        # Disallow sfid mutation
+        updates.pop('sfid', None)
+        # Normalize tags if provided as a comma-separated string
+        if 'tags' in updates and isinstance(updates['tags'], str):
+            parts = [s.strip() for s in updates['tags'].split(',') if s.strip()]
+            updates['tags'] = parts
+        updated = update_entity_fields(datarepo_path, sfid, updates)
+        return jsonify({'success': True, 'entity': updated})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 # -----------------------
 # BOM API endpoints (AJAX)
 # -----------------------

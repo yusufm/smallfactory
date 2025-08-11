@@ -63,9 +63,10 @@
       <div class="bg-white rounded-lg shadow-sm border border-gray-200">
         <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
           <h2 class="text-lg font-semibold text-gray-900">Overview</h2>
-          <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="text-blue-600 hover:text-blue-900 text-sm">Edit</a>
+          <button id="ovw-edit-toggle" type="button" class="text-blue-600 hover:text-blue-900 text-sm" onclick="toggleOverviewMode()">Edit</button>
         </div>
         <div class="px-6 py-4">
+          <div id="overview-display">
           <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <dt class="text-sm font-medium text-gray-600">SFID</dt>
@@ -144,15 +145,62 @@
             </div>
             {% endif %}
           </dl>
+          </div>
+
+          <div id="overview-editor" class="hidden">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-gray-700">SFID</label>
+                <div class="mt-1 text-sm font-mono text-gray-500">{{ entity.sfid }}</div>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Name</label>
+                <input id="ovw-name" type="text" value="{{ entity.get('name', '') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Description</label>
+                <textarea id="ovw-description" rows="3" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">{{ entity.get('description','') }}</textarea>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Category</label>
+                <input id="ovw-category" type="text" value="{{ entity.get('category','') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Policy</label>
+                {% set psel = (entity.get('policy') or '') %}
+                <select id="ovw-policy" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+                  <option value="" {% if not psel %}selected{% endif %}>(unspecified)</option>
+                  <option value="make" {% if psel=='make' %}selected{% endif %}>make</option>
+                  <option value="buy" {% if psel=='buy' %}selected{% endif %}>buy</option>
+                  <option value="phantom" {% if psel=='phantom' %}selected{% endif %}>phantom</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">UOM</label>
+                <input id="ovw-uom" type="text" value="{{ entity.get('uom','ea') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Tags (comma-separated)</label>
+                <input id="ovw-tags" type="text" value="{% if entity.get('tags') %}{{ entity.get('tags')|join(', ') }}{% endif %}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveOverview()">Save</button>
+              <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="cancelOverview()">Cancel</button>
+              <span id="ovw-error" class="ml-2 text-sm text-red-600"></span>
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Attributes -->
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
-        <div class="px-6 py-4 border-b border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Attributes</h2>
+          <button id="attrs-edit-toggle" type="button" class="text-blue-600 hover:text-blue-900 text-sm" onclick="toggleAttrsMode()">Edit</button>
         </div>
         <div class="px-6 py-4">
+          <div id="attrs-display">
           {% set attrs = entity.get('attrs') %}
           {% if attrs and attrs.items() %}
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -166,6 +214,28 @@
           {% else %}
           <div class="text-sm text-gray-500">No attributes defined.</div>
           {% endif %}
+          </div>
+
+          <div id="attrs-editor" class="hidden">
+            <div id="attrs-editor-list" class="space-y-2">
+              {% set attrs = entity.get('attrs') or {} %}
+              {% for k, v in attrs.items() %}
+              <div class="grid grid-cols-12 gap-2 items-center">
+                <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key" value="{{ k }}">
+                <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value" value="{{ v }}">
+                <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-2">
+              <button type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="addAttrRow()">Add attribute</button>
+            </div>
+            <div class="mt-4 flex items-center gap-2">
+              <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveAttrs()">Save</button>
+              <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="cancelAttrs()">Cancel</button>
+              <span id="attrs-error" class="ml-2 text-sm text-red-600"></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -333,6 +403,111 @@ function confirmRetire(){
 const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
+
+// -----------------
+// Overview inline edit
+// -----------------
+let ovwEditMode = false;
+function toggleOverviewMode(){
+  ovwEditMode = !ovwEditMode;
+  const disp = document.getElementById('overview-display');
+  const ed = document.getElementById('overview-editor');
+  const btn = document.getElementById('ovw-edit-toggle');
+  if(disp) disp.classList.toggle('hidden', ovwEditMode);
+  if(ed) ed.classList.toggle('hidden', !ovwEditMode);
+  if(btn) btn.textContent = ovwEditMode ? 'Done' : 'Edit';
+}
+function cancelOverview(){
+  ovwEditMode = false;
+  const disp = document.getElementById('overview-display');
+  const ed = document.getElementById('overview-editor');
+  const btn = document.getElementById('ovw-edit-toggle');
+  if(disp) disp.classList.remove('hidden');
+  if(ed) ed.classList.add('hidden');
+  if(btn) btn.textContent = 'Edit';
+  const err = document.getElementById('ovw-error');
+  if(err) err.textContent = '';
+}
+async function saveOverview(){
+  const name = document.getElementById('ovw-name').value;
+  const description = document.getElementById('ovw-description').value;
+  const category = document.getElementById('ovw-category').value;
+  const policy = document.getElementById('ovw-policy').value;
+  const uom = document.getElementById('ovw-uom').value;
+  const tags = document.getElementById('ovw-tags').value;
+  const err = document.getElementById('ovw-error');
+  if(err) err.textContent = '';
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ updates: { name, description, category, policy, uom, tags } })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to update');
+    window.location.reload();
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
+// -----------------
+// Attributes inline edit
+// -----------------
+let attrsEditMode = false;
+function toggleAttrsMode(){
+  attrsEditMode = !attrsEditMode;
+  const disp = document.getElementById('attrs-display');
+  const ed = document.getElementById('attrs-editor');
+  const btn = document.getElementById('attrs-edit-toggle');
+  if(disp) disp.classList.toggle('hidden', attrsEditMode);
+  if(ed) ed.classList.toggle('hidden', !attrsEditMode);
+  if(btn) btn.textContent = attrsEditMode ? 'Done' : 'Edit';
+}
+function cancelAttrs(){
+  attrsEditMode = false;
+  const disp = document.getElementById('attrs-display');
+  const ed = document.getElementById('attrs-editor');
+  const btn = document.getElementById('attrs-edit-toggle');
+  if(disp) disp.classList.remove('hidden');
+  if(ed) ed.classList.add('hidden');
+  if(btn) btn.textContent = 'Edit';
+  const err = document.getElementById('attrs-error');
+  if(err) err.textContent = '';
+}
+function addAttrRow(){
+  const list = document.getElementById('attrs-editor-list');
+  if(!list) return;
+  const div = document.createElement('div');
+  div.className = 'grid grid-cols-12 gap-2 items-center';
+  div.innerHTML = `
+    <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key">
+    <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value">
+    <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+  `;
+  list.appendChild(div);
+}
+async function saveAttrs(){
+  const err = document.getElementById('attrs-error');
+  if(err) err.textContent = '';
+  try{
+    const list = document.getElementById('attrs-editor-list');
+    const rows = Array.from(list ? list.children : []);
+    const attrs = {};
+    rows.forEach(row => {
+      const inputs = row.querySelectorAll('input');
+      if(inputs.length >= 2){
+        const k = (inputs[0].value||'').trim();
+        const v = inputs[1].value;
+        if(k){ attrs[k] = v; }
+      }
+    });
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ updates: { attrs } })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to update attributes');
+    window.location.reload();
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
 
 function toggleBomMode(){
   bomEditMode = !bomEditMode;
