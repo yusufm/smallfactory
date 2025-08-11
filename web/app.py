@@ -4,11 +4,12 @@ smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response
 from pathlib import Path
 import json
 import sys
 import os
+import csv
 import base64
 import io
 from PIL import Image
@@ -520,6 +521,143 @@ def api_bom_get(sfid):
         datarepo_path = get_datarepo_path()
         bom = bom_list(datarepo_path, sfid)
         return jsonify({'success': True, 'bom': bom, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+# Deep BOM traversal (recursive)
+def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
+    """Return a flat list of deep BOM nodes with metadata.
+
+    Each node: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle
+    - level: 1 for immediate children of parent
+    - is_alt: True if node came from an alternate list
+    - cumulative_qty: multiplied along the path when quantities are integers, else None
+    - cycle: True if 'use' already appears in the current path; recursion stops on cycles
+    """
+    nodes = []
+
+    def _get_name(sfid: str) -> str:
+        try:
+            ent = get_entity(datarepo_path, sfid)
+            return ent.get('name', sfid)
+        except Exception:
+            return sfid
+
+    def _mul(a, b):
+        try:
+            ai = int(a)
+            bi = int(b)
+            return ai * bi
+        except Exception:
+            return None
+
+    def _dfs(cur_parent: str, level: int, path_stack: list[str], cum_qty: int | None):
+        try:
+            blist = bom_list(datarepo_path, cur_parent)
+        except Exception:
+            blist = []
+        if not isinstance(blist, list):
+            blist = []
+
+        for line in blist:
+            if not isinstance(line, dict):
+                continue
+            use = str(line.get('use', '')).strip()
+            if not use:
+                continue
+            qty = line.get('qty', 1) or 1
+            rev = line.get('rev', 'released') or 'released'
+            is_cycle = use in path_stack
+            cqty = _mul(cum_qty if cum_qty is not None else 1, qty)
+            node = {
+                'parent': cur_parent,
+                'use': use,
+                'name': _get_name(use),
+                'qty': qty,
+                'rev': rev,
+                'level': level,
+                'is_alt': False,
+                'alternates_group': line.get('alternates_group'),
+                'cumulative_qty': cqty,
+                'cycle': bool(is_cycle),
+            }
+            nodes.append(node)
+
+            # Recurse into primary child if part and within depth and not a cycle
+            if not is_cycle and use.startswith('p_'):
+                if max_depth is None or level < max_depth:
+                    _dfs(use, level + 1, path_stack + [use], cqty)
+
+            # Alternates (each as its own node one level deeper)
+            alts = line.get('alternates')
+            if isinstance(alts, list):
+                for alt in alts:
+                    if not isinstance(alt, dict):
+                        continue
+                    aus = str(alt.get('use', '')).strip()
+                    if not aus:
+                        continue
+                    a_cycle = aus in path_stack
+                    acqty = _mul(cum_qty if cum_qty is not None else 1, qty)
+                    a_node = {
+                        'parent': cur_parent,
+                        'use': aus,
+                        'name': _get_name(aus),
+                        'qty': qty,
+                        'rev': rev,
+                        'level': level + 1,
+                        'is_alt': True,
+                        'alternates_group': line.get('alternates_group'),
+                        'cumulative_qty': acqty,
+                        'cycle': bool(a_cycle),
+                    }
+                    nodes.append(a_node)
+                    if not a_cycle and aus.startswith('p_'):
+                        if max_depth is None or (level + 1) < max_depth:
+                            _dfs(aus, level + 2, path_stack + [aus], acqty)
+
+    # Start traversal at level 1 (children of parent)
+    _dfs(parent_sfid, 1, [parent_sfid], 1)
+    return nodes
+
+
+@app.route('/api/entities/<sfid>/bom/deep', methods=['GET'])
+def api_bom_deep(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        # Query param: max_depth (int). 0 => only immediate children (no further recursion)
+        md_raw = request.args.get('max_depth')
+        max_depth = None
+        if md_raw is not None and str(md_raw).strip() != '':
+            try:
+                max_depth = int(md_raw)
+                if max_depth < 0:
+                    max_depth = None
+            except Exception:
+                max_depth = None
+        nodes = _walk_bom_deep(datarepo_path, sfid, max_depth=max_depth)
+        # Optional CSV output when format=csv
+        fmt = (request.args.get('format') or '').lower()
+        if fmt == 'csv':
+            # Build CSV from nodes
+            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle']
+            sio = io.StringIO()
+            writer = csv.DictWriter(sio, fieldnames=headers)
+            writer.writeheader()
+            for n in nodes:
+                # Ensure only known headers are written
+                row = {k: n.get(k) for k in headers}
+                writer.writerow(row)
+            csv_text = sio.getvalue()
+            return Response(
+                csv_text,
+                mimetype='text/csv',
+                headers={
+                    'Content-Disposition': f'attachment; filename="{sfid}_bom_deep.csv"'
+                }
+            )
+        return jsonify({'success': True, 'nodes': nodes})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 

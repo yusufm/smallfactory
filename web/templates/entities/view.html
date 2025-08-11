@@ -44,6 +44,9 @@
       <div class="flex items-center gap-2">
         <a href="{{ url_for('entities_edit', sfid=entity.sfid) }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"><i class="fas fa-pen mr-2"></i>Edit</a>
         <a href="{{ url_for('stickers_batch', sfids=entity.sfid) }}" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"><i class="fas fa-qrcode mr-2"></i>Stickers</a>
+        {% if entity.sfid and entity.sfid[:2] == 'p_' %}
+        <button type="button" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50" onclick="openBomTreeModal()"><i class="fas fa-sitemap mr-2"></i>BOM Tree</button>
+        {% endif %}
         {% if not entity.get('retired') %}
         <form method="POST" action="{{ url_for('entities_retire', sfid=entity.sfid) }}" onsubmit="return confirmRetire();">
           <input type="hidden" name="reason" id="retire-reason-input">
@@ -504,4 +507,115 @@ function showBomError(msg){
 // Initial load
 if(isPart){ bomLoad(); }
 </script>
+<script>
+// -----------------
+// BOM Deep Tree modal
+// -----------------
+function openBomTreeModal(){
+  if(!isPart) return;
+  const m = document.getElementById('bom-tree-modal');
+  if(m){ m.classList.remove('hidden'); }
+  loadBomTree();
+}
+function closeBomTreeModal(){
+  const m = document.getElementById('bom-tree-modal');
+  if(m){ m.classList.add('hidden'); }
+}
+async function loadBomTree(){
+  const err = document.getElementById('bom-tree-error');
+  const cont = document.getElementById('bom-tree-container');
+  const md = document.getElementById('bom-tree-depth');
+  if(err) err.textContent = '';
+  if(cont) cont.innerHTML = '<div class="text-sm text-gray-500">Loading…</div>';
+  // keep download link in sync with current inputs
+  updateBomTreeDownloadHref();
+  try{
+    const q = md && md.value !== '' ? `?max_depth=${encodeURIComponent(md.value)}` : '';
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep${q}`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load deep BOM');
+    const nodes = data.nodes||[];
+    cont.innerHTML = renderDeepBomTree(nodes);
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
+function updateBomTreeDownloadHref(){
+  const a = document.getElementById('bom-tree-download');
+  if(!a) return;
+  const md = document.getElementById('bom-tree-depth');
+  const params = new URLSearchParams();
+  if(md && md.value !== '') params.set('max_depth', md.value);
+  params.set('format', 'csv');
+  const qs = params.toString();
+  a.href = `/api/entities/${encodeURIComponent(SFID)}/bom/deep${qs?('?' + qs):''}`;
+}
+
+function renderDeepBomTree(nodes){
+  if(!Array.isArray(nodes) || nodes.length===0){
+    return '<div class="text-sm text-gray-500">No BOM lines.</div>';
+  }
+  let html = '';
+  let cur = 0;
+  const esc = (s)=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  nodes.forEach((n, idx)=>{
+    const lvl = parseInt(n.level||1, 10) || 1;
+    const isAlt = !!n.is_alt;
+    const cyc = !!n.cycle;
+    const qty = (n.qty==null?1:n.qty);
+    const cqty = n.cumulative_qty!=null ? ` <span class="ml-1 text-xs text-gray-500">(cum ${esc(n.cumulative_qty)})</span>` : '';
+    const flags = `${isAlt?'<span class="ml-2 text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">ALT</span>':''}`+
+                  `${cyc?'<span class="ml-2 text-[10px] uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">CYCLE</span>':''}`;
+    // Close until target level
+    while(cur > 0 && cur >= lvl){ html += '</li></ul>'; cur--; }
+    if(lvl > cur){
+      for(let i=cur; i<lvl; i++){
+        html += '<ul class="ml-4 pl-3 border-l border-gray-200"><li>';
+      }
+      cur = lvl;
+    }else{
+      html += '</li><li>';
+    }
+    html += `<span class="font-mono text-blue-700"><a class="hover:underline" href="/entities/${esc(n.use)}">${esc(n.use)}</a></span>`+
+            ` <span class="text-gray-900">${esc(n.name||n.use)}</span>`+
+            ` <span class="text-gray-700">× ${esc(qty)}</span>`+
+            ` <span class="text-xs text-gray-500">${esc(n.rev||'released')}</span>`+
+            flags + cqty;
+  });
+  while(cur > 0){ html += '</li></ul>'; cur--; }
+  return html;
+}
+</script>
+{% endblock %}
+
+{% block modals %}
+<!-- BOM Tree Modal -->
+<div id="bom-tree-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeBomTreeModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sitemap mr-2"></i>Deep BOM Tree</h3>
+        <div class="flex items-center gap-2">
+          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
+            <i class="fas fa-download mr-1"></i>Download CSV
+          </a>
+          <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeBomTreeModal()">×</button>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2 text-sm">
+        <label class="text-gray-600">Max depth</label>
+        <input id="bom-tree-depth" type="number" min="0" class="w-24 border border-gray-300 rounded px-2 py-1" placeholder="(all)">
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="loadBomTree()">Apply</button>
+        <div id="bom-tree-error" class="ml-auto text-sm text-red-600"></div>
+      </div>
+      <div class="p-5 max-h-[70vh] overflow-auto">
+        <div id="bom-tree-container" class="text-sm leading-6"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeBomTreeModal()">Close</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeBomTreeModal(); });</script>
+  
+</div>
 {% endblock %}
