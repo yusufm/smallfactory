@@ -1,11 +1,15 @@
 from __future__ import annotations
 from pathlib import Path
+import json
 import yaml
-from typing import Optional, List, Dict
+import time
+import os
+import random
+from typing import Optional, List, Dict, Tuple
 from collections import defaultdict
 
 from .gitutils import git_commit_and_push, git_commit_paths
-from .config import get_inventory_field_specs, validate_sfid
+from .config import validate_sfid
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -15,9 +19,11 @@ def ensure_inventory_dir(datarepo_path: Path) -> Path:
 
 
 # -------------------------------
-# Helpers for SPEC v1 layout
-# inventory/<l_*>/<SFID>.yml
-# entities/<sfid>/entity.yml
+# Helpers for SPEC v0.1 inventory
+# - inventory/<part_sfid>/journal.ndjson (append-only)
+# - inventory/<part_sfid>/onhand.generated.yml (per-part cache)
+# - inventory/_location/<location_sfid>/onhand.generated.yml (reverse cache)
+# - entities/<sfid>/entity.yml (canonical metadata)
 # -------------------------------
 
 def _entities_dir(datarepo_path: Path) -> Path:
@@ -34,13 +40,6 @@ def _entity_exists(datarepo_path: Path, sfid: str) -> bool:
     return _entity_file(datarepo_path, sfid).exists()
 
 
-def _validate_location_name(name: str) -> None:
-    """Deprecated: location names must be valid sfids per SPEC."""
-    # Kept for backward compatibility; now delegated to validate_sfid in _validate_location_sfid
-    if not isinstance(name, str) or not name:
-        raise ValueError("location must be provided")
-
-
 def _validate_location_sfid(location_sfid: str) -> None:
     """Validate that a location identifier is a proper location sfid per SPEC (prefix l_)."""
     validate_sfid(location_sfid)
@@ -48,16 +47,29 @@ def _validate_location_sfid(location_sfid: str) -> None:
         raise ValueError("location must be a valid location sfid starting with 'l_'")
 
 
-def _location_dir(datarepo_path: Path, location_sfid: str) -> Path:
-    _validate_location_sfid(location_sfid)
-    return ensure_inventory_dir(datarepo_path) / location_sfid
+def _part_dir(datarepo_path: Path, part_sfid: str) -> Path:
+    validate_sfid(part_sfid)
+    if not part_sfid.startswith("p_"):
+        # Allow any part-like sfid; SPEC recognizes p_ for parts in v0.1
+        pass
+    d = ensure_inventory_dir(datarepo_path) / part_sfid
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
-def _inventory_file(datarepo_path: Path, location_sfid: str, sfid: str) -> Path:
-    # Validate identifiers per SPEC
+def _journal_file(datarepo_path: Path, part_sfid: str) -> Path:
+    return _part_dir(datarepo_path, part_sfid) / "journal.ndjson"
+
+
+def _part_onhand_file(datarepo_path: Path, part_sfid: str) -> Path:
+    return _part_dir(datarepo_path, part_sfid) / "onhand.generated.yml"
+
+
+def _location_cache_file(datarepo_path: Path, location_sfid: str) -> Path:
     _validate_location_sfid(location_sfid)
-    validate_sfid(sfid)
-    return _location_dir(datarepo_path, location_sfid) / f"{sfid}.yml"
+    d = ensure_inventory_dir(datarepo_path) / "_location" / location_sfid
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "onhand.generated.yml"
 
 
 def _read_yaml(p: Path) -> dict:
@@ -66,239 +78,305 @@ def _read_yaml(p: Path) -> dict:
 
 
 def _write_yaml(p: Path, data: dict) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         yaml.safe_dump(data, f, sort_keys=False)
 
 
-def add_item(datarepo_path: Path, item: dict) -> dict:
-    """Create or stage inventory for an entity at a specific location per SPEC.
+def _read_lines(p: Path) -> List[str]:
+    if not p.exists():
+        return []
+    with open(p, "r") as f:
+        return [line.rstrip("\n") for line in f]
 
-    Required inputs:
-      - item['sfid']: entity sfid (e.g., 'p_m3x10')
-      - item['location']: location sfid (e.g., 'l_a1')
-      - item['quantity']: non-negative integer
 
-    This writes inventory/<location>/<sfid>.yml with at least {'quantity': <int>}.
-    Other keys are preserved if provided, but are non-canonical.
+def _append_line(p: Path, line: str) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a") as f:
+        f.write(line + "\n")
+
+
+_CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def _to_base32(data: bytes) -> str:
+    # Simple Base32 (Crockford) encode without padding; only for fixed ULID 16 bytes
+    bits = 0
+    value = 0
+    out = []
+    for b in data:
+        value = (value << 8) | b
+        bits += 8
+        while bits >= 5:
+            out.append(_CROCKFORD32[(value >> (bits - 5)) & 0x1F])
+            bits -= 5
+    if bits:
+        out.append(_CROCKFORD32[(value << (5 - bits)) & 0x1F])
+    return "".join(out)
+
+
+def _new_ulid() -> str:
+    """Generate a 26-char Crockford Base32 ULID string.
+    Time component is milliseconds since epoch (48 bits), plus 80 bits of randomness.
     """
-    specs = get_inventory_field_specs()
-    # Validate quantity against specs if present, otherwise basic int >= 0
-    if "quantity" not in item:
-        raise ValueError("Missing required field: quantity")
+    ts_ms = int(time.time() * 1000)
+    ts_bytes = ts_ms.to_bytes(6, "big")  # 48 bits
+    rand_bytes = os.urandom(10)  # 80 bits
+    return _to_base32(ts_bytes + rand_bytes)[:26]
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _read_entity_meta(datarepo_path: Path, sfid: str) -> Dict:
+    p = _entity_file(datarepo_path, sfid)
+    if not p.exists():
+        return {}
     try:
-        quantity = int(item["quantity"])
+        return _read_yaml(p)
     except Exception:
-        raise ValueError("quantity must be an integer")
-    if quantity < 0:
-        raise ValueError("quantity cannot be negative")
-    # Validate presence of sfid and location
-    sfid = str(item.get("sfid", "")).strip()
-    if not sfid:
-        raise ValueError("Missing required field: sfid (entity identifier)")
-    validate_sfid(sfid)
-    location = str(item.get("location", "")).strip()
+        return {}
+
+
+def _default_location(datarepo_path: Path) -> Optional[str]:
+    cfg = ensure_inventory_dir(datarepo_path) / "config.yml"
+    if not cfg.exists():
+        return None
+    try:
+        v = _read_yaml(cfg).get("default_location")
+        if isinstance(v, str) and v:
+            _validate_location_sfid(v)
+            return v
+    except Exception:
+        return None
+    return None
+
+
+def _compute_part_onhand_from_journal(journal_path: Path) -> Tuple[Dict[str, int], int]:
+    by_loc: Dict[str, int] = defaultdict(int)
+    total = 0
+    if not journal_path.exists():
+        return {}, 0
+    for line in _read_lines(journal_path):
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+            loc = str(obj.get("location", "")).strip()
+            if not loc:
+                # skip entries without a location (should be defaulted at write time)
+                continue
+            qty_delta = int(obj.get("qty_delta", 0))
+            by_loc[loc] += qty_delta
+            total += qty_delta
+        except Exception:
+            # ignore malformed lines
+            continue
+    # drop zero entries
+    by_loc = {k: v for k, v in by_loc.items() if v != 0}
+    return by_loc, total
+
+
+def _write_part_cache(datarepo_path: Path, part_sfid: str) -> Dict:
+    journal = _journal_file(datarepo_path, part_sfid)
+    by_loc, total = _compute_part_onhand_from_journal(journal)
+    ent_meta = _read_entity_meta(datarepo_path, part_sfid)
+    uom = ent_meta.get("uom", "ea")
+    data = {
+        "uom": uom,
+        "as_of": _now_iso(),
+        "by_location": dict(sorted(by_loc.items())),
+        "total": int(total),
+    }
+    _write_yaml(_part_onhand_file(datarepo_path, part_sfid), data)
+    return data
+
+
+def _write_location_cache(datarepo_path: Path, location_sfid: str) -> Dict:
+    # Build from all per-part caches
+    inv_dir = ensure_inventory_dir(datarepo_path)
+    parts: Dict[str, int] = {}
+    uom = "ea"
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+        part = pdir.name
+        cache_p = _part_onhand_file(datarepo_path, part)
+        if not cache_p.exists():
+            # Try to compute if journal exists
+            if _journal_file(datarepo_path, part).exists():
+                _write_part_cache(datarepo_path, part)
+            else:
+                continue
+        try:
+            cache = _read_yaml(cache_p)
+        except Exception:
+            continue
+        qty = int(cache.get("by_location", {}).get(location_sfid, 0))
+        if qty:
+            parts[part] = qty
+        # Keep last non-empty uom seen
+        uom = cache.get("uom", uom) or uom
+    total = int(sum(parts.values()))
+    data = {
+        "uom": uom,
+        "as_of": _now_iso(),
+        "parts": dict(sorted(parts.items())),
+        "total": total,
+    }
+    _write_yaml(_location_cache_file(datarepo_path, location_sfid), data)
+    return data
+
+
+def inventory_post(
+    datarepo_path: Path,
+    part: str,
+    qty_delta: int,
+    location: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> Dict:
+    """Append an inventory journal entry per SPEC.
+
+    - Writes to inventory/<part>/journal.ndjson as one JSON object per line.
+    - Updates per-part onhand cache and per-location reverse cache.
+    - Commit message must include ::sfid::<PART> and ::sfid::<LOCATION> tokens.
+    """
+    validate_sfid(part)
+    if not _entity_exists(datarepo_path, part):
+        raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
+    if location is None or not str(location).strip():
+        location = _default_location(datarepo_path)
     if not location:
-        raise ValueError("Missing required field: location (location sfid)")
+        raise ValueError("location is required (or configure inventory/config.yml: default_location)")
     _validate_location_sfid(location)
-    # Enforce existence of referenced entities
-    if not _entity_exists(datarepo_path, sfid):
-        raise FileNotFoundError(f"Entity sfid '{sfid}' does not exist under entities/")
     if not _entity_exists(datarepo_path, location):
         raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
-
-    # Determine inventory file path
-    inv_file = _inventory_file(datarepo_path, location, sfid)
-    if inv_file.exists():
-        raise FileExistsError(
-            f"Inventory file already exists for sfid '{sfid}' at location '{location}'. Use inventory adjust instead."
-        )
-    inv_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # Compose data: required quantity + preserve provided optional keys (excluding routing keys)
-    extras = {k: v for k, v in item.items() if k not in {"sfid", "location"}}
-    data = {**extras, "quantity": quantity}
-    _write_yaml(inv_file, data)
-
-    commit_lines = [
-        f"[smallFactory] Added inventory entry for {sfid} at {location} with quantity {quantity}",
-        f"::sfid::{sfid}",
-        f"::sfid::{location}",
-    ]
-    git_commit_and_push(datarepo_path, inv_file, "\n".join(commit_lines))
-
-    # Return a flattened view for CLI: include entity name if available
-    name = ""
-    ent_meta_path = _entity_file(datarepo_path, sfid)
     try:
-        ent_meta = _read_yaml(ent_meta_path)
-        name = ent_meta.get("name", "")
+        delta = int(qty_delta)
     except Exception:
-        name = ""
-    return {"sfid": sfid, "name": name, "quantity": quantity, "location": location}
+        raise ValueError("qty_delta must be an integer")
+    if delta == 0:
+        raise ValueError("qty_delta must be non-zero")
+
+    # Append NDJSON line
+    entry = {
+        "txn": _new_ulid(),
+        "location": location,
+        "qty_delta": delta,
+    }
+    if reason is not None:
+        entry["reason"] = str(reason)
+    journal = _journal_file(datarepo_path, part)
+    _append_line(journal, json.dumps(entry, separators=(",", ":")))
+
+    # Update caches
+    part_cache = _write_part_cache(datarepo_path, part)
+    loc_cache = _write_location_cache(datarepo_path, location)
+
+    # Commit journal and caches together
+    paths = [journal, _part_onhand_file(datarepo_path, part), _location_cache_file(datarepo_path, location)]
+    msg = (
+        f"[smallFactory] Inventory post for {part} at {location} qty_delta {delta}\n"
+        f"::sfid::{part}\n::sfid::{location}\n::sf-delta::{delta}"
+    )
+    git_commit_paths(datarepo_path, paths, msg)
+
+    return {
+        "part": part,
+        "location": location,
+        "qty_delta": delta,
+        "txn": entry["txn"],
+        "onhand": part_cache,
+    }
 
 
-def list_items(datarepo_path: Path) -> list[dict]:
-    inventory_dir = ensure_inventory_dir(datarepo_path)
-    # Aggregate by entity sfid across all location directories
-    totals: Dict[str, int] = defaultdict(int)
-    locs: Dict[str, List[str]] = defaultdict(list)
+def inventory_onhand(
+    datarepo_path: Path,
+    part: Optional[str] = None,
+    location: Optional[str] = None,
+) -> Dict:
+    """Report on-hand quantities.
 
-    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
-        location = loc_dir.name
-        if not location.startswith("l_"):
-            # Skip non-compliant directories
-            continue
-        for inv_file in sorted(loc_dir.glob("*.yml")):
-            sfid = inv_file.stem
-            try:
-                data = _read_yaml(inv_file)
-                qty = int(data.get("quantity", 0))
-            except Exception:
-                qty = 0
-            totals[sfid] += qty
-            locs[sfid].append(location)
-
-    # Compose results; include entity name from entities/<sfid>/entity.yml if present
-    results: List[Dict] = []
-    for sfid in sorted(totals.keys()):
-        name = ""
-        ent_meta_path = _entity_file(datarepo_path, sfid)
-        if ent_meta_path.exists():
-            try:
-                name = _read_yaml(ent_meta_path).get("name", "")
-            except Exception:
-                name = ""
-        locations = sorted(set(locs[sfid]))
-        summary = {
-            "sfid": sfid,
-            "name": name,
-            "quantity": totals[sfid],
-            "location": locations[0] if len(locations) == 1 else ("multiple" if locations else ""),
-            "locations": locations,
-        }
-        results.append(summary)
-    return results
-
-
-def view_item(datarepo_path: Path, sfid: str) -> dict:
-    validate_sfid(sfid)
-    # Aggregate across all inventory/<l_*>/<sfid>.yml files
-    inventory_dir = ensure_inventory_dir(datarepo_path)
-    total_qty = 0
-    locations: Dict[str, int] = {}
-    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
-        location = loc_dir.name
-        if not location.startswith("l_"):
-            continue
-        inv_file = loc_dir / f"{sfid}.yml"
-        if not inv_file.exists():
-            continue
-        data = _read_yaml(inv_file)
-        qty = int(data.get("quantity", 0))
-        locations[location] = qty
-        total_qty += qty
-    if total_qty == 0 and not locations:
-        # Treat as not found in inventory context
-        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    name = ""
-    ent_meta_path = _entity_file(datarepo_path, sfid)
-    if ent_meta_path.exists():
-        try:
-            name = _read_yaml(ent_meta_path).get("name", "")
-        except Exception:
-            name = ""
-    return {"sfid": sfid, "name": name, "quantity": total_qty, "locations": locations}
-
-
-def delete_item(datarepo_path: Path, sfid: str) -> dict:
-    """Remove all inventory files for the given entity across all locations.
-
-    Does NOT delete the canonical entity file under entities/.
+    - If part is provided: return per-part onhand cache (compute if missing).
+    - Else if location is provided: return per-location reverse cache (compute from part caches).
+    - Else: return summary over all parts (from caches; compute missing from journals).
     """
-    validate_sfid(sfid)
-    inventory_dir = ensure_inventory_dir(datarepo_path)
-    to_delete: List[Path] = []
-    affected_locations: List[str] = []
-    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
-        location = loc_dir.name
-        if not location.startswith("l_"):
-            continue
-        inv_file = loc_dir / f"{sfid}.yml"
-        if inv_file.exists():
-            to_delete.append(inv_file)
-            affected_locations.append(location)
-    if not to_delete:
-        raise FileNotFoundError(f"Inventory item '{sfid}' not found")
-    # Compose commit message including both sfid tokens for all locations
-    lines = [
-        f"[smallFactory] Deleted inventory entries for {sfid} across {len(affected_locations)} location(s)",
-        f"::sfid::{sfid}",
-    ] + [f"::sfid::{loc}" for loc in sorted(set(affected_locations))]
-    git_commit_paths(datarepo_path, to_delete, "\n".join(lines), delete=True)
-    # Return minimal metadata
-    name = ""
-    ent_meta_path = _entity_file(datarepo_path, sfid)
-    if ent_meta_path.exists():
-        try:
-            name = _read_yaml(ent_meta_path).get("name", "")
-        except Exception:
-            name = ""
-    return {"sfid": sfid, "name": name, "deleted_locations": sorted(set(affected_locations))}
+    inv_dir = ensure_inventory_dir(datarepo_path)
+    if part:
+        validate_sfid(part)
+        if not _entity_exists(datarepo_path, part):
+            raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
+        cache_p = _part_onhand_file(datarepo_path, part)
+        if not cache_p.exists():
+            _write_part_cache(datarepo_path, part)
+        return _read_yaml(cache_p)
 
-
-def adjust_quantity(datarepo_path: Path, sfid: str, delta: int, location: Optional[str] = None) -> dict:
-    """Adjust quantity for an entity at a specific location per SPEC.
-
-    If location is omitted and the entity exists at exactly one location, adjust there.
-    Otherwise, require location.
-    """
-    # Validate and verify entity exists
-    validate_sfid(sfid)
-    if not _entity_exists(datarepo_path, sfid):
-        raise FileNotFoundError(f"Entity sfid '{sfid}' does not exist under entities/")
-
-    inventory_dir = ensure_inventory_dir(datarepo_path)
-    candidate_files: List[Path] = []
-    for loc_dir in sorted([p for p in inventory_dir.iterdir() if p.is_dir()]):
-        loc_name = loc_dir.name
-        if not loc_name.startswith("l_"):
-            continue
-        inv_file = loc_dir / f"{sfid}.yml"
-        if inv_file.exists():
-            candidate_files.append(inv_file)
-
-    lf: Path
-    if location is None:
-        if len(candidate_files) == 1:
-            lf = candidate_files[0]
-            location = lf.parent.name
-        elif len(candidate_files) == 0:
-            raise ValueError("location is required because the item doesn't exist at any location yet")
-        else:
-            raise ValueError("location is required when an item exists at multiple locations")
-    else:
+    if location:
         _validate_location_sfid(location)
-        # Ensure location entity exists
         if not _entity_exists(datarepo_path, location):
             raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
-        lf = _inventory_file(datarepo_path, location, sfid)
-        # If location file doesn't exist yet, create it with starting quantity 0
-        if not lf.exists():
-            lf.parent.mkdir(parents=True, exist_ok=True)
-            _write_yaml(lf, {"quantity": 0})
+        cache_p = _location_cache_file(datarepo_path, location)
+        # Recompute from part caches
+        return _write_location_cache(datarepo_path, location)
 
-    data = _read_yaml(lf)
-    try:
-        new_qty = int(data.get("quantity", 0)) + int(delta)
-    except Exception:
-        raise ValueError("Could not adjust quantity")
-    if new_qty < 0:
-        raise ValueError("Resulting quantity cannot be negative")
-    data["quantity"] = new_qty
-    _write_yaml(lf, data)
-    commit_msg = (
-        f"[smallFactory] Adjusted quantity for {sfid} at {location} by {delta}\n"
-        f"::sfid::{sfid}\n::sfid::{location}\n::sf-delta::{delta}\n::sf-new-quantity::{new_qty}"
-    )
-    git_commit_and_push(datarepo_path, lf, commit_msg)
-    return view_item(datarepo_path, sfid)
+    # Summary over all parts
+    parts = []
+    grand_total = 0
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+        part_sfid = pdir.name
+        cache_p = _part_onhand_file(datarepo_path, part_sfid)
+        if not cache_p.exists():
+            if _journal_file(datarepo_path, part_sfid).exists():
+                _write_part_cache(datarepo_path, part_sfid)
+            else:
+                continue
+        try:
+            cache = _read_yaml(cache_p)
+        except Exception:
+            continue
+        parts.append({
+            "sfid": part_sfid,
+            "uom": cache.get("uom", "ea"),
+            "total": int(cache.get("total", 0)),
+        })
+        grand_total += int(cache.get("total", 0))
+    return {"parts": parts, "total": grand_total}
+
+
+def inventory_rebuild(datarepo_path: Path) -> Dict:
+    """Rebuild all onhand caches from journals (per-part and per-location)."""
+    inv_dir = ensure_inventory_dir(datarepo_path)
+    # Rebuild per-part
+    rebuilt_parts: List[str] = []
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+        part_sfid = pdir.name
+        if _journal_file(datarepo_path, part_sfid).exists():
+            _write_part_cache(datarepo_path, part_sfid)
+            rebuilt_parts.append(part_sfid)
+    # Rebuild per-location based on all part caches
+    locations: set[str] = set()
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+        cache_p = _part_onhand_file(datarepo_path, pdir.name)
+        if not cache_p.exists():
+            continue
+        try:
+            cache = _read_yaml(cache_p)
+        except Exception:
+            continue
+        locations.update(cache.get("by_location", {}).keys())
+    rebuilt_locations: List[str] = []
+    for loc in sorted(locations):
+        _write_location_cache(datarepo_path, loc)
+        rebuilt_locations.append(loc)
+    # Commit touched caches in batches
+    to_commit: List[Path] = []
+    for part in rebuilt_parts:
+        to_commit.append(_part_onhand_file(datarepo_path, part))
+    for loc in rebuilt_locations:
+        to_commit.append(_location_cache_file(datarepo_path, loc))
+    if to_commit:
+        git_commit_paths(
+            datarepo_path,
+            to_commit,
+            "[smallFactory] Rebuilt inventory onhand caches\n::sf-action::rebuild",
+        )
+    return {"parts": rebuilt_parts, "locations": rebuilt_locations}
