@@ -13,6 +13,7 @@
 ```
 entities/                 # canonical source of truth for all entities
 finished_goods/           # SKUs and build records (no per-unit data here)
+inventory/                # per-part journals and generated on-hand caches
 workorders/               # work orders (optional, but recommended)
 serials/                  # per-unit records (one file per unit)
 ```
@@ -183,6 +184,125 @@ events:
 
 ---
 
+## Inventory (MVP)
+
+SFID quick reference:
+
+- Authoritative regex:
+  ```regex
+  ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
+  ```
+- Common prefixes used here:
+  - Locations: `l_*` (e.g., `l_a1`, `l_bin7`, `l_line1`)
+  - Parts: `p_*` (e.g., `p_m3x10`, `p_cap_10uf`)
+
+Layout:
+```
+inventory/
+  <sfid>/
+    journal.ndjson           # append-only; one JSON object per line
+    onhand.generated.yml     # optional per-part cache; do not hand-edit
+```
+
+Journal entry format (NDJSON; one JSON object per line):
+```
+{"txn":"01J9Z6T9S2B3HQX5WAM4R2F3G6","location":"l_main","qty_delta":200,"reason":"receipt"}
+{"txn":"01J9Z6Y9M8K7C1P2D3F4H5J6K7","location":"l_line1","qty_delta":-16,"reason":"issue"}
+```
+
+Notes:
+
+- Time derives from the ULID embedded in `txn`; journal entries MUST NOT include a separate `ts` field. Backdating is not supported.
+- Quantities in journals are always interpreted in the part’s base `uom`; journal entries MUST NOT include a `uom` field.
+- Format is NDJSON (JSON Lines) for safe, line-wise appends and union merges.
+- File identity is the path: `inventory/<sfid>/`. Do not repeat the part SFID inside entries.
+- Use SFIDs for `location`. No `sfid` or `kind` fields inside inventory entries.
+- Writes are O(1) appends; tooling updates `onhand.generated.yml` for that part.
+- Global on-hand is the sum over per-part caches.
+
+ Defaults and minimal entry (tooling fills):
+
+ - Minimal accepted fields at write time: `qty_delta`.
+ - Tooling fills if omitted:
+   - `txn`: generated ULID (idempotency; ULID time is authoritative)
+   - `location`: from `inventory/config.yml: default_location` if present
+
+ Minimal input vs. stored example:
+ ```
+ # user input (conceptual)
+ {"qty_delta": 5}
+
+ # stored after tooling fills defaults
+ {"txn":"01J9ZCD...","location":"l_main","qty_delta":5}
+ ```
+
+ Optional repo config (for defaults):
+ ```yaml
+ # inventory/config.yml
+ default_location: l_main
+ ```
+
+Git merge hint (reduce conflicts on append-only logs):
+```
+inventory/p_*/journal.ndjson merge=union
+```
+
+CLI (full names):
+```
+sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
+sf inventory onhand [--part <sfid>] [--location <sfid>]
+sf inventory rebuild
+```
+
+Linter rules:
+
+- Validate that `part` (derived from path) and `location` SFIDs exist in `entities/`.
+- Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom`.
+- For serialized parts, prefer `qty_delta` ∈ {+1, −1} with a `serial` pointer.
+- Generated files (`onhand.generated.yml`) must not be hand-edited.
+ Optional per-location on-hand cache (reverse index):
+ 
+ - Layout:
+   - `inventory/_location/<location_sfid>/onhand.generated.yml`
+  - Example:
+    ```yaml
+    # inventory/_location/l_main/onhand.generated.yml
+    uom: ea
+    as_of: 2025-08-10T21:15:00Z
+    parts:
+      p_cap_10uf: 184
+      p_res_1k: 500
+    total: 684
+    ```
+ - Behavior:
+   - On each `sf inventory post`, tooling updates both:
+     - `inventory/<part_sfid>/onhand.generated.yml` (by_location, total)
+     - `inventory/_location/<location_sfid>/onhand.generated.yml` (parts, total)
+   - `sf inventory rebuild` regenerates per-part caches from journals, then per-location caches from per-part caches.
+{{ ... }}
+   - Do not hand-edit generated files.
+
+Appendix: .gitattributes (recommended)
+```
+# Append-only inventory journals: prefer union merges to reduce conflicts
+inventory/p_*/journal.ndjson merge=union
+```
+
+Appendix: onhand.generated.yml (example)
+```yaml
+# inventory/<sfid>/onhand.generated.yml
+uom: ea
+as_of: 2025-08-10T21:15:00Z
+by_location:
+  l_main: 184
+  l_line1: 0
+total: 184
+```
+- Structure is minimal: a single-unit-of-measure per part, map by `location` SFID, and an overall `total`.
+- This file is derived; tooling updates it on each post and during `sf inventory rebuild`.
+
+---
+
 ## Resolver behavior (deterministic)
 **Input:** a path to `finished_goods/<sku>` (and repo state/commit).  
 **Output:** a fully resolved BOM with exact part SFIDs and revision labels.
@@ -212,6 +332,9 @@ sf part revision release <sfid> <revision>
 sf resolve finished_goods/<sku>
 sf lock finished_goods/<sku> [--output <path>]
 sf serial mint --workorder <workorder> --qty <n>
+sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--uom <uom>] [--reason <text>]
+sf inventory onhand [--part <sfid>] [--location <sfid>]
+sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
 ```
 
