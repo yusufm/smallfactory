@@ -231,8 +231,14 @@ def main():
         return args.format
 
     def cmd_init(args):
-        # Non-interactive first; fall back to prompts only if not provided
+        # Prefer GitHub clone; prompt for URL first if not provided
         github_url = (getattr(args, "github_url", None) or "").strip() or None
+        if github_url is None:
+            try:
+                gh_in = input("Enter GitHub repository URL to clone (or press Enter to create a local repo): ").strip()
+                github_url = gh_in or None
+            except Exception:
+                github_url = None
 
         if args.path:
             target_path = pathlib.Path(args.path)
@@ -244,7 +250,7 @@ def main():
             else:
                 repo_name = (getattr(args, "name", None) or "").strip() or None
             if not repo_name:
-                # Last resort: prompt for a name to keep UX intact
+                # Prompt for local name only if we are not cloning and no name provided
                 repo_name = input("Enter a name for the new local datarepo: ").strip()
                 if not repo_name:
                     print("[smallFactory] Error: datarepo name cannot be empty.")
