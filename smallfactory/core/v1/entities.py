@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timezone
+import shutil
+import hashlib
 import yaml
 import re
 
@@ -163,6 +165,290 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     data_ret["sfid"] = sfid
     return data_ret
 
+
+# -------------------------------
+# Revision management helpers (MVP)
+# -------------------------------
+def _next_revision_id(prev: Optional[str]) -> str:
+    """Compute the next numeric revision id.
+
+    - If prev is a number, increment numerically.
+    - If prev is None or invalid/non-numeric, return '1'.
+    """
+    if prev is None:
+        return "1"
+    s = str(prev).strip()
+    if not s.isdigit():
+        return "1"
+    try:
+        return str(int(s) + 1)
+    except Exception:
+        return "1"
+
+
+def _is_part_sfid(sfid: str) -> bool:
+    return bool(sfid) and sfid.startswith("p_")
+
+
+def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
+    return _entities_dir(datarepo_path) / sfid
+
+
+def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
+    return _entity_dir(datarepo_path, sfid) / "revisions"
+
+
+def _refs_released_file(datarepo_path: Path, sfid: str) -> Path:
+    return _entity_dir(datarepo_path, sfid) / "refs" / "released"
+
+
+def _read_released_pointer(datarepo_path: Path, sfid: str) -> Optional[str]:
+    p = _refs_released_file(datarepo_path, sfid)
+    try:
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip() or None
+    except Exception:
+        return None
+    return None
+
+
+def _list_revision_meta_files(datarepo_path: Path, sfid: str) -> List[Tuple[str, Path]]:
+    """Return list of (rev_label, meta_path) for existing snapshots."""
+    out: List[Tuple[str, Path]] = []
+    root = _revisions_dir(datarepo_path, sfid)
+    if not root.exists() or not root.is_dir():
+        return out
+    for child in sorted([p for p in root.iterdir() if p.is_dir()]):
+        meta = child / "meta.yml"
+        if meta.exists():
+            out.append((child.name, meta))
+    return out
+
+
+def _read_meta(meta_path: Path) -> dict:
+    try:
+        return _read_yaml(meta_path)
+    except Exception:
+        return {}
+
+
+def get_revisions(datarepo_path: Path, sfid: str) -> Dict:
+    """Return {rev, revisions[]} from filesystem snapshots per SPEC.
+
+    - rev: contents of refs/released (label) or None if not set.
+    - revisions: list of meta dicts augmented with 'id' and compatibility fields.
+    """
+    validate_sfid(sfid)
+    # Ensure entity exists
+    fp = _entity_file(datarepo_path, sfid)
+    if not fp.exists():
+        raise FileNotFoundError(f"Entity '{sfid}' not found")
+    released = _read_released_pointer(datarepo_path, sfid)
+    metas = []
+    for label, meta_path in _list_revision_meta_files(datarepo_path, sfid):
+        m = _read_meta(meta_path) or {}
+        # Normalize/compat fields expected by current UI
+        m = dict(m)
+        m.setdefault("id", label)
+        # Map generated_at -> created_at for display compatibility
+        if "created_at" not in m and "generated_at" in m:
+            m["created_at"] = m.get("generated_at")
+        metas.append(m)
+    # Sort by created_at/generated_at then by label for stability
+    def _ts(m):
+        return m.get("created_at") or m.get("generated_at") or ""
+    metas.sort(key=lambda x: (_ts(x), x.get("id", "")))
+    return {"rev": released, "revisions": metas}
+
+
+def _compute_next_label_from_fs(datarepo_path: Path, sfid: str) -> str:
+    labels = [label for (label, _) in _list_revision_meta_files(datarepo_path, sfid)]
+    # Numeric-only scheme: consider only numeric labels
+    numeric_values = []
+    for s in labels:
+        s2 = str(s).strip()
+        if s2.isdigit():
+            try:
+                numeric_values.append(int(s2))
+            except Exception:
+                pass
+    if numeric_values:
+        prev = str(max(numeric_values))
+        return _next_revision_id(prev)
+    # No numeric revisions yet -> start at 1 regardless of any alphabetic labels
+    return _next_revision_id(None)
+
+
+def cut_revision(
+    datarepo_path: Path,
+    sfid: str,
+    rev: Optional[str] = None,
+    *,
+    include_exports: bool = True,
+    include_docs: bool = True,
+    notes: Optional[str] = None,
+) -> dict:
+    """Create a new draft snapshot under revisions/<rev>/ per SPEC.
+
+    Fully self-contained snapshot: copies the entire entity directory except the
+    'revisions' subtree. This includes entity.yml, refs/, design/, and any other
+    files/directories under the entity.
+
+    - Writes meta.yml with rev, status: draft, generated_at, notes?, source_commit?,
+      and artifacts[] with sha256 for every copied file (paths are relative to snapshot root).
+    - Does NOT flip refs/released.
+    Returns: {sfid, rev, revisions} for UI compatibility.
+    """
+    validate_sfid(sfid)
+    if not _is_part_sfid(sfid):
+        raise ValueError("Revisions are only supported on part entities ('p_*')")
+    # Ensure entity exists
+    ent_fp = _entity_file(datarepo_path, sfid)
+    if not ent_fp.exists():
+        raise FileNotFoundError(f"Entity '{sfid}' not found")
+    # Validate entity.yml against specs (no-op if none configured)
+    ent_data = _read_yaml(ent_fp) or {}
+    _validate_against_specs(datarepo_path, sfid, ent_data)
+
+    # Determine new rev label
+    label = rev or _compute_next_label_from_fs(datarepo_path, sfid)
+    snap_dir = _revisions_dir(datarepo_path, sfid) / label
+    if snap_dir.exists():
+        raise FileExistsError(f"Revision '{label}' already exists for {sfid}")
+    (snap_dir).mkdir(parents=True, exist_ok=True)
+
+    # Copy entire entity directory excluding the 'revisions' subtree
+    artifacts: List[Dict] = []
+    ent_dir = _entity_dir(datarepo_path, sfid)
+    for child in ent_dir.iterdir():
+        if child.name == "revisions":
+            continue
+        dest = snap_dir / child.name
+        if child.is_file():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(child, dest)
+        elif child.is_dir():
+            shutil.copytree(child, dest)
+
+    # Record artifacts and hashes for all copied files (exclude meta.yml which we write later)
+    for p in snap_dir.rglob("*"):
+        if p.is_file():
+            rel = p.relative_to(snap_dir)
+            rel_str = str(rel).replace("\\", "/")
+            # Compute sha256
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            # Classify a simple role for compatibility
+            role = "file"
+            if rel_str == "entity.yml":
+                role = "entity"
+            elif rel_str.startswith("design/exports/"):
+                role = "cad-export"
+            elif rel_str.startswith("design/docs/"):
+                role = "doc"
+            elif rel.parts and rel.parts[0] == "refs":
+                role = "ref"
+            artifacts.append({
+                "role": role,
+                "path": rel_str,
+                "sha256": h.hexdigest(),
+            })
+
+    # Source commit (best-effort short SHA)
+    source_commit = None
+    try:
+        import subprocess
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=datarepo_path, capture_output=True, text=True)
+        if r.returncode == 0:
+            source_commit = r.stdout.strip() or None
+    except Exception:
+        source_commit = None
+
+    meta = {
+        "rev": label,
+        "status": "draft",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "id": label,  # compat for UI
+    }
+    if notes:
+        meta["notes"] = str(notes)
+    if source_commit:
+        meta["source_commit"] = source_commit
+    if artifacts:
+        meta["artifacts"] = artifacts
+
+    meta_fp = snap_dir / "meta.yml"
+    _write_yaml(meta_fp, meta)
+
+    # Commit the entire snapshot directory contents
+    commit_paths = [snap_dir]
+    msg = f"[smallFactory] Cut revision {sfid} {label}\n::sfid::{sfid}\n::sf-rev::{label}\n::sf-op::rev-cut"
+    git_commit_paths(datarepo_path, commit_paths, msg)
+
+    info = get_revisions(datarepo_path, sfid)
+    return {"sfid": sfid, "rev": info.get("rev"), "revisions": info.get("revisions", [])}
+
+
+def bump_revision(datarepo_path: Path, sfid: str, *, notes: Optional[str] = None) -> dict:
+    """Convenience: cut the next draft revision label and return revision info.
+
+    This no longer flips the released pointer; it creates a draft snapshot per SPEC.
+    """
+    validate_sfid(sfid)
+    if not _is_part_sfid(sfid):
+        raise ValueError("Revisions are only supported on part entities ('p_*')")
+    label = _compute_next_label_from_fs(datarepo_path, sfid)
+    # Create the draft snapshot
+    cut_revision(datarepo_path, sfid, label, notes=notes)
+    # Return info plus the newly created label so callers can immediately release it
+    info = get_revisions(datarepo_path, sfid)
+    return {"sfid": sfid, "rev": info.get("rev"), "new_rev": label, "revisions": info.get("revisions", [])}
+
+
+def release_revision(
+    datarepo_path: Path,
+    sfid: str,
+    rev: str,
+    *,
+    released_at: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> dict:
+    """Mark snapshot revisions/<rev>/meta.yml as released and flip refs/released.
+
+    - If released_at is None, uses now (UTC).
+    - Updates meta.yml; writes refs/released with the label.
+    Returns: {sfid, rev, revisions}
+    """
+    validate_sfid(sfid)
+    if not _is_part_sfid(sfid):
+        raise ValueError("Revisions are only supported on part entities ('p_*')")
+    # Ensure snapshot exists
+    snap_dir = _revisions_dir(datarepo_path, sfid) / rev
+    meta_fp = snap_dir / "meta.yml"
+    if not meta_fp.exists():
+        raise FileNotFoundError(f"Revision '{rev}' not found for {sfid}")
+    meta = _read_meta(meta_fp) or {}
+    if released_at is None:
+        released_at = datetime.now(timezone.utc).isoformat()
+    meta["status"] = "released"
+    meta["released_at"] = released_at
+    if notes:
+        meta["notes"] = str(notes)
+    _write_yaml(meta_fp, meta)
+
+    # Write refs/released pointer
+    refs = _refs_released_file(datarepo_path, sfid)
+    refs.parent.mkdir(parents=True, exist_ok=True)
+    refs.write_text(str(rev) + "\n", encoding="utf-8")
+
+    # Commit meta and pointer
+    msg = f"[smallFactory] Release revision {sfid} {rev}\n::sfid::{sfid}\n::sf-rev::{rev}\n::sf-op::rev-release"
+    git_commit_paths(datarepo_path, [meta_fp, refs], msg)
+
+    info = get_revisions(datarepo_path, sfid)
+    return {"sfid": sfid, "rev": info.get("rev"), "revisions": info.get("revisions", [])}
 
 # -------------------------------
 # BOM management helpers

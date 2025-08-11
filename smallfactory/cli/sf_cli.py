@@ -24,6 +24,9 @@ from smallfactory.core.v1.entities import (
     create_entity as ent_create_entity,
     update_entity_fields as ent_update_entity_fields,
     retire_entity as ent_retire_entity,
+    # Revisions APIs
+    bump_revision as ent_bump_revision,
+    release_revision as ent_release_revision,
     # BOM APIs
     bom_list as ent_bom_list,
     bom_add_line as ent_bom_add_line,
@@ -114,6 +117,21 @@ def main():
     ent_retire = ent_sub.add_parser("retire", help="Retire (soft-delete) an entity")
     ent_retire.add_argument("sfid", help="Entity SFID")
     ent_retire.add_argument("--reason", default=None, help="Retirement reason")
+
+    # entities > revision group (revision management for parts)
+    ent_rev = ent_sub.add_parser("revision", help="Revision operations for part entities")
+    rev_sub = ent_rev.add_subparsers(dest="rev_cmd", required=False, parser_class=SFArgumentParser)
+
+    ent_rev_bump = rev_sub.add_parser("bump", help="Create and immediately release the next revision for a part")
+    ent_rev_bump.add_argument("sfid", help="Part SFID (e.g., p_widget)")
+    ent_rev_bump.add_argument("--notes", default=None, help="Optional notes for revision metadata (applied to snapshot and release)")
+    ent_rev_bump.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
+
+    ent_rev_release = rev_sub.add_parser("release", help="Mark a revision as released and update the 'released' pointer")
+    ent_rev_release.add_argument("sfid", help="Part SFID (e.g., p_widget)")
+    ent_rev_release.add_argument("rev", help="Revision label to release (e.g., A, B, ...)")
+    ent_rev_release.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
+    ent_rev_release.add_argument("--notes", default=None, help="Optional release notes")
 
     # bom group (bill of materials ops)
     bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
@@ -700,6 +718,54 @@ def main():
         else:
             print(f"[smallFactory] Retired entity '{args.sfid}'")
 
+    # Entities > Revision handlers
+    def cmd_entities_rev_bump(args):
+        datarepo_path = _repo_path()
+        try:
+            # Cut next snapshot (draft), then immediately release it
+            res_bump = ent_bump_revision(datarepo_path, args.sfid, notes=getattr(args, "notes", None))
+            new_rev = res_bump.get("new_rev")
+            if not new_rev:
+                raise RuntimeError("failed to determine new revision label")
+            res = ent_release_revision(
+                datarepo_path,
+                args.sfid,
+                new_rev,
+                released_at=getattr(args, "released_at", None),
+                notes=getattr(args, "notes", None),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Created and released revision '{res.get('rev')}' for '{args.sfid}'")
+
+    def cmd_entities_rev_release(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_release_revision(
+                datarepo_path,
+                args.sfid,
+                args.rev,
+                released_at=getattr(args, "released_at", None),
+                notes=getattr(args, "notes", None),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Released revision '{args.rev}' for '{args.sfid}' (current released: {res.get('rev')})")
+
     # BOM command handlers
     def _normalize_bom_line(line: dict) -> dict:
         out = dict(line or {})
@@ -1000,7 +1066,11 @@ def main():
     if cmd == "inventory":
         sub = getattr(args, "inv_cmd", None)
     elif cmd == "entities":
-        sub = getattr(args, "ent_cmd", None)
+        ent_sc = getattr(args, "ent_cmd", None)
+        if ent_sc == "revision":
+            sub = f"revision:{getattr(args, 'rev_cmd', None)}"
+        else:
+            sub = ent_sc
     elif cmd == "bom":
         sub = getattr(args, "bom_cmd", None)
     elif cmd == "stickers":
@@ -1020,6 +1090,8 @@ def main():
         ("entities", "show"): cmd_entities_show,
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
+        ("entities", "revision:bump"): cmd_entities_rev_bump,
+        ("entities", "revision:release"): cmd_entities_rev_release,
         ("bom", "ls"): cmd_bom_ls,
         ("bom", "list"): cmd_bom_ls,
         ("bom", "add"): cmd_bom_add,
@@ -1038,6 +1110,8 @@ def main():
     else:
         if cmd == "inventory":
             inventory_parser.print_help()
+        elif cmd == "entities":
+            entities_parser.print_help()
         else:
             parser.print_help()
 
