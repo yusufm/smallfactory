@@ -75,7 +75,7 @@ def main():
     inv_post = inv_sub.add_parser("post", help="Append an inventory journal entry for a part")
     inv_post.add_argument("--part", required=True, metavar="sfid", help="Part SFID (e.g., p_m3x10)")
     inv_post.add_argument("--qty-delta", dest="qty_delta", required=True, type=int, metavar="delta", help="Signed quantity delta (e.g., +5 or -2)")
-    inv_post.add_argument("--l_sfid", required=False, metavar="l_sfid", help="Location SFID (e.g., l_a1). If omitted, uses inventory/config.yml: default_location")
+    inv_post.add_argument("--l_sfid", required=False, metavar="l_sfid", help="Location SFID (e.g., l_a1). If omitted, uses sfdatarepo.yml: inventory.default_location")
     inv_post.add_argument("--reason", required=False, help="Optional reason string for the journal entry")
 
     # onhand: report on-hand quantities
@@ -280,6 +280,14 @@ def main():
 
             # Initial commit and optional push
             repo_ops.initial_commit_and_optional_push(repo_path, has_remote=has_remote)
+
+            # Scaffold minimal default location entity and set repo default in sfdatarepo.yml
+            # Only for freshly created local repos (avoid mutating cloned remotes automatically)
+            if not has_remote:
+                try:
+                    repo_ops.scaffold_default_location(repo_path, "l_inbox")
+                except Exception as e:
+                    print(f"[smallFactory] Warning: could not scaffold default location/config: {e}")
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)

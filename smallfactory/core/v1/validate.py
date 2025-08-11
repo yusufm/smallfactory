@@ -6,7 +6,7 @@ import yaml
 import re
 import subprocess
 
-from .config import validate_sfid
+from .config import validate_sfid, load_datarepo_config
 
 ULID_RE = re.compile(r"^[0-7][0-9A-HJKMNP-TV-Z]{25}$")
 
@@ -145,18 +145,18 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
             "message": "Recommend adding .gitattributes with union merge for inventory journals"
         })
 
-    # Optional default location config
-    cfg = inv_root / "config.yml"
-    if cfg.exists():
-        try:
-            data = _load_yaml(cfg)
-            loc = data.get("default_location")
-            if not isinstance(loc, str) or not loc.startswith("l_"):
+    # Optional default location in repo config (sfdatarepo.yml)
+    try:
+        dr_cfg = load_datarepo_config(repo)
+        inv = dr_cfg.get("inventory") or {}
+        loc = inv.get("default_location")
+        if isinstance(loc, str) and loc:
+            if not loc.startswith("l_"):
                 issues.append({
                     "severity": "error",
                     "code": "INV_DEFAULT_LOCATION_INVALID",
-                    "path": _rel(cfg, repo),
-                    "message": "inventory/config.yml: default_location must be an 'l_*' sfid"
+                    "path": "sfdatarepo.yml",
+                    "message": "sfdatarepo.yml: inventory.default_location must be an 'l_*' sfid"
                 })
             else:
                 try:
@@ -165,32 +165,19 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
                     issues.append({
                         "severity": "error",
                         "code": "INV_DEFAULT_LOCATION_INVALID",
-                        "path": _rel(cfg, repo),
-                        "message": f"inventory/config.yml: invalid default_location sfid: {e}"
+                        "path": "sfdatarepo.yml",
+                        "message": f"sfdatarepo.yml: invalid inventory.default_location sfid: {e}"
                     })
-                # Ensure location entity exists
                 if not (repo / "entities" / loc / "entity.yml").exists():
                     issues.append({
                         "severity": "error",
                         "code": "INV_DEFAULT_LOCATION_MISSING_ENTITY",
-                        "path": _rel(cfg, repo),
+                        "path": f"entities/{loc}/entity.yml",
                         "message": f"Default location '{loc}' not found under entities/"
                     })
-        except Exception:
-            issues.append({
-                "severity": "error",
-                "code": "INV_CONFIG_INVALID",
-                "path": _rel(cfg, repo),
-                "message": "inventory/config.yml is not valid YAML"
-            })
-    else:
-        # Not strictly required; warn to encourage config
-        issues.append({
-            "severity": "warning",
-            "code": "INV_CONFIG_MISSING",
-            "path": "inventory/config.yml",
-            "message": "Recommend adding inventory/config.yml with default_location"
-        })
+    except Exception:
+        # If config unreadable, skip; other validators will surface config file issues
+        pass
 
     # Validate per-part journals
     for p_dir in sorted([p for p in inv_root.iterdir() if p.is_dir() and p.name.startswith("p_")]):

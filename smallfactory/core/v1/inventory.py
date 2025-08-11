@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Tuple
 from collections import defaultdict
 
 from .gitutils import git_commit_and_push, git_commit_paths
-from .config import validate_sfid
+from .config import validate_sfid, load_datarepo_config
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -140,16 +140,16 @@ def _read_entity_meta(datarepo_path: Path, sfid: str) -> Dict:
 
 
 def _default_location(datarepo_path: Path) -> Optional[str]:
-    cfg = ensure_inventory_dir(datarepo_path) / "config.yml"
-    if not cfg.exists():
-        return None
+    """Return default location from sfdatarepo.yml: inventory.default_location."""
     try:
-        v = _read_yaml(cfg).get("default_location")
+        dr_cfg = load_datarepo_config(datarepo_path)
+        inv = dr_cfg.get("inventory") or {}
+        v = inv.get("default_location")
         if isinstance(v, str) and v:
             _validate_location_sfid(v)
             return v
     except Exception:
-        return None
+        pass
     return None
 
 
@@ -246,7 +246,7 @@ def inventory_post(
     if location is None or not str(location).strip():
         location = _default_location(datarepo_path)
     if not location:
-        raise ValueError("location is required (or configure inventory/config.yml: default_location)")
+        raise ValueError("location is required (or set sfdatarepo.yml: inventory.default_location)")
     _validate_location_sfid(location)
     if not _entity_exists(datarepo_path, location):
         raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")

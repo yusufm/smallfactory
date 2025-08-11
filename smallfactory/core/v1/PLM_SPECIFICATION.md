@@ -216,7 +216,7 @@ inventory/
 
 Journal entry format (NDJSON; one JSON object per line):
 ```
-{"txn":"01J9Z6T9S2B3HQX5WAM4R2F3G6","location":"l_main","qty_delta":200,"reason":"receipt"}
+{"txn":"01J9Z6T9S2B3HQX5WAM4R2F3G6","location":"l_inbox","qty_delta":200,"reason":"receipt"}
 {"txn":"01J9Z6Y9M8K7C1P2D3F4H5J6K7","location":"l_line1","qty_delta":-16,"reason":"issue"}
 ```
 
@@ -235,7 +235,7 @@ Notes:
  - Minimal accepted fields at write time: `qty_delta`.
  - Tooling fills if omitted:
    - `txn`: generated ULID (idempotency; ULID time is authoritative)
-   - `location`: from `inventory/config.yml: default_location` if present
+   - `location`: from `sfdatarepo.yml: inventory.default_location` if present
 
  Minimal input vs. stored example:
  ```
@@ -243,13 +243,14 @@ Notes:
  {"qty_delta": 5}
 
  # stored after tooling fills defaults
- {"txn":"01J9ZCD...","location":"l_main","qty_delta":5}
+ {"txn":"01J9ZCD...","location":"l_inbox","qty_delta":5}
  ```
 
  Optional repo config (for defaults):
  ```yaml
- # inventory/config.yml
- default_location: l_main
+ # sfdatarepo.yml
+ inventory:
+   default_location: l_inbox
  ```
 
 Git merge hint (reduce conflicts on append-only logs):
@@ -276,7 +277,7 @@ Linter rules:
    - `inventory/_location/<location_sfid>/onhand.generated.yml`
   - Example:
     ```yaml
-    # inventory/_location/l_main/onhand.generated.yml
+    # inventory/_location/l_inbox/onhand.generated.yml
     uom: ea
     as_of: 2025-08-10T21:15:00Z
     parts:
@@ -304,8 +305,8 @@ Appendix: onhand.generated.yml (example)
 uom: ea
 as_of: 2025-08-10T21:15:00Z
 by_location:
-  l_main: 184
-  l_line1: 0
+  l_inbox: 184
+  l_shelf: 0
 total: 184
 ```
 - Structure is minimal: a single-unit-of-measure per part, map by `location` SFID, and an overall `total`.
