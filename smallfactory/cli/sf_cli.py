@@ -670,8 +670,13 @@ def main():
                 sys.exit(1)
                 
         except ImportError as e:
-            print("❌ Error: Flask is not installed.")
-            print("   Install web dependencies: pip install -r web/requirements.txt")
+            # Be specific: only claim Flask is missing if that's the failing module
+            missing = getattr(e, "name", "") or ""
+            if missing == "flask":
+                print("❌ Error: Flask is not installed.")
+                print("   Install web dependencies: pip install -r web/requirements.txt")
+            else:
+                print(f"❌ Import error starting web UI: {e}")
             sys.exit(1)
         except Exception as e:
             print(f"❌ Error starting web UI: {e}")

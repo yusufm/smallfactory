@@ -18,10 +18,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid
 from smallfactory.core.v1.inventory import (
-    list_items,
-    view_item,
-    delete_item,
-    adjust_quantity
+    inventory_post,
+    inventory_onhand,
 )
 from smallfactory.core.v1.entities import (
     list_entities,
@@ -47,18 +45,21 @@ def index():
     """Main dashboard showing overview of the system."""
     try:
         datarepo_path = get_datarepo_path()
-        items = list_items(datarepo_path)
-        total_items = len(items)
-        total_quantity = sum(item.get('quantity', 0) for item in items)
-        
-        # Get recent items (last 5)
-        recent_items = items[-5:] if items else []
-        
-        return render_template('index.html', 
-                             total_items=total_items,
-                             total_quantity=total_quantity,
-                             recent_items=recent_items,
-                             datarepo_path=str(datarepo_path))
+        summary = inventory_onhand(datarepo_path)
+        parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        total_items = len(parts)
+        total_quantity = int(summary.get('total', 0)) if isinstance(summary, dict) else 0
+
+        # Recent heuristic: first 5 entries (sorted by sfid already)
+        recent_items = parts[:5]
+
+        return render_template(
+            'index.html',
+            total_items=total_items,
+            total_quantity=total_quantity,
+            recent_items=recent_items,
+            datarepo_path=str(datarepo_path)
+        )
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -72,9 +73,10 @@ def inventory_list():
     """Display all inventory items in a table."""
     try:
         datarepo_path = get_datarepo_path()
-        items = list_items(datarepo_path)
+        summary = inventory_onhand(datarepo_path)
+        parts = summary.get('parts', []) if isinstance(summary, dict) else []
         field_specs = get_inventory_field_specs()
-        return render_template('inventory/list.html', items=items, field_specs=field_specs)
+        return render_template('inventory/list.html', items=parts, field_specs=field_specs)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -83,8 +85,18 @@ def inventory_view(item_id):
     """View details of a specific inventory item."""
     try:
         datarepo_path = get_datarepo_path()
-        item = view_item(datarepo_path, item_id)
+        cache = inventory_onhand(datarepo_path, part=item_id)
+        # Combine with entity metadata for UX if desired
+        entity = get_entity(datarepo_path, item_id)
         field_specs = get_inventory_field_specs()
+        item = {
+            "sfid": item_id,
+            "name": entity.get("name"),
+            "uom": cache.get("uom"),
+            "total": cache.get("total", 0),
+            "by_location": cache.get("by_location", {}),
+            "as_of": cache.get("as_of"),
+        }
         return render_template('inventory/view.html', item=item, field_specs=field_specs)
     except Exception as e:
         flash(f'Error viewing item: {e}', 'error')
@@ -127,7 +139,8 @@ def inventory_add():
                 raise ValueError("delta must be an integer (can be negative)")
 
             datarepo_path = get_datarepo_path()
-            adjust_quantity(datarepo_path, sfid, delta, location)
+            # Use default location from sfdatarepo.yml if location omitted
+            inventory_post(datarepo_path, sfid, delta, location or None)
             flash(f"Successfully adjusted '{sfid}' at {location} by {delta}", 'success')
             return redirect(url_for('inventory_view', item_id=sfid))
         except Exception as e:
@@ -159,8 +172,7 @@ def inventory_adjust(item_id):
         datarepo_path = get_datarepo_path()
         delta = int(request.form.get('delta', 0))
         location = request.form.get('location', '').strip() or None
-        
-        adjust_quantity(datarepo_path, item_id, delta, location)
+        inventory_post(datarepo_path, item_id, delta, location)
         flash(f'Successfully adjusted quantity by {delta}', 'success')
     except Exception as e:
         flash(f'Error adjusting quantity: {e}', 'error')
@@ -171,10 +183,9 @@ def inventory_adjust(item_id):
 def inventory_delete(item_id):
     """Delete an inventory item."""
     try:
-        datarepo_path = get_datarepo_path()
-        delete_item(datarepo_path, item_id)
-        flash(f'Successfully deleted inventory item: {item_id}', 'success')
-        return redirect(url_for('inventory_list'))
+        # Journal model does not support deleting inventory items; they are derived from journals
+        flash('Deleting inventory items is not supported in the journal model. Use negative adjustments instead.', 'error')
+        return redirect(url_for('inventory_view', item_id=item_id))
     except Exception as e:
         flash(f'Error deleting item: {e}', 'error')
         return redirect(url_for('inventory_view', item_id=item_id))
