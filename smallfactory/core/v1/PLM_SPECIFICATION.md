@@ -41,6 +41,46 @@ entities/<sfid>/
     released              # text file containing the current rev label (e.g., "B")
 ```
 
+### Directory intentions (what goes where)
+
+• **`design/`** — Working area for in‑progress design assets. Not part of any specific revision by default and not copied automatically when you cut a revision.
+
+  • **`design/src/`** — Editable sources (e.g., native CAD files, scripts, spreadsheets). Track with Git/Git LFS as appropriate.
+
+  • **`design/exports/`** — Generated exports from sources (e.g., STEP/STL/DXF/Gerbers/PDF/images). When cutting a revision, you typically copy a curated subset into `revisions/<rev>/exports/`.
+
+  • **`design/docs/`** — Working notes/specs/images/drawings. For released documentation, place a frozen copy under `revisions/<rev>/docs/`.
+
+• **`revisions/<rev>/`** — Immutable snapshot for a specific revision label. Treat contents as read‑only once created (and especially once released).
+
+  • **`revisions/<rev>/meta.yml`** — Snapshot metadata (rev, status, source commit, notes, artifact list, hashes, etc.).
+
+  • **`revisions/<rev>/exports/`** — Frozen artifacts for that revision (e.g., STEP/STL/PDF). These are the reproducible, released copies selected from the working `design/exports/` at cut time.
+
+  • **`revisions/<rev>/docs/`** — Frozen documentation for that revision (e.g., spec PDFs, dimensioned drawings, images). Not edited after the cut.
+
+• **`refs/`** — Small text pointers that select important revisions (e.g., `refs/released` contains the current rev label). Tooling updates these; avoid manual edits.
+
+Top‑level directories (recap):
+
+• **`entities/`** — Canonical home of all entities; one directory per SFID.
+
+• **`finished_goods/`** — SKUs and build records. Recommended layout:
+
+  • `finished_goods/<sku>/sku.yml` — Defines the top part and optional config; `rev` defaults to `released` if omitted.
+
+  • `finished_goods/<sku>/builds/<date-or-id>/build.lock.yml` — Resolved, reproducible BOM lock captured at build start; referenced by work orders and serials.
+
+• **`inventory/`** — Per‑part journals and derived on‑hand caches:
+
+  • `inventory/p_*/journal.ndjson` — Append‑only quantity deltas by location.
+
+  • `inventory/p_*/onhand.generated.yml` — Derived on‑hand totals by location (tooling writes/updates).
+
+• **`workorders/`** — One directory per work order, at minimum containing `order.yml` (qty/site/status, etc.).
+
+• **`serials/`** — One file per built unit at `serials/<sku>/<year>/<ULID>.yml`, recording status and events over the unit’s lifecycle.
+
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
 uom: ea                    # optional; defaults to 'ea' if omitted
