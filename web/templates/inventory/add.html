@@ -50,20 +50,19 @@
                     </div>
 
                     <div>
-                        <label for="location" class="block text-sm font-medium text-gray-700">
+                        <label for="l_sfid" class="block text-sm font-medium text-gray-700">
                             Location SFID
-                            <span class="text-red-500">*</span>
                         </label>
                         <div class="mt-1 flex gap-2 items-start">
-                            <input type="text" name="location" id="location" pattern="l_.*"
+                            <input type="text" name="l_sfid" id="l_sfid" pattern="l_.*"
                                 class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="e.g. l_a1, l_rack3" value="{{ form_data.get('location', '') }}" required>
-                            <button type="button" onclick="createEntityFromField('location')" title="Create new location entity"
+                                placeholder="e.g. l_a1, l_rack3" value="{{ form_data.get('l_sfid', '') }}">
+                            <button type="button" onclick="createEntityFromField('l_sfid')" title="Create new location entity"
                                 class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
                                 <i class="fas fa-plus mr-1"></i>New
                             </button>
                         </div>
-                        <p class="mt-1 text-xs text-gray-500">Enter a valid location SFID (must start with <code>l_</code>).</p>
+                        <p class="mt-1 text-xs text-gray-500">Optional; defaults to your configured <code>inventory.default_location</code> (e.g., <code>l_inbox</code>). Must start with <code>l_</code> if provided.</p>
                     </div>
 
                     <div>
@@ -79,7 +78,7 @@
 
                     <!-- Render any additional required fields except sfid/quantity/location -->
                     {% for field_name, field_spec in field_specs.items() %}
-                        {% if field_spec.required and field_name not in ['sfid', 'quantity', 'location'] %}
+                        {% if field_spec.required and field_name not in ['sfid', 'quantity', 'location', 'l_sfid'] %}
                         <div class="{% if field_name in ['description'] %}sm:col-span-2{% endif %}">
                             <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
                                 {{ field_name.replace('_', ' ').title() }}
@@ -109,7 +108,7 @@
                 <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
                     <!-- Optional fields -->
                     {% for field_name, field_spec in field_specs.items() %}
-                        {% if not field_spec.required and field_name not in ['sfid', 'quantity', 'location'] %}
+                        {% if not field_spec.required and field_name not in ['sfid', 'quantity', 'location', 'l_sfid'] %}
                         <div class="{% if field_name in ['description', 'notes'] %}sm:col-span-2{% endif %}">
                             <label for="{{ field_name }}" class="block text-sm font-medium text-gray-700">
                                 {{ field_name.replace('_', ' ').title() }}
@@ -164,7 +163,7 @@
         function createEntityFromField(fieldId){
             try {
                 const sfidEl = document.getElementById('sfid');
-                const locEl = document.getElementById('location');
+                const locEl = document.getElementById('l_sfid');
                 const deltaEl = document.getElementById('delta');
                 const seed = (fieldId === 'sfid') ? (sfidEl.value||'').trim() : (locEl.value||'').trim();
                 if(!seed){
@@ -173,7 +172,7 @@
                 }
                 const paramsNext = new URLSearchParams();
                 if(sfidEl && sfidEl.value.trim()) paramsNext.set('sfid', sfidEl.value.trim());
-                if(locEl && locEl.value.trim()) paramsNext.set('location', locEl.value.trim());
+                if(locEl && locEl.value.trim()) paramsNext.set('l_sfid', locEl.value.trim());
                 const d = (deltaEl && String(deltaEl.value||'').trim()) || '0';
                 if(d) paramsNext.set('delta', d);
                 const nextUrl = '/inventory/add?' + paramsNext.toString();
@@ -182,7 +181,7 @@
                 paramsTarget.set('sfid', seed);
                 paramsTarget.set('next', nextUrl);
                 // Tell entities/add which query param to update in 'next' after creation
-                paramsTarget.set('update_param', fieldId === 'sfid' ? 'sfid' : 'location');
+                paramsTarget.set('update_param', fieldId === 'sfid' ? 'sfid' : 'l_sfid');
                 window.location.href = '/entities/add?' + paramsTarget.toString();
             } catch(e){ console.error(e); }
         }
