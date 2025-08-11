@@ -97,11 +97,36 @@ def write_datarepo_config(repo_path: Path) -> Path:
     entities_dir = repo_path / "entities"
     inventory_dir.mkdir(parents=True, exist_ok=True)
     entities_dir.mkdir(parents=True, exist_ok=True)
-    # Create .gitkeep files so empty dirs are committed
-    for d in (inventory_dir, entities_dir):
-        gitkeep = d / ".gitkeep"
-        if not gitkeep.exists():
-            gitkeep.write_text("")
+    # Provide a commented inventory/config.yml.example scaffold (not staged by default)
+    inv_cfg = inventory_dir / "config.yml.example"
+    try:
+        if not inv_cfg.exists():
+            with open(inv_cfg, "w") as cf:
+                cf.write("# smallFactory inventory configuration\n")
+                cf.write("# Copy this file to 'inventory/config.yml' and set the default location SFID used\n")
+                cf.write("# when --l_sfid is omitted. Ensure the location entity exists under entities/.\n")
+                cf.write("# default_location: l_main\n")
+    except Exception:
+        # Non-fatal; validator will suggest adding it if missing
+        pass
+    # Ensure recommended .gitattributes for inventory journals (idempotent)
+    gia = repo_path / ".gitattributes"
+    union_line = "inventory/p_*/journal.ndjson merge=union\n"
+    try:
+        if gia.exists():
+            content = gia.read_text()
+            if union_line.strip() not in content:
+                with open(gia, "a") as gf:
+                    gf.write("\n# smallFactory recommended union merge for inventory journals\n")
+                    gf.write(union_line)
+        else:
+            with open(gia, "w") as gf:
+                gf.write("# Git attributes for smallFactory datarepo\n")
+                gf.write("# Use union merge for inventory journals to reduce conflicts\n")
+                gf.write(union_line)
+    except Exception:
+        # Non-fatal; validator will still recommend adding this
+        pass
     return config_file
 
 
@@ -112,12 +137,12 @@ def set_default_datarepo(repo_path: Path) -> None:
 
 
 def initial_commit_and_optional_push(repo_path: Path, has_remote: bool) -> None:
+    # Only commit the repo config file and .gitattributes; avoid touching
+    # entities/ or inventory/ so the initial commit doesn't require ::sfid:: tokens.
     subprocess.run(["git", "add", DATAREPO_CONFIG_FILENAME], cwd=repo_path)
-    # Add .gitkeep placeholders if present so directories are tracked
-    for rel in ["inventory/.gitkeep", "entities/.gitkeep"]:
-        p = repo_path / rel
-        if p.exists():
-            subprocess.run(["git", "add", rel], cwd=repo_path)
+    gia = repo_path / ".gitattributes"
+    if gia.exists():
+        subprocess.run(["git", "add", ".gitattributes"], cwd=repo_path)
     subprocess.run(["git", "commit", "-m", "Initial smallFactory datarepo config"], cwd=repo_path)
     remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
     if has_remote and "origin" in remotes.stdout:

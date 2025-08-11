@@ -64,6 +64,8 @@ def main():
     # init
     init_parser = subparsers.add_parser("init", help="Initialize a new datarepo at PATH")
     init_parser.add_argument("path", nargs="?", default=None, help="Target directory for new datarepo (optional)")
+    init_parser.add_argument("--github-url", dest="github_url", default=None, help="GitHub repository URL to clone (optional)")
+    init_parser.add_argument("--name", dest="name", default=None, help="Name for the new local datarepo when not cloning (optional)")
 
     # inventory group (nested subcommands)
     inventory_parser = subparsers.add_parser("inventory", help="Inventory operations")
@@ -73,14 +75,14 @@ def main():
     inv_post = inv_sub.add_parser("post", help="Append an inventory journal entry for a part")
     inv_post.add_argument("--part", required=True, metavar="sfid", help="Part SFID (e.g., p_m3x10)")
     inv_post.add_argument("--qty-delta", dest="qty_delta", required=True, type=int, metavar="delta", help="Signed quantity delta (e.g., +5 or -2)")
-    inv_post.add_argument("--location", required=False, metavar="l_sfid", help="Location SFID (e.g., l_a1). If omitted, uses inventory/config.yml: default_location")
+    inv_post.add_argument("--l_sfid", required=False, metavar="l_sfid", help="Location SFID (e.g., l_a1). If omitted, uses inventory/config.yml: default_location")
     inv_post.add_argument("--reason", required=False, help="Optional reason string for the journal entry")
 
     # onhand: report on-hand quantities
     inv_onhand = inv_sub.add_parser("onhand", help="Report on-hand quantities (by part, by location, or summary)")
     grp = inv_onhand.add_mutually_exclusive_group(required=False)
     grp.add_argument("--part", metavar="sfid", help="Part SFID to report on")
-    grp.add_argument("--location", metavar="l_sfid", help="Location SFID to report on")
+    grp.add_argument("--l_sfid", metavar="l_sfid", help="Location SFID to report on")
 
     # rebuild: rebuild caches from journals
     inv_rebuild = inv_sub.add_parser("rebuild", help="Rebuild inventory on-hand caches from journals")
@@ -229,18 +231,20 @@ def main():
         return args.format
 
     def cmd_init(args):
-        github_url = input("Paste the GitHub repository URL to clone/use (or leave blank for a new local-only repo): ").strip()
+        # Non-interactive first; fall back to prompts only if not provided
+        github_url = (getattr(args, "github_url", None) or "").strip() or None
 
         if args.path:
             target_path = pathlib.Path(args.path)
         else:
-            datarepos_dir = pathlib.Path('datarepos')
+            datarepos_dir = pathlib.Path("datarepos")
             datarepos_dir.mkdir(exist_ok=True)
             if github_url:
-                # derive name from URL
-                repo_name = github_url.split('/')[-1].replace('.git', '')
+                repo_name = github_url.split("/")[-1].replace(".git", "").strip() or None
             else:
-                # if no URL, ask for a name
+                repo_name = (getattr(args, "name", None) or "").strip() or None
+            if not repo_name:
+                # Last resort: prompt for a name to keep UX intact
                 repo_name = input("Enter a name for the new local datarepo: ").strip()
                 if not repo_name:
                     print("[smallFactory] Error: datarepo name cannot be empty.")
@@ -256,33 +260,7 @@ def main():
                 print(f"[smallFactory] Error: Target directory '{target_path}' already exists. Please provide a non-existing path or omit --path.")
                 sys.exit(1)
 
-    def cmd_validate(args):
-        datarepo_path = _repo_path()
-        try:
-            result = validate_repo(datarepo_path)
-        except Exception as e:
-            print(f"[smallFactory] Error: {e}")
-            sys.exit(1)
-        fmt = _fmt()
-        errors = int(result.get("errors", 0))
-        warnings = int(result.get("warnings", 0))
-        if fmt == "json":
-            print(json.dumps(result, indent=2))
-        elif fmt == "yaml":
-            print(yaml.safe_dump(result, sort_keys=False))
-        else:
-            # Human report
-            print(f"[smallFactory] Validation results for {datarepo_path}")
-            print(f"Errors: {errors}, Warnings: {warnings}")
-            for it in result.get("issues", []):
-                sev = it.get("severity", "?")
-                code = it.get("code", "?")
-                path = it.get("path", "")
-                msg = it.get("message", "")
-                print(f" - [{sev.upper()}] {code} :: {path} :: {msg}")
-        if errors > 0 or (getattr(args, "strict", False) and warnings > 0):
-            sys.exit(1)
-
+        # Create or clone the repo and scaffold per PLM spec
         try:
             # Ensure parent directory exists, but do not pre-create the clone directory
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -317,6 +295,33 @@ def main():
             else:
                 print(f"[smallFactory] Initialized new datarepo at '{repo_path}'")
             print(f"[smallFactory] Default datarepo set in '{CONFIG_FILENAME}'")
+
+    def cmd_validate(args):
+        datarepo_path = _repo_path()
+        try:
+            result = validate_repo(datarepo_path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        errors = int(result.get("errors", 0))
+        warnings = int(result.get("warnings", 0))
+        if fmt == "json":
+            print(json.dumps(result, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(result, sort_keys=False))
+        else:
+            # Human report
+            print(f"[smallFactory] Validation results for {datarepo_path}")
+            print(f"Errors: {errors}, Warnings: {warnings}")
+            for it in result.get("issues", []):
+                sev = it.get("severity", "?")
+                code = it.get("code", "?")
+                path = it.get("path", "")
+                msg = it.get("message", "")
+                print(f" - [{sev.upper()}] {code} :: {path} :: {msg}")
+        if errors > 0 or (getattr(args, "strict", False) and warnings > 0):
+            sys.exit(1)
 
     def _parse_size(sz: str, dpi: int):
         if not sz:
@@ -468,7 +473,7 @@ def main():
                 datarepo_path,
                 part=args.part,
                 qty_delta=args.qty_delta,
-                location=getattr(args, "location", None),
+                location=getattr(args, "l_sfid", None),
                 reason=getattr(args, "reason", None),
             )
         except Exception as e:
@@ -488,7 +493,7 @@ def main():
             res = inventory_onhand(
                 datarepo_path,
                 part=getattr(args, "part", None),
-                location=getattr(args, "location", None),
+                location=getattr(args, "l_sfid", None),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
