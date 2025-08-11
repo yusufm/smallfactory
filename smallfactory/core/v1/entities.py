@@ -284,8 +284,6 @@ def cut_revision(
     sfid: str,
     rev: Optional[str] = None,
     *,
-    include_exports: bool = True,
-    include_docs: bool = True,
     notes: Optional[str] = None,
 ) -> dict:
     """Create a new draft snapshot under revisions/<rev>/ per SPEC.
@@ -333,6 +331,8 @@ def cut_revision(
     # Record artifacts and hashes for all copied files (exclude meta.yml which we write later)
     for p in snap_dir.rglob("*"):
         if p.is_file():
+            if p.name == ".gitkeep":
+                continue
             rel = p.relative_to(snap_dir)
             rel_str = str(rel).replace("\\", "/")
             # Compute sha256

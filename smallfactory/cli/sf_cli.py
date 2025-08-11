@@ -36,6 +36,17 @@ from smallfactory.core.v1.entities import (
     bom_alt_remove as ent_bom_alt_remove,
 )
 
+# Files core API (design area only)
+from smallfactory.core.v1.files import (
+    list_files as f_list_files,
+    mkdir as f_mkdir,
+    rmdir as f_rmdir,
+    upload_file as f_upload_file,
+    delete_file as f_delete_file,
+    move_file as f_move_file,
+    move_dir as f_move_dir,
+)
+
 # Stickers generation (QR only)
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity as st_generate_sticker_for_entity,
@@ -132,6 +143,47 @@ def main():
     ent_rev_release.add_argument("rev", help="Revision label to release (e.g., A, B, ...)")
     ent_rev_release.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
     ent_rev_release.add_argument("--notes", default=None, help="Optional release notes")
+
+    # entities > files group (design-area file and folder management)
+    ent_files = ent_sub.add_parser("files", help="Manage design files and folders (mutable)")
+    files_sub = ent_files.add_subparsers(dest="files_cmd", required=False, parser_class=SFArgumentParser)
+
+    ef_ls = files_sub.add_parser("ls", help="List files and folders under design/<subdir>")
+    ef_ls.add_argument("sfid", help="Entity SFID")
+    ef_ls.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_ls.add_argument("--path", default=None, help="Relative path within subdir (optional)")
+    ef_ls.add_argument("-r", "--recursive", action="store_true", help="Recursive listing")
+    ef_ls.add_argument("--glob", default=None, help="Glob filter applied to relative paths")
+
+    ef_mkdir = files_sub.add_parser("mkdir", help="Create a folder under design/<subdir>")
+    ef_mkdir.add_argument("sfid", help="Entity SFID")
+    ef_mkdir.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_mkdir.add_argument("path", help="Folder path to create (relative to subdir)")
+
+    ef_rmdir = files_sub.add_parser("rmdir", help="Remove an empty folder (only .gitkeep allowed)")
+    ef_rmdir.add_argument("sfid", help="Entity SFID")
+    ef_rmdir.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_rmdir.add_argument("path", help="Folder path to remove (relative to subdir)")
+
+    ef_add = files_sub.add_parser("add", help="Upload a file into design/<subdir>")
+    ef_add.add_argument("sfid", help="Entity SFID")
+    ef_add.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_add.add_argument("src", help="Local source filepath")
+    ef_add.add_argument("dst", help="Destination path under subdir (e.g., foo/bar.ext)")
+    ef_add.add_argument("--overwrite", action="store_true", help="Overwrite destination if exists")
+
+    ef_rm = files_sub.add_parser("rm", help="Delete a file from design/<subdir>")
+    ef_rm.add_argument("sfid", help="Entity SFID")
+    ef_rm.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_rm.add_argument("path", help="File path to remove (relative to subdir)")
+
+    ef_mv = files_sub.add_parser("mv", help="Move/rename a file or folder within design/<subdir>")
+    ef_mv.add_argument("sfid", help="Entity SFID")
+    ef_mv.add_argument("--subdir", required=True, choices=["src", "exports", "docs"], help="Design subdirectory")
+    ef_mv.add_argument("src", help="Source path (relative to subdir)")
+    ef_mv.add_argument("dst", help="Destination path (relative to subdir)")
+    ef_mv.add_argument("--dir", action="store_true", help="Treat paths as directories (move_dir)")
+    ef_mv.add_argument("--overwrite", action="store_true", help="Overwrite destination if exists")
 
     # bom group (bill of materials ops)
     bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
@@ -634,7 +686,7 @@ def main():
 
     def cmd_entities_add(args):
         datarepo_path = _repo_path()
-        fields = _parse_pairs(args.pairs)
+        fields = _parse_pairs(getattr(args, "pairs", []))
         try:
             ent = ent_create_entity(datarepo_path, args.sfid, fields or None)
         except Exception as e:
@@ -717,6 +769,133 @@ def main():
             print(yaml.safe_dump(ent, sort_keys=False))
         else:
             print(f"[smallFactory] Retired entity '{args.sfid}'")
+
+    # Entities > Files handlers (design area)
+    def _print_or_dump(obj, human_line: str | None = None):
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(obj, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(obj, sort_keys=False))
+        elif human_line is not None:
+            print(human_line)
+
+    def _suggest_commit(sfid: str, op: str, details: str | None = None):
+        # Per user preference: do not auto-commit, just suggest a command
+        msg = f"[smallFactory] {op} {sfid}\n::sfid::{sfid}\n::sf-op::{op}"
+        if details:
+            msg = f"{msg}\n{details}"
+        print("Suggested commit:")
+        print("  git add -A && git commit -m \"" + msg.replace("\"", "'") + "\"")
+
+    def cmd_entities_files_ls(args):
+        datarepo_path = _repo_path()
+        try:
+            res = f_list_files(
+                datarepo_path,
+                args.sfid,
+                subdir=args.subdir,
+                path=getattr(args, "path", None),
+                recursive=bool(getattr(args, "recursive", False)),
+                glob=getattr(args, "glob", None),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        if _fmt() == "human":
+            base = f"design/{args.subdir}"
+            rel = getattr(args, "path", None)
+            print(f"{args.sfid} {base}{('/' + rel) if rel else ''}:")
+            dirs = [i for i in res.get("items", []) if i.get("type") == "dir"]
+            files = [i for i in res.get("items", []) if i.get("type") == "file"]
+            for i in dirs:
+                print(f"  dir  {i['path']}")
+            for i in files:
+                sz = i.get("size")
+                print(f"  file {i['path']} ({sz} B)")
+        else:
+            _print_or_dump(res)
+
+    def cmd_entities_files_mkdir(args):
+        datarepo_path = _repo_path()
+        try:
+            res = f_mkdir(datarepo_path, args.sfid, subdir=args.subdir, path=args.path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Created folder design/{args.subdir}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-mkdir", f"path=design/{args.subdir}/{args.path}")
+
+    def cmd_entities_files_rmdir(args):
+        datarepo_path = _repo_path()
+        try:
+            res = f_rmdir(datarepo_path, args.sfid, subdir=args.subdir, path=args.path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Removed empty folder design/{args.subdir}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-rmdir", f"path=design/{args.subdir}/{args.path}")
+
+    def cmd_entities_files_add(args):
+        datarepo_path = _repo_path()
+        src = pathlib.Path(args.src).expanduser()
+        if not src.exists() or not src.is_file():
+            print(f"[smallFactory] Error: source file not found: {src}")
+            sys.exit(2)
+        b = src.read_bytes()
+        try:
+            res = f_upload_file(
+                datarepo_path,
+                args.sfid,
+                subdir=args.subdir,
+                path=args.dst,
+                file_bytes=b,
+                overwrite=bool(getattr(args, "overwrite", False)),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Uploaded file to design/{args.subdir}/{args.dst} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-add", f"path=design/{args.subdir}/{args.dst}")
+
+    def cmd_entities_files_rm(args):
+        datarepo_path = _repo_path()
+        try:
+            res = f_delete_file(datarepo_path, args.sfid, subdir=args.subdir, path=args.path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Deleted file design/{args.subdir}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-rm", f"path=design/{args.subdir}/{args.path}")
+
+    def cmd_entities_files_mv(args):
+        datarepo_path = _repo_path()
+        try:
+            if bool(getattr(args, "dir", False)):
+                res = f_move_dir(
+                    datarepo_path,
+                    args.sfid,
+                    subdir=args.subdir,
+                    src=args.src,
+                    dst=args.dst,
+                    overwrite=bool(getattr(args, "overwrite", False)),
+                )
+            else:
+                res = f_move_file(
+                    datarepo_path,
+                    args.sfid,
+                    subdir=args.subdir,
+                    src=args.src,
+                    dst=args.dst,
+                    overwrite=bool(getattr(args, "overwrite", False)),
+                )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        kind = "folder" if bool(getattr(args, "dir", False)) else "file"
+        _print_or_dump(res, human_line=f"[smallFactory] Moved {kind} within design/{args.subdir}: {args.src} -> {args.dst} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-mv", f"src=design/{args.subdir}/{args.src} dst=design/{args.subdir}/{args.dst}")
+
 
     # Entities > Revision handlers
     def cmd_entities_rev_bump(args):
@@ -1069,6 +1248,8 @@ def main():
         ent_sc = getattr(args, "ent_cmd", None)
         if ent_sc == "revision":
             sub = f"revision:{getattr(args, 'rev_cmd', None)}"
+        elif ent_sc == "files":
+            sub = f"files:{getattr(args, 'files_cmd', None)}"
         else:
             sub = ent_sc
     elif cmd == "bom":
@@ -1092,6 +1273,12 @@ def main():
         ("entities", "retire"): cmd_entities_retire,
         ("entities", "revision:bump"): cmd_entities_rev_bump,
         ("entities", "revision:release"): cmd_entities_rev_release,
+        ("entities", "files:ls"): cmd_entities_files_ls,
+        ("entities", "files:mkdir"): cmd_entities_files_mkdir,
+        ("entities", "files:rmdir"): cmd_entities_files_rmdir,
+        ("entities", "files:add"): cmd_entities_files_add,
+        ("entities", "files:rm"): cmd_entities_files_rm,
+        ("entities", "files:mv"): cmd_entities_files_mv,
         ("bom", "ls"): cmd_bom_ls,
         ("bom", "list"): cmd_bom_ls,
         ("bom", "add"): cmd_bom_add,

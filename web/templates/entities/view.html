@@ -355,6 +355,43 @@
 
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Design Files</h2>
+          <div class="flex items-center gap-1 text-sm">
+            <button id="df-tab-src" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('src')">src</button>
+            <button id="df-tab-exports" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('exports')">exports</button>
+            <button id="df-tab-docs" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('docs')">docs</button>
+          </div>
+        </div>
+        <div class="px-6 py-3 text-sm text-gray-800">
+          <div class="flex items-center justify-between">
+            <div id="df-breadcrumb" class="font-mono text-blue-700"></div>
+            <div class="flex items-center gap-2">
+              <button type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfGoUp()" title="Go up one level">Up</button>
+              <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="dfMkdirPrompt()"><i class="fas fa-folder-plus mr-1"></i>New folder</button>
+              <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="dfUploadOpen()"><i class="fas fa-upload mr-1"></i>Upload</button>
+              <input id="df-upload-input" type="file" class="hidden" onchange="dfUploadSelected(event)">
+            </div>
+          </div>
+          <div id="df-error" class="mt-2 text-sm text-red-600"></div>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Name</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Type</th>
+                  <th class="px-3 py-1.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Size</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Modified</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="df-tbody" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
           {% if structure and structure.released_rev %}
             <span class="text-xs text-gray-600">released: {{ structure.released_rev }}</span>
@@ -711,6 +748,178 @@ async function loadRevisions(){
   }catch(e){ showRevError(e.message||String(e)); }
 }
 
+// -----------------
+// Design Files
+// -----------------
+let dfSubdir = 'src';
+let dfPath = '';
+
+function dfShowError(msg){
+  const el = document.getElementById('df-error');
+  if(el) el.textContent = msg||'';
+}
+
+function dfUpdateTabs(){
+  const tabs = ['src','exports','docs'];
+  tabs.forEach(t => {
+    const el = document.getElementById('df-tab-' + (t==='exports'?'exports':t));
+    if(!el) return;
+    const active = (t === dfSubdir);
+    el.className = 'px-2.5 py-1 rounded border ' + (active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50');
+  });
+}
+
+function dfBreadcrumbHtml(){
+  const parts = (dfPath||'').split('/').filter(Boolean);
+  let html = `<span class="text-gray-500">design/</span><span class="text-gray-900">${dfSubdir}</span>`;
+  let acc = '';
+  parts.forEach((p, idx) => {
+    acc = acc ? `${acc}/${p}` : p;
+    html += `/<button type="button" class="underline hover:no-underline" onclick="dfGoto('${acc.replace(/'/g, "\\'")}')">${p}</button>`;
+  });
+  return html;
+}
+
+function dfGoto(path){
+  dfPath = (path||'').replace(/^\/+|\/+$/g, '');
+  dfLoad();
+}
+
+function dfGoUp(){
+  if(!dfPath){ return; }
+  const parts = dfPath.split('/').filter(Boolean);
+  parts.pop();
+  dfPath = parts.join('/');
+  dfLoad();
+}
+
+function dfJoin(name){
+  const n = (name||'').replace(/^\/+|\/+$/g, '');
+  return dfPath ? `${dfPath}/${n}` : n;
+}
+
+async function dfLoad(){
+  try{
+    const bc = document.getElementById('df-breadcrumb');
+    if(bc) bc.innerHTML = dfBreadcrumbHtml();
+    const qs = new URLSearchParams({ subdir: dfSubdir });
+    if(dfPath) qs.set('path', dfPath);
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files?${qs.toString()}`);
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to load files');
+    dfRenderList(data.items||[]);
+    dfShowError('');
+  }catch(e){ dfShowError(e.message||String(e)); }
+}
+
+function dfRenderList(items){
+  const tbody = document.getElementById('df-tbody');
+  if(!tbody) return;
+  tbody.innerHTML = '';
+  if(!Array.isArray(items) || items.length===0){
+    tbody.innerHTML = '<tr><td colspan="5" class="px-3 py-2 text-sm text-gray-500">Empty.</td></tr>';
+    return;
+  }
+  items.forEach(it => {
+    const isDir = it.type === 'dir';
+    const nameHtml = isDir ? `<button type="button" class="text-blue-700 hover:underline" onclick="dfGoto('${(it.path||'').replace(/'/g, "\\'")}')">${it.name}</button>` : `<span>${it.name}</span>`;
+    const size = isDir ? '—' : (it.size!=null?it.size:'—');
+    const mtime = it.mtime||'—';
+    const actions = isDir
+      ? `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="dfMovePrompt('${(it.path||'').replace(/'/g, "\\'")}', true)">Move</button>`+
+        `<button class="text-xs text-red-700 hover:underline" onclick="dfDeleteConfirm('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
+      : `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="dfMovePrompt('${(it.path||'').replace(/'/g, "\\'")}', false)">Move</button>`+
+        `<button class="text-xs text-red-700 hover:underline" onclick="dfDeleteConfirm('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr class="odd:bg-gray-50 hover:bg-gray-50">
+        <td class="px-3 py-1.5 font-mono">${nameHtml}</td>
+        <td class="px-3 py-1.5 text-gray-700">${isDir?'dir':'file'}</td>
+        <td class="px-3 py-1.5 text-right text-gray-700">${size}</td>
+        <td class="px-3 py-1.5 text-gray-700">${mtime}</td>
+        <td class="px-3 py-1.5">${actions}</td>
+      </tr>`);
+  });
+}
+
+function dfMkdirPrompt(){
+  const name = prompt('New folder name (relative to current path):');
+  if(name==null) return;
+  const rel = dfJoin(name.trim());
+  if(!rel){ return; }
+  dfMkdir(rel);
+}
+
+async function dfMkdir(relPath){
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/mkdir`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ subdir: dfSubdir, path: relPath })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to create folder');
+    dfLoad();
+  }catch(e){ dfShowError(e.message||String(e)); }
+}
+
+function dfUploadOpen(){
+  const inp = document.getElementById('df-upload-input');
+  if(inp) inp.click();
+}
+
+async function dfUploadSelected(ev){
+  const f = ev && ev.target && ev.target.files && ev.target.files[0];
+  if(!f) return;
+  try{
+    const form = new FormData();
+    form.set('subdir', dfSubdir);
+    form.set('path', dfJoin(f.name));
+    form.set('overwrite', 'false');
+    form.set('file', f, f.name);
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/upload`, { method:'POST', body: form });
+    const data = await res.json();
+    if(!data.success){ throw new Error(data.error||'Failed to upload'); }
+    dfLoad();
+  }catch(e){ dfShowError(e.message||String(e)); }
+  finally{
+    ev.target.value = '';
+  }
+}
+
+async function dfDeleteConfirm(relPath, isDir){
+  if(!confirm(`Delete ${isDir?'folder':'file'} "${relPath}"?`)) return;
+  try{
+    const url = isDir ? '/api/entities/'+encodeURIComponent(SFID)+'/files/rmdir' : '/api/entities/'+encodeURIComponent(SFID)+'/files/delete';
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ subdir: dfSubdir, path: relPath }) });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to delete');
+    dfLoad();
+  }catch(e){ dfShowError(e.message||String(e)); }
+}
+
+async function dfMovePrompt(relPath, isDir){
+  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to subdir root):`, relPath||'');
+  if(dst==null) return;
+  const ow = confirm('Overwrite destination if it exists?');
+  try{
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/move`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ subdir: dfSubdir, src: relPath, dst: (dst||'').trim(), dir: isDir?'1':'0', overwrite: ow?'1':'0' })
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to move');
+    dfLoad();
+  }catch(e){ dfShowError(e.message||String(e)); }
+}
+
+function dfSetSubdir(s){
+  const allowed = ['src','exports','docs'];
+  if(!allowed.includes(s)) return;
+  dfSubdir = s;
+  dfPath = '';
+  dfUpdateTabs();
+  dfLoad();
+}
+
 function renderRevisionsRows(list){
   const tbody = document.getElementById('revisions-tbody');
   if(!tbody) return;
@@ -768,6 +977,7 @@ async function releaseRevision(rev){
 }
 
 // Initial load
+dfSetSubdir('src');
 loadRevisions();
 if(isPart){ bomLoad(); }
 </script>

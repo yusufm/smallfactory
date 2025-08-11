@@ -13,6 +13,9 @@ import csv
 import base64
 import io
 from PIL import Image
+import subprocess
+from datetime import datetime
+from typing import List
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -51,6 +54,43 @@ from smallfactory.core.v1.vision import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
+
+# -----------------------
+# Optional Git auto-commit support (ON by default)
+# Disable by setting environment variable: SF_WEB_AUTOCOMMIT=0
+# -----------------------
+def _autocommit_enabled() -> bool:
+    val = os.environ.get('SF_WEB_AUTOCOMMIT')
+    if val is None:
+        return True
+    return val.lower() in ('1', 'true', 'yes', 'on')
+
+
+def _maybe_git_autocommit(datarepo_path: Path, message: str, paths: List[str]) -> bool:
+    """If enabled and inside a git repo, stage the given paths (with -A) and commit.
+
+    Returns True if a commit was created, False otherwise. Never raises.
+    """
+    try:
+        if not _autocommit_enabled():
+            return False
+        # Ensure we are inside a git repo
+        ck = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--is-inside-work-tree'], capture_output=True)
+        if ck.returncode != 0:
+            return False
+        # Stage with -A to capture deletions within the specified paths
+        for p in (paths or []):
+            subprocess.run(['git', '-C', str(datarepo_path), 'add', '-A', '--', p], check=False)
+        # Create commit
+        ts = datetime.now().isoformat(timespec='seconds')
+        msg = f"{message} ({ts})"
+        cm = subprocess.run(['git', '-C', str(datarepo_path), 'commit', '-m', msg], capture_output=True)
+        # If nothing to commit, exit quietly
+        if cm.returncode != 0:
+            return False
+        return True
+    except Exception:
+        return False
 
 @app.route('/')
 def index():
@@ -832,6 +872,137 @@ def api_bom_set(sfid):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
+
+# -----------------------
+# Design files API endpoints (AJAX)
+# -----------------------
+from smallfactory.core.v1.files import (
+    list_files as files_list,
+    mkdir as files_mkdir,
+    rmdir as files_rmdir,
+    upload_file as files_upload,
+    delete_file as files_delete,
+    move_file as files_move_file,
+    move_dir as files_move_dir,
+)
+
+@app.route('/api/entities/<sfid>/files', methods=['GET'])
+def api_files_list(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        subdir = (request.args.get('subdir') or '').strip()
+        if not subdir:
+            return jsonify({'success': False, 'error': 'Missing subdir'}), 400
+        path = request.args.get('path') or None
+        recursive = request.args.get('recursive', 'false').lower() in ('1', 'true', 'yes', 'on')
+        glob = request.args.get('glob') or None
+        res = files_list(datarepo_path, sfid, subdir=subdir, path=path, recursive=recursive, glob=glob)
+        return jsonify({'success': True, **res})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/files/mkdir', methods=['POST'])
+def api_files_mkdir(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        subdir = (payload.get('subdir') or '').strip()
+        path = (payload.get('path') or '').strip()
+        if not subdir or not path:
+            return jsonify({'success': False, 'error': 'Missing subdir or path'}), 400
+        res = files_mkdir(datarepo_path, sfid, subdir=subdir, path=path)
+        # Git autocommit
+        rel = f"entities/{sfid}/design/{subdir}/{path}".rstrip('/')
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: mkdir {sfid} design/{subdir}/{path}", [rel])
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/files/rmdir', methods=['POST'])
+def api_files_rmdir(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        subdir = (payload.get('subdir') or '').strip()
+        path = (payload.get('path') or '').strip()
+        if not subdir or not path:
+            return jsonify({'success': False, 'error': 'Missing subdir or path'}), 400
+        res = files_rmdir(datarepo_path, sfid, subdir=subdir, path=path)
+        # Stage only the removed directory path to capture deletions beneath it
+        stage_target = f"entities/{sfid}/design/{subdir}/{path}".rstrip('/')
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: rmdir {sfid} design/{subdir}/{path}", [stage_target])
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/files/upload', methods=['POST'])
+def api_files_upload(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        subdir = (request.form.get('subdir') or '').strip()
+        path = (request.form.get('path') or '').strip()
+        overwrite = (request.form.get('overwrite') or '').lower() in ('1', 'true', 'yes', 'on')
+        f = request.files.get('file')
+        if not subdir or not path or not f or not getattr(f, 'filename', None):
+            return jsonify({'success': False, 'error': 'Missing subdir, path, or file'}), 400
+        b = f.read()
+        res = files_upload(datarepo_path, sfid, subdir=subdir, path=path, file_bytes=b, overwrite=overwrite)
+        rel = f"entities/{sfid}/design/{subdir}/{path}"
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: upload {sfid} design/{subdir}/{path}", [rel])
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/files/delete', methods=['POST'])
+def api_files_delete(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        subdir = (payload.get('subdir') or '').strip()
+        path = (payload.get('path') or '').strip()
+        if not subdir or not path:
+            return jsonify({'success': False, 'error': 'Missing subdir or path'}), 400
+        res = files_delete(datarepo_path, sfid, subdir=subdir, path=path)
+        rel = f"entities/{sfid}/design/{subdir}/{path}"
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: delete {sfid} design/{subdir}/{path}", [rel])
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/api/entities/<sfid>/files/move', methods=['POST'])
+def api_files_move(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        subdir = (payload.get('subdir') or '').strip()
+        src = (payload.get('src') or '').strip()
+        dst = (payload.get('dst') or '').strip()
+        is_dir = (payload.get('dir') or payload.get('is_dir') or '').__str__().lower() in ('1','true','yes','on')
+        overwrite = (payload.get('overwrite') or '').__str__().lower() in ('1','true','yes','on')
+        if not subdir or not src or not dst:
+            return jsonify({'success': False, 'error': 'Missing subdir, src, or dst'}), 400
+        if is_dir:
+            res = files_move_dir(datarepo_path, sfid, subdir=subdir, src=src, dst=dst, overwrite=overwrite)
+        else:
+            res = files_move_file(datarepo_path, sfid, subdir=subdir, src=src, dst=dst, overwrite=overwrite)
+        # Stage both src and dst paths only to capture renames/deletions
+        stage_paths = []
+        if is_dir:
+            stage_paths = [
+                f"entities/{sfid}/design/{subdir}/{src}".rstrip('/'),
+                f"entities/{sfid}/design/{subdir}/{dst}".rstrip('/'),
+            ]
+        else:
+            stage_paths = [f"entities/{sfid}/design/{subdir}/{src}", f"entities/{sfid}/design/{subdir}/{dst}"]
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: move {sfid} design/{subdir}: {src} -> {dst}", stage_paths)
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 @app.route('/api/entities/<sfid>/bom/alt-add', methods=['POST'])
 def api_bom_alt_add(sfid):
