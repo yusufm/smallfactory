@@ -290,8 +290,12 @@ def cut_revision(
 ) -> dict:
     """Create a new draft snapshot under revisions/<rev>/ per SPEC.
 
-    - Copies design/exports and design/docs into the snapshot (if present).
-    - Writes meta.yml with rev, status: draft, generated_at, notes?, source_commit?, artifacts with sha256.
+    Fully self-contained snapshot: copies the entire entity directory except the
+    'revisions' subtree. This includes entity.yml, refs/, design/, and any other
+    files/directories under the entity.
+
+    - Writes meta.yml with rev, status: draft, generated_at, notes?, source_commit?,
+      and artifacts[] with sha256 for every copied file (paths are relative to snapshot root).
     - Does NOT flip refs/released.
     Returns: {sfid, rev, revisions} for UI compatibility.
     """
@@ -313,38 +317,44 @@ def cut_revision(
         raise FileExistsError(f"Revision '{label}' already exists for {sfid}")
     (snap_dir).mkdir(parents=True, exist_ok=True)
 
-    # Copy artifacts
+    # Copy entire entity directory excluding the 'revisions' subtree
     artifacts: List[Dict] = []
     ent_dir = _entity_dir(datarepo_path, sfid)
-    design_dir = ent_dir / "design"
-    # Helper to copy and record files
-    def _copy_tree(src: Path, dest: Path, role_prefix: str):
-        if not src.exists():
-            return
-        if src.is_file():
+    for child in ent_dir.iterdir():
+        if child.name == "revisions":
+            continue
+        dest = snap_dir / child.name
+        if child.is_file():
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-        else:
-            shutil.copytree(src, dest)
-        # Record artifacts and hashes
-        for p in dest.rglob("*"):
-            if p.is_file():
-                rel = p.relative_to(snap_dir)
-                # sha256
-                h = hashlib.sha256()
-                with open(p, "rb") as f:
-                    for chunk in iter(lambda: f.read(8192), b""):
-                        h.update(chunk)
-                artifacts.append({
-                    "role": role_prefix,
-                    "path": str(rel).replace("\\", "/"),
-                    "sha256": h.hexdigest(),
-                })
+            shutil.copy2(child, dest)
+        elif child.is_dir():
+            shutil.copytree(child, dest)
 
-    if include_exports:
-        _copy_tree(design_dir / "exports", snap_dir / "exports", "cad-export")
-    if include_docs:
-        _copy_tree(design_dir / "docs", snap_dir / "docs", "doc")
+    # Record artifacts and hashes for all copied files (exclude meta.yml which we write later)
+    for p in snap_dir.rglob("*"):
+        if p.is_file():
+            rel = p.relative_to(snap_dir)
+            rel_str = str(rel).replace("\\", "/")
+            # Compute sha256
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for chunk in iter(lambda: f.read(8192), b""):
+                    h.update(chunk)
+            # Classify a simple role for compatibility
+            role = "file"
+            if rel_str == "entity.yml":
+                role = "entity"
+            elif rel_str.startswith("design/exports/"):
+                role = "cad-export"
+            elif rel_str.startswith("design/docs/"):
+                role = "doc"
+            elif rel.parts and rel.parts[0] == "refs":
+                role = "ref"
+            artifacts.append({
+                "role": role,
+                "path": rel_str,
+                "sha256": h.hexdigest(),
+            })
 
     # Source commit (best-effort short SHA)
     source_commit = None
@@ -372,12 +382,8 @@ def cut_revision(
     meta_fp = snap_dir / "meta.yml"
     _write_yaml(meta_fp, meta)
 
-    # Commit snapshot directory
-    commit_paths = [meta_fp]
-    if (snap_dir / "exports").exists():
-        commit_paths.append(snap_dir / "exports")
-    if (snap_dir / "docs").exists():
-        commit_paths.append(snap_dir / "docs")
+    # Commit the entire snapshot directory contents
+    commit_paths = [snap_dir]
     msg = f"[smallFactory] Cut revision {sfid} {label}\n::sfid::{sfid}\n::sf-rev::{label}\n::sf-op::rev-cut"
     git_commit_paths(datarepo_path, commit_paths, msg)
 
