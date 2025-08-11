@@ -42,6 +42,8 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
             "message": "Entity must live under entities/<sfid>/entity.yml (directory layout), not a single YAML file"
         })
     # Validate directory layout
+    # Build adjacency of part -> child parts to detect cycles later
+    part_children: Dict[str, set] = {}
     for child in sorted([p for p in ent_root.iterdir() if p.is_dir()]):
         sfid = child.name
         try:
@@ -118,6 +120,8 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
             else:
                 # Only deeply validate content for parts (we already flagged non-parts above)
                 if is_part:
+                    # Collect child part references for cycle detection
+                    children: set = set()
                     for idx, line in enumerate(bom, start=1):
                         if not isinstance(line, dict):
                             issues.append({
@@ -152,6 +156,10 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                                     "path": _rel(entity_yml, repo),
                                     "message": f"bom item {idx}: referenced entity '{use}' does not exist under entities/"
                                 })
+                            else:
+                                # For cycle detection, add only existing child parts
+                                if isinstance(use, str) and use.startswith("p_"):
+                                    children.add(use)
                         # Alternates validation (if present)
                         if "alternates" in line:
                             alts = line.get("alternates")
@@ -201,6 +209,57 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                                             "path": _rel(entity_yml, repo),
                                             "message": f"bom item {idx} alt {a_idx}: referenced entity '{aus}' does not exist under entities/"
                                         })
+                                    else:
+                                        if isinstance(aus, str) and aus.startswith("p_"):
+                                            children.add(aus)
+                    # Save children set (may be empty)
+                    part_children[sfid] = children
+
+    # After scanning all entities, detect cyclic dependencies among parts
+    # Graph contains only parts that exist under entities/
+    visited: set = set()
+    stack: set = set()
+    path: List[str] = []
+    emitted: set = set()
+
+    def _report_cycle(cycle_nodes: List[str]):
+        key = frozenset(cycle_nodes)
+        if key in emitted:
+            return
+        emitted.add(key)
+        cycle_str = " -> ".join(cycle_nodes + [cycle_nodes[0]]) if cycle_nodes else ""
+        # Report the issue on the first part's entity.yml for context
+        first = cycle_nodes[0]
+        issues.append({
+            "severity": "error",
+            "code": "ENT_BOM_CYCLE",
+            "path": _rel(ent_root / first / "entity.yml", repo),
+            "message": f"Cyclic BOM dependency detected: {cycle_str}"
+        })
+
+    def _dfs(u: str):
+        visited.add(u)
+        stack.add(u)
+        path.append(u)
+        for v in part_children.get(u, set()):
+            if v not in part_children:
+                # child is not a part with its own directory, ignore here
+                continue
+            if v not in visited:
+                _dfs(v)
+            elif v in stack:
+                # Found a back edge, extract cycle
+                try:
+                    i = path.index(v)
+                    _report_cycle(path[i:])
+                except ValueError:
+                    pass
+        path.pop()
+        stack.remove(u)
+
+    for node in part_children.keys():
+        if node not in visited:
+            _dfs(node)
 
 
 def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
