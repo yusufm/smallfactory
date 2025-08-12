@@ -345,7 +345,7 @@ function createLocationEntity(inputId, itemSfid){
         const inputEl = document.getElementById(inputId);
         const seed = (inputEl && inputEl.value || '').trim();
         if(!seed){
-            alert('Enter a Location SFID first.');
+            showToast('Enter a Location SFID first.', { type: 'error' });
             return;
         }
         // Prefer the delta from the visible modal

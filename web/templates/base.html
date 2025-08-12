@@ -125,9 +125,63 @@
                 }, 500);
             });
         }, 5000);
+        // Lightweight toast notifications
+        // Usage: showToast('Message', { type: 'info' | 'success' | 'error', duration: 4000 })
+        window.showToast = function(message, opts){
+            try {
+                const options = opts || {};
+                const type = options.type || 'info';
+                const duration = Number(options.duration || 4000);
+                let container = document.getElementById('toast-container');
+                if(!container){
+                    container = document.createElement('div');
+                    container.id = 'toast-container';
+                    container.className = 'fixed bottom-4 right-4 z-50 space-y-2';
+                    document.body.appendChild(container);
+                }
+                const base = 'max-w-sm w-80 pointer-events-auto px-4 py-3 rounded-lg shadow-lg ring-1 ring-black ring-opacity-5 transition transform duration-200 ease-out opacity-0 translate-y-2 flex items-start space-x-3';
+                const styles = {
+                    info: 'bg-white text-gray-800 border border-gray-200',
+                    success: 'bg-green-50 text-green-800 border border-green-200',
+                    error: 'bg-red-50 text-red-800 border border-red-200'
+                };
+                const toast = document.createElement('div');
+                toast.setAttribute('role', 'status');
+                toast.setAttribute('aria-live', 'polite');
+                toast.className = base + ' ' + (styles[type] || styles.info);
+                const iconSpan = document.createElement('span');
+                iconSpan.className = 'mt-0.5';
+                iconSpan.innerHTML = type === 'success' ? '<i class="fas fa-check-circle"></i>' : (type === 'error' ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-info-circle"></i>');
+                const msgDiv = document.createElement('div');
+                msgDiv.className = 'text-sm';
+                msgDiv.textContent = message || '';
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'ml-auto text-gray-400 hover:text-gray-600 focus:outline-none';
+                closeBtn.innerHTML = '<span class="sr-only">Close</span><i class="fas fa-times"></i>';
+                closeBtn.addEventListener('click', () => removeToast());
+                toast.appendChild(iconSpan);
+                toast.appendChild(msgDiv);
+                toast.appendChild(closeBtn);
+                container.appendChild(toast);
+                // Animate in
+                requestAnimationFrame(() => { toast.classList.remove('opacity-0', 'translate-y-2'); toast.classList.add('opacity-100', 'translate-y-0'); });
+                let hideTimer = null;
+                function removeToast(){
+                    if(hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+                    toast.classList.remove('opacity-100', 'translate-y-0');
+                    toast.classList.add('opacity-0', 'translate-y-2');
+                    setTimeout(() => { toast.remove(); }, 200);
+                }
+                hideTimer = setTimeout(removeToast, duration);
+                return removeToast;
+            } catch(e) { console.error(e); }
+        };
     </script>
     
     {% block modals %}{% endblock %}
+    <!-- Global toast container (populated by showToast) -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
     <!-- QR scanning support (QR-only) -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -175,7 +229,7 @@
 
             function openScannerFor(targetInput) {
                 if (typeof jsQR === 'undefined') {
-                    alert('QR scanner unavailable. Please check your connection and try again.');
+                    showToast('QR scanner unavailable. Please check your connection and try again.', { type: 'error' });
                     return;
                 }
                 fileInput.value = '';
@@ -191,11 +245,11 @@
                             // Trigger input event for any listeners
                             targetInput.dispatchEvent(new Event('input', { bubbles: true }));
                         } else {
-                            alert('No QR code found. Tip: keep the whole code in frame, ensure focus, and try moving slightly farther away.');
+                            showToast('No QR code found. Tip: keep the whole code in frame, ensure focus, and try moving slightly farther away.', { type: 'info' });
                         }
                     } catch (e) {
                         console.error('QR decode error:', e);
-                        alert('Failed to read image.');
+                        showToast('Failed to read image.', { type: 'error' });
                     }
                 };
                 fileInput.click();

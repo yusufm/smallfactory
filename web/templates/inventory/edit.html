@@ -230,7 +230,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
         const customFieldName = customFieldNameInput.value.trim();
         if (!customFieldName) {
             e.preventDefault();
-            alert('Please enter a name for the custom field.');
+            showToast('Please enter a name for the custom field.', { type: 'error' });
             customFieldNameInput.focus();
             return;
         }
