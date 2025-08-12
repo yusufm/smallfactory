@@ -1,4 +1,4 @@
-# smallFactory PLM: Minimal Spec (v0.1)
+# smallFactory Core v1 Specification
 
 Status: DRAFT — breaking changes permitted until PROD.
 
@@ -405,7 +405,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 
 ## Conventions & constraints
 - `entities/<sfid>/entity.yml` is **required** and must include:
-  - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `sup_`). The prefix determines the kind.
+  - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `b_`, `sup_`). The prefix determines the kind.
   - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
   - Only parts (explicit or inferred) may define `bom`, `files/`, `revisions/`, and `refs/`.
   - No legacy aliases: the `children` key MUST NOT appear.
@@ -413,7 +413,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - Revision directories under `revisions/` are **immutable** once released.
 - `refs/released` is the **only pointer** you flip to advance the world.
 - Large binaries (`*.step`, `*.stl`, `*.pdf`) should be tracked with **Git LFS**.
-- SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `sup_`).
+- SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `b_`, `sup_`).
 
 - Auto-commit history:
   - All mutating operations auto-commit with clear messages including the required `::sfid::` tokens.
@@ -437,7 +437,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
   - All tools and interfaces (CLI, Web, scripts, integrations) MUST call the Core API for all reads and writes.
   - Direct file mutations are not supported; the API performs validation, defaulting, linting, and writes with required commit metadata.
 
-Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `sup_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`), change record `eco` ID, or supplier-provided IDs.
+Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `b_...`, `sup_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`), change record `eco` ID, or supplier-provided IDs.
 
 ---
 
@@ -447,7 +447,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
   - All entities: omit the `sfid` field; identity is the directory name and must be a valid SFID with a recognized prefix. Do not include a `kind` field.
   - Parts (explicit or inferred): `uom` is optional; default 'ea'.
 - Kind inference:
-  - Prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier.
+  - Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier.
 - BOM defaults (applied by resolver and validated by linter):
   - `qty` defaults to `1` if omitted.
   - `rev` defaults to `released` if omitted.
