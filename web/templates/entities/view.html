@@ -44,6 +44,7 @@
       <div class="flex items-center gap-2">
         <a href="{{ url_for('stickers_batch', sfids=entity.sfid) }}" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"><i class="fas fa-qrcode mr-2"></i>Stickers</a>
         {% if entity.sfid and entity.sfid[:2] == 'p_' %}
+        <a href="{{ url_for('entities_build', sfid=entity.sfid) }}" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"><i class="fas fa-industry mr-2"></i>Build</a>
         <button type="button" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50" onclick="openBomTreeModal()"><i class="fas fa-sitemap mr-2"></i>BOM Tree</button>
         {% endif %}
         {% if not entity.get('retired') %}
@@ -121,6 +122,30 @@
               <dt class="text-sm font-medium text-gray-600">Name</dt>
               <dd id="ovw-name-display" class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
             </div>
+            {% if entity.sfid and entity.sfid[:2] == 'b_' %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Serial Number</dt>
+              <dd id="ovw-serialnumber-display" class="mt-1 text-sm font-mono text-gray-900">{{ entity.get('serialnumber') or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Built At</dt>
+              <dd id="ovw-builtat-display" class="mt-1 text-sm text-gray-900">{{ entity.get('datetime') or entity.get('created_at') or '—' }}</dd>
+            </div>
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Product</dt>
+              <dd class="mt-1 text-sm">
+                {% set ps = entity.get('product_sfid') %}
+                {% if ps %}
+                  <a href="{{ url_for('entities_view', sfid=ps) }}" class="text-blue-600 hover:text-blue-800 font-mono">{{ ps }}</a>
+                {% else %}
+                  <span class="text-gray-500">—</span>
+                {% endif %}
+                {% if entity.get('product_rev') %}
+                  <span class="ml-2 text-xs text-gray-600">(rev {{ entity.get('product_rev') }})</span>
+                {% endif %}
+              </dd>
+            </div>
+            {% endif %}
             {% if entity.get('description') %}
             <div class="sm:col-span-2">
               <dt class="text-sm font-medium text-gray-600">Description</dt>
@@ -221,6 +246,16 @@
                 <label class="block text-xs font-medium text-gray-700">Name</label>
                 <input id="ovw-name" type="text" value="{{ entity.get('name', '') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
               </div>
+              {% if entity.sfid and entity.sfid[:2] == 'b_' %}
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Serial Number</label>
+                <input id="ovw-serialnumber" type="text" value="{{ entity.get('serialnumber','') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Built At</label>
+                <input id="ovw-builtat" type="text" value="{{ entity.get('datetime') or entity.get('created_at') or '' }}" placeholder="ISO 8601 e.g. 2025-08-11T23:48:16-07:00" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+              </div>
+              {% endif %}
               <div class="sm:col-span-2">
                 <label class="block text-xs font-medium text-gray-700">Description</label>
                 <textarea id="ovw-description" rows="3" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">{{ entity.get('description','') }}</textarea>
@@ -430,6 +465,8 @@ function getOverviewCurrentState(){
   const policy = document.getElementById('ovw-policy')?.value || '';
   const uom = document.getElementById('ovw-uom')?.value || '';
   const tags = document.getElementById('ovw-tags')?.value || '';
+  const serialnumber = document.getElementById('ovw-serialnumber')?.value || '';
+  const datetime = document.getElementById('ovw-builtat')?.value || '';
   const list = document.getElementById('ovw-attrs-editor-list');
   const rows = Array.from(list ? list.children : []);
   const attrs = {};
@@ -441,7 +478,7 @@ function getOverviewCurrentState(){
       if(k){ attrs[k] = v; }
     }
   });
-  return { name, description, category, policy, uom, tags, attrs };
+  return { name, description, category, policy, uom, tags, attrs, serialnumber, datetime };
 }
 function toggleOverviewMode(){
   const disp = document.getElementById('overview-display');
@@ -511,6 +548,10 @@ async function saveOverview(){
   const policy = document.getElementById('ovw-policy').value;
   const uom = document.getElementById('ovw-uom').value;
   const tags = document.getElementById('ovw-tags').value;
+  const serialnumberEl = document.getElementById('ovw-serialnumber');
+  const builtAtEl = document.getElementById('ovw-builtat');
+  const serialnumber = serialnumberEl ? serialnumberEl.value : undefined;
+  const datetime = builtAtEl ? builtAtEl.value : undefined;
   const err = document.getElementById('ovw-error');
   if(err) err.textContent = '';
   try{
@@ -526,9 +567,12 @@ async function saveOverview(){
         if(k){ attrs[k] = v; }
       }
     });
+    const updates = { name, description, category, policy, uom, tags, attrs };
+    if(serialnumber !== undefined) updates.serialnumber = serialnumber;
+    if(datetime !== undefined) updates.datetime = datetime;
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ updates: { name, description, category, policy, uom, tags, attrs } })
+      body: JSON.stringify({ updates })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to update');
@@ -537,6 +581,9 @@ async function saveOverview(){
     setText('ovw-name-display', name||SFID);
     setText('ovw-description-display', description||'');
     setText('ovw-category-display', category||'');
+    // Build fields
+    if(serialnumber !== undefined) setText('ovw-serialnumber-display', serialnumber || '—');
+    if(datetime !== undefined) setText('ovw-builtat-display', datetime || '—');
     // Policy badge
     const polEl = document.getElementById('ovw-policy-display');
     if(polEl){

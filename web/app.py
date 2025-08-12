@@ -358,6 +358,151 @@ def entities_view(sfid):
         return redirect(url_for('entities_list'))
 
 
+@app.route('/entities/<sfid>/build', methods=['GET', 'POST'])
+def entities_build(sfid):
+    """Quick Build flow for finished goods (p_* entities).
+
+    - GET without qty: render form
+    - GET with ?qty=...: compute preview and auto-open confirmation modal
+    - POST: perform backflush (consume integer-qty BOM lines) and add FG quantity
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+
+        # Ensure entity exists and is a product-like entity
+        entity = get_entity(datarepo_path, sfid)
+        is_product = bool(sfid and sfid.startswith('p_'))
+
+        # Determine revisions info for this part (released pointer + list)
+        released_rev = None
+        revisions = []
+        try:
+            info = get_revisions(datarepo_path, sfid)
+            released_rev = info.get('rev')
+            revisions = info.get('revisions', [])
+        except Exception:
+            pass
+        can_build = bool(revisions)
+
+        # Simplified build flow: no backflush/consumption preview.
+
+        # Extract inputs
+        if request.method == 'POST':
+            if not is_product:
+                flash('Build is only available for product entities (sfid starts with p_)', 'error')
+                return redirect(url_for('entities_view', sfid=sfid))
+
+            l_sfid = (request.form.get('l_sfid') or '').strip() or None
+            notes = (request.form.get('notes') or '').strip()
+            rev_sel = (request.form.get('rev') or '').strip()
+            # Guard: do not allow build if no revisions exist
+            try:
+                info_check = get_revisions(datarepo_path, sfid)
+                if not info_check.get('revisions'):
+                    flash('Cannot build: no revisions exist for this part. Create a revision first.', 'error')
+                    return redirect(url_for('entities_build', sfid=sfid))
+            except Exception:
+                flash('Cannot build: failed to read revisions for this part.', 'error')
+                return redirect(url_for('entities_build', sfid=sfid))
+
+            # Create a build record entity: b_<product>_<YYYYMMDDHHMMSS>
+            _now = datetime.now()
+            ts_label = _now.strftime('%Y%m%d%H%M%S')
+            build_sfid = f"b_{sfid}_{ts_label}"
+            ts_iso = _now.isoformat(timespec='seconds')
+            fields = {
+                'product_sfid': sfid,
+                'created_at': ts_iso,
+                'datetime': ts_iso,
+                'serialnumber': ts_label,
+                'name': f"Build {entity.get('name', sfid)}",
+            }
+            # Resolve selected revision to a concrete label for traceability
+            try:
+                info = get_revisions(datarepo_path, sfid)
+                current_released = info.get('rev')
+            except Exception:
+                current_released = None
+            rev_label = None
+            if rev_sel and rev_sel != 'released':
+                rev_label = rev_sel
+            elif current_released:
+                rev_label = current_released
+            if rev_label:
+                fields['product_rev'] = rev_label
+            if l_sfid:
+                fields['l_sfid'] = l_sfid
+            if notes:
+                fields['notes'] = notes
+
+            try:
+                create_entity(datarepo_path, build_sfid, fields)
+                flash(f"Created build record '{build_sfid}' for {sfid}", 'success')
+                return redirect(url_for('entities_view', sfid=build_sfid))
+            except Exception as e:
+                flash(f"Failed to create build record: {e}", 'error')
+                return redirect(url_for('entities_build', sfid=sfid))
+
+        # GET: show form and optional preview if qty provided
+        l_sfid = (request.args.get('l_sfid') or '').strip()
+        notes = (request.args.get('notes') or '').strip()
+        rev_selected = (request.args.get('rev') or ('released' if released_rev else '')).strip()
+        # If no released pointer and no explicit selection, default to the latest revision id
+        if not rev_selected and revisions:
+            try:
+                last = revisions[-1]
+                rid = (last.get('id') if isinstance(last, dict) else None) or ''
+                rev_selected = rid
+            except Exception:
+                pass
+
+        return render_template(
+            'entities/build.html',
+            entity=entity,
+            released_rev=released_rev,
+            revisions=revisions,
+            l_sfid=l_sfid,
+            notes=notes,
+            rev_selected=rev_selected,
+            can_build=can_build,
+            is_product=is_product,
+        )
+    except Exception as e:
+        flash(f'Error loading build page: {e}', 'error')
+        return redirect(url_for('entities_view', sfid=sfid))
+
+
+@app.route('/entities/<sfid>/build/create-revision', methods=['POST'])
+def entities_build_create_revision(sfid):
+    """Create a new draft revision for the part and return to Build page.
+
+    Uses bump_revision() to cut the next numeric revision label.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        # Prefer explicit product_sfid from form, fallback to path param
+        target = (request.form.get('product_sfid') or '').strip() or sfid
+        if not (target and target.startswith('p_')):
+            flash('Revisions are only supported on product entities (p_*)', 'error')
+            return redirect(url_for('entities_build', sfid=sfid))
+        # Ensure the entity exists
+        try:
+            get_entity(datarepo_path, target)
+        except Exception:
+            flash(f"Product '{target}' not found.", 'error')
+            return redirect(url_for('entities_build', sfid=sfid))
+        info = bump_revision(datarepo_path, target)
+        new_rev = info.get('new_rev') or ''
+        if new_rev:
+            flash(f"Created draft revision {new_rev} for {target}", 'success')
+            return redirect(url_for('entities_build', sfid=target, rev=new_rev))
+        else:
+            flash('Created a new draft revision.', 'success')
+            return redirect(url_for('entities_build', sfid=target))
+    except Exception as e:
+        flash(f'Failed to create revision: {e}', 'error')
+        return redirect(url_for('entities_build', sfid=sfid))
+
 @app.route('/entities/add', methods=['GET', 'POST'])
 def entities_add():
     """Create a new canonical entity.
