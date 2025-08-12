@@ -869,10 +869,8 @@ function dfRenderList(items){
     const size = isDir ? '—' : (it.size!=null?it.size:'—');
     const mtime = it.mtime||'—';
     const actions = isDir
-      ? `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="openDfMoveModal('${(it.path||'').replace(/'/g, "\\'")}', true)">Move</button>`+
-        `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
-      : `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="openDfMoveModal('${(it.path||'').replace(/'/g, "\\'")}', false)">Move</button>`+
-        `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
+      ? `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
+      : `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50 hover:bg-gray-50">
         <td class="px-3 py-1.5 font-mono">${nameHtml}</td>
