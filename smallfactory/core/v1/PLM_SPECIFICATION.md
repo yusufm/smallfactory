@@ -21,7 +21,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity.
   ```regex
   ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
   ```
-- Prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier.
+- Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier.
 - Identity is the directory path `entities/<sfid>/`; do not include an `sfid` key in `entity.yml`.
 - Do not include a `kind` field; kind is inferred from the `sfid` prefix.
 - See Appendix: SFID naming conventions (recommended) for human-friendly patterns.
@@ -83,6 +83,31 @@ Top‑level directories (recap):
 
 • **`serials/`** — One file per built unit at `serials/<sku>/<year>/<ULID>.yml`, recording status and events over the unit’s lifecycle.
 
+### Build entities (`b_*`)
+
+Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given SKU (or top part), and binds to the resolved lock (`build.lock.yml`).
+
+Example `entities/b_2025_0001/entity.yml`:
+```yaml
+sku: fg_toaster_black_120v         # SKU being built (preferred)
+# Alternatively, specify the top part explicitly if not using a SKU:
+# top_part: p_toaster_assembly
+lockfile: finished_goods/fg_toaster_black_120v/builds/2025-08-10/build.lock.yml
+qty_planned: 100                   # optional
+qty_completed: 20                  # optional; tooling may derive/update
+site: l_line1                      # optional production line/location
+workorder: workorder-000123        # optional external WO reference
+status: open                       # open|in_progress|completed|canceled
+opened_at: 2025-08-10T19:40:00Z    # optional timestamps
+closed_at: 2025-08-11T02:12:00Z
+notes: "First pilot run on new fixture"
+```
+
+Notes:
+- Serials may reference a Build via `build: b_*` in addition to or instead of `workorder`.
+- A Build points to an immutable lockfile; updating the lock requires producing a new lock and, if needed, a new Build entity.
+- Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
+
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
 uom: ea                    # optional; defaults to 'ea' if omitted
@@ -109,7 +134,7 @@ bom:
 Note on kind inference and validation:
 
 - Do not include a `kind` field; tooling infers kind from the `sfid` prefix.
-- Recognized prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier. More may be added later.
+- Recognized prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier. More may be added later.
 - If a `kind` field appears, the linter errors; kinds are prefix-inferred only.
 - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/`.
 - No legacy aliases: `children` is invalid; only `bom` is accepted.
@@ -497,6 +522,18 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
     - `p_m3x10`
     - `p_m3x10_lot23`
     - `p_stm32-c_sn39402`, `p_stm32-c_sn59404`
+ 
+ - Builds (`b_*`) — recommended patterns:
+   - Purpose: Identify a specific production build/batch.
+   - Prefer stable, sortable tokens. Good options include date, sequence, line, and/or SKU.
+   - Suggested structures (pick one and keep it consistent):
+     - `b_<yyyy>_<ordinal>` e.g., `b_2025_0001`
+     - `b_<yyyymmdd>_<line>_<run>` e.g., `b_20250810_line1_run3`
+     - `b_<sku>_<yyyymmdd>` e.g., `b_fg_toaster_black_120v_20250810`
+   - Charset: `[a-z0-9_-]`; avoid uppercase. Keep tokens general → specific left-to-right.
+   - Example references:
+     - Serials may include `build: b_2025_0001`.
+     - Commits touching a build MUST include `::sfid::b_...`.
 
 ## Optional: `.gitattributes` for LFS
 ```
