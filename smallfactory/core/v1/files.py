@@ -12,9 +12,6 @@ from datetime import datetime
 
 from .config import validate_sfid
 
-# Design subdirectories we support for user-managed content
-_VALID_SUBDIRS = {"src", "exports", "docs"}
-
 
 # -------------------------------
 # Path helpers and safety
@@ -31,10 +28,8 @@ def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
     return _entities_dir(datarepo_path) / sfid
 
 
-def _design_root(datarepo_path: Path, sfid: str, subdir: str) -> Path:
-    if subdir not in _VALID_SUBDIRS:
-        raise ValueError(f"Invalid design subdir '{subdir}'. Must be one of: {sorted(_VALID_SUBDIRS)}")
-    root = _entity_dir(datarepo_path, sfid) / "design" / subdir
+def _design_root(datarepo_path: Path, sfid: str) -> Path:
+    root = _entity_dir(datarepo_path, sfid) / "design"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -69,21 +64,20 @@ def list_files(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: Optional[str] = None,
     recursive: bool = False,
     glob: Optional[str] = None,
 ) -> Dict:
-    """List files and folders under entities/<sfid>/design/<subdir>[/path].
+    """List files and folders under entities/<sfid>/design[/path].
 
-    Returns dict: { "sfid", "subdir", "path", "items": [ {type, name, path, size, mtime} ] }
+    Returns dict: { "sfid", "path", "items": [ {type, name, path, size, mtime} ] }
     - type: 'file' or 'dir'
-    - path: POSIX-style path relative to design/<subdir>
+    - path: POSIX-style path relative to design/
     """
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     base = _resolve_within(root, path)
     if not base.exists():
-        return {"sfid": sfid, "subdir": subdir, "path": path or "", "items": []}
+        return {"sfid": sfid, "path": path or "", "items": []}
 
     items: List[Dict] = []
     def _add(p: Path):
@@ -124,7 +118,7 @@ def list_files(
         # unknown special; ignore
         pass
 
-    return {"sfid": sfid, "subdir": subdir, "path": path or "", "items": items}
+    return {"sfid": sfid, "path": path or "", "items": items}
 
 
 # -------------------------------
@@ -135,35 +129,33 @@ def mkdir(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: str,
 ) -> Dict:
     """Create a folder and place a .gitkeep inside so git tracks it."""
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if root == target:
-        raise ValueError("Refusing to create the subdir root itself")
+        raise ValueError("Refusing to create the design root itself")
     target.mkdir(parents=True, exist_ok=True)
     keep = target / ".gitkeep"
     if not keep.exists():
         keep.write_text("")
-    return {"sfid": sfid, "subdir": subdir, "path": str(target.relative_to(root)).replace("\\", "/")}
+    return {"sfid": sfid, "path": str(target.relative_to(root)).replace("\\", "/")}
 
 
 def rmdir(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: str,
 ) -> Dict:
     """Delete an empty folder. Empty means only optional .gitkeep present."""
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_dir():
         raise FileNotFoundError("Folder does not exist")
     if target == root:
-        raise ValueError("Cannot remove the subdir root")
+        raise ValueError("Cannot remove the design root")
     # Determine emptiness ignoring .gitkeep
     children = [p for p in target.iterdir() if p.name != ".gitkeep"]
     if children:
@@ -173,20 +165,19 @@ def rmdir(
     if keep.exists():
         keep.unlink()
     target.rmdir()
-    return {"sfid": sfid, "subdir": subdir, "removed": str(target.relative_to(root)).replace("\\", "/")}
+    return {"sfid": sfid, "removed": str(target.relative_to(root)).replace("\\", "/")}
 
 
 def upload_file(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: str,
     file_bytes: bytes,
     overwrite: bool = False,
 ) -> Dict:
     """Upload (write) a file to design area at path. Creates parents as needed."""
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     dest = _resolve_within(root, path)
     if dest.exists() and dest.is_dir():
         raise IsADirectoryError("Destination is a directory")
@@ -195,34 +186,32 @@ def upload_file(
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "wb") as f:
         f.write(file_bytes)
-    return {"sfid": sfid, "subdir": subdir, "path": str(dest.relative_to(root)).replace("\\", "/"), "size": len(file_bytes)}
+    return {"sfid": sfid, "path": str(dest.relative_to(root)).replace("\\", "/"), "size": len(file_bytes)}
 
 
 def delete_file(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: str,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_file():
         raise FileNotFoundError("File not found")
     target.unlink()
-    return {"sfid": sfid, "subdir": subdir, "removed": str(target.relative_to(root)).replace("\\", "/")}
+    return {"sfid": sfid, "removed": str(target.relative_to(root)).replace("\\", "/")}
 
 
 def move_file(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     src: str,
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)
     if not src_p.exists() or not src_p.is_file():
@@ -236,7 +225,6 @@ def move_file(
     shutil.move(str(src_p), str(dst_p))
     return {
         "sfid": sfid,
-        "subdir": subdir,
         "src": str(src_p.relative_to(root)).replace("\\", "/"),
         "dst": str(dst_p.relative_to(root)).replace("\\", "/"),
     }
@@ -246,18 +234,17 @@ def move_dir(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     src: str,
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)
     if not src_p.exists() or not src_p.is_dir():
         raise FileNotFoundError("Source folder not found")
     if src_p == root:
-        raise ValueError("Cannot move the subdir root")
+        raise ValueError("Cannot move the design root")
     if dst_p.exists():
         if dst_p.is_file():
             raise NotADirectoryError("Destination is a file")
@@ -271,7 +258,6 @@ def move_dir(
     shutil.move(str(src_p), str(dst_p))
     return {
         "sfid": sfid,
-        "subdir": subdir,
         "src": str(src_p.relative_to(root)).replace("\\", "/"),
         "dst": str(dst_p.relative_to(root)).replace("\\", "/"),
     }
@@ -285,11 +271,10 @@ def stream_file(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     path: str,
 ) -> Dict:
     """Return in-memory bytes and metadata for a design file."""
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     p = _resolve_within(root, path)
     if not p.exists() or not p.is_file():
         raise FileNotFoundError("File not found")
@@ -302,15 +287,14 @@ def zip_files(
     datarepo_path: Path,
     sfid: str,
     *,
-    subdir: str,
     paths: Iterable[str],
 ) -> bytes:
     """Return a zip archive (bytes) containing the requested design files/folders.
 
     - Folder entries include their entire contents.
-    - Paths are validated and must reside under the design subdir.
+    - Paths are validated and must reside under the design root.
     """
-    root = _design_root(datarepo_path, sfid, subdir)
+    root = _design_root(datarepo_path, sfid)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for rel in paths:

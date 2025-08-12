@@ -241,11 +241,7 @@
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Design Files</h2>
-          <div class="flex items-center gap-1 text-sm">
-            <button id="df-tab-src" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('src')">src</button>
-            <button id="df-tab-exports" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('exports')">exports</button>
-            <button id="df-tab-docs" type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="dfSetSubdir('docs')">docs</button>
-          </div>
+          <div class="flex items-center gap-1 text-sm"></div>
         </div>
         <div class="px-6 py-3 text-sm text-gray-800">
           <div class="flex items-center justify-between">
@@ -749,9 +745,8 @@ async function loadRevisions(){
 }
 
 // -----------------
-// Design Files
+// Design Files (paths relative to design/ root)
 // -----------------
-let dfSubdir = 'src';
 let dfPath = '';
 
 function dfShowError(msg){
@@ -759,19 +754,11 @@ function dfShowError(msg){
   if(el) el.textContent = msg||'';
 }
 
-function dfUpdateTabs(){
-  const tabs = ['src','exports','docs'];
-  tabs.forEach(t => {
-    const el = document.getElementById('df-tab-' + (t==='exports'?'exports':t));
-    if(!el) return;
-    const active = (t === dfSubdir);
-    el.className = 'px-2.5 py-1 rounded border ' + (active ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50');
-  });
-}
+function dfUpdateTabs(){ /* removed: legacy subdir tabs */ }
 
 function dfBreadcrumbHtml(){
   const parts = (dfPath||'').split('/').filter(Boolean);
-  let html = `<span class="text-gray-500">design/</span><span class="text-gray-900">${dfSubdir}</span>`;
+  let html = `<button type="button" class="text-gray-500 hover:underline" onclick="dfGoto('')">design</button>`;
   let acc = '';
   parts.forEach((p, idx) => {
     acc = acc ? `${acc}/${p}` : p;
@@ -802,14 +789,40 @@ async function dfLoad(){
   try{
     const bc = document.getElementById('df-breadcrumb');
     if(bc) bc.innerHTML = dfBreadcrumbHtml();
-    const qs = new URLSearchParams({ subdir: dfSubdir });
+    const qs = new URLSearchParams();
     if(dfPath) qs.set('path', dfPath);
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files?${qs.toString()}`);
+    const url = `/api/entities/${encodeURIComponent(SFID)}/files` + (qs.toString() ? `?${qs.toString()}` : '');
+    const res = await fetch(url);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load files');
     dfRenderList(data.items||[]);
     dfShowError('');
   }catch(e){ dfShowError(e.message||String(e)); }
+}
+
+// ---- Mkdir modal helpers ----
+function openDfMkdirModal(){
+  const m = document.getElementById('df-mkdir-modal');
+  const inp = document.getElementById('df-mkdir-name');
+  const err = document.getElementById('df-mkdir-error');
+  if(err) err.textContent = '';
+  if(inp){ inp.value = ''; setTimeout(()=>inp.focus(), 0); }
+  if(m) m.classList.remove('hidden');
+}
+
+function closeDfMkdirModal(){
+  const m = document.getElementById('df-mkdir-modal');
+  if(m) m.classList.add('hidden');
+}
+
+function submitDfMkdirModal(){
+  const inp = document.getElementById('df-mkdir-name');
+  const err = document.getElementById('df-mkdir-error');
+  let name = (inp?.value||'').trim().replace(/^\/+|\/+$/g, '');
+  if(!name){ if(err){ err.textContent = 'Please enter a folder name.'; } return; }
+  closeDfMkdirModal();
+  const rel = dfJoin(name);
+  dfMkdir(rel);
 }
 
 function dfRenderList(items){
@@ -842,18 +855,14 @@ function dfRenderList(items){
 }
 
 function dfMkdirPrompt(){
-  const name = prompt('New folder name (relative to current path):');
-  if(name==null) return;
-  const rel = dfJoin(name.trim());
-  if(!rel){ return; }
-  dfMkdir(rel);
+  openDfMkdirModal();
 }
 
 async function dfMkdir(relPath){
   try{
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/mkdir`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ subdir: dfSubdir, path: relPath })
+      body: JSON.stringify({ path: relPath })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to create folder');
@@ -871,7 +880,6 @@ async function dfUploadSelected(ev){
   if(!f) return;
   try{
     const form = new FormData();
-    form.set('subdir', dfSubdir);
     form.set('path', dfJoin(f.name));
     form.set('overwrite', 'false');
     form.set('file', f, f.name);
@@ -889,7 +897,7 @@ async function dfDeleteConfirm(relPath, isDir){
   if(!confirm(`Delete ${isDir?'folder':'file'} "${relPath}"?`)) return;
   try{
     const url = isDir ? '/api/entities/'+encodeURIComponent(SFID)+'/files/rmdir' : '/api/entities/'+encodeURIComponent(SFID)+'/files/delete';
-    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ subdir: dfSubdir, path: relPath }) });
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: relPath }) });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to delete');
     dfLoad();
@@ -897,13 +905,13 @@ async function dfDeleteConfirm(relPath, isDir){
 }
 
 async function dfMovePrompt(relPath, isDir){
-  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to subdir root):`, relPath||'');
+  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to design root):`, relPath||'');
   if(dst==null) return;
   const ow = confirm('Overwrite destination if it exists?');
   try{
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/move`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ subdir: dfSubdir, src: relPath, dst: (dst||'').trim(), dir: isDir?'1':'0', overwrite: ow?'1':'0' })
+      body: JSON.stringify({ src: relPath, dst: (dst||'').trim(), dir: isDir?'1':'0', overwrite: ow?'1':'0' })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to move');
@@ -911,14 +919,7 @@ async function dfMovePrompt(relPath, isDir){
   }catch(e){ dfShowError(e.message||String(e)); }
 }
 
-function dfSetSubdir(s){
-  const allowed = ['src','exports','docs'];
-  if(!allowed.includes(s)) return;
-  dfSubdir = s;
-  dfPath = '';
-  dfUpdateTabs();
-  dfLoad();
-}
+// Removed legacy dfSetSubdir(): no fixed subdirectories anymore
 
 function renderRevisionsRows(list){
   const tbody = document.getElementById('revisions-tbody');
@@ -976,8 +977,8 @@ async function releaseRevision(rev){
   }catch(e){ showRevError(e.message||String(e)); }
 }
 
-// Initial load
-dfSetSubdir('src');
+// Initial load from design root
+dfLoad();
 loadRevisions();
 if(isPart){ bomLoad(); }
 </script>
@@ -1062,6 +1063,28 @@ function renderDeepBomTree(nodes){
 {% endblock %}
 
 {% block modals %}
+<!-- Design Files: New Folder Modal -->
+<div id="df-mkdir-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeDfMkdirModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-folder-plus mr-2"></i>New Folder</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeDfMkdirModal()">×</button>
+      </div>
+      <div class="px-5 py-4">
+        <label for="df-mkdir-name" class="block text-sm font-medium text-gray-700">Folder name</label>
+        <input id="df-mkdir-name" type="text" class="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. drawings" onkeydown="if(event.key==='Enter'){ submitDfMkdirModal(); }">
+        <div id="df-mkdir-error" class="mt-2 text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeDfMkdirModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="submitDfMkdirModal()">Create</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDfMkdirModal(); });</script>
+</div>
+
 <!-- BOM Tree Modal -->
 <div id="bom-tree-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
   <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeBomTreeModal();">
