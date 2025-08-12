@@ -76,6 +76,51 @@ Top‑level directories (recap):
 
  
 
+## Layered Architecture: Core as Single Source of Truth
+
+- The `smallfactory/core/v1/` package is the canonical source of domain logic and data access. It defines the public API for all PLM operations.
+- All non-core layers (CLI, Web, integrations, scripts) MUST only call core APIs.
+- Non-core layers MUST NOT:
+  - Read or write repository files or directories directly (e.g., do not open `entities/<sfid>/refs/released` directly).
+  - Re-implement domain logic (e.g., BOM traversal, revision snapshotting, release handling, validation).
+  - Depend on core internals or private helpers (names prefixed with `_`); only public core functions are allowed.
+
+### Required Core APIs (examples)
+
+- Revisions (in `smallfactory/core/v1/entities.py`):
+  - `cut_revision(datarepo_path, sfid, rev=None, *, notes=None)` MUST be used to create snapshots.
+  - `bump_revision(...)`, `release_revision(...)`, `get_revisions(...)` MUST be used for revision flows.
+- BOM (in `smallfactory/core/v1/entities.py`):
+  - `resolved_bom_tree(datarepo_path, root_sfid, *, max_depth=None)` MUST be used to obtain resolved BOM nodes.
+  - BOM CRUD MUST use: `bom_list(...)`, `bom_add_line(...)`, `bom_set_line(...)`, `bom_remove_line(...)`, `bom_alt_add(...)`, `bom_alt_remove(...)`.
+- Inventory (in `smallfactory/core/v1/inventory.py`):
+  - On-hand and journal operations MUST use the inventory core APIs.
+- Files (in `smallfactory/core/v1/files.py`):
+  - Design-area file operations MUST use the files core APIs.
+
+### Resolved BOM Tree (normative)
+
+- Consumers MUST obtain a resolved BOM tree via `resolved_bom_tree(...)`.
+- The returned node schema is the contract and MUST be treated as read-only by callers:
+  - `parent, use, name, qty, rev_spec, rev, level, is_alt, alternates_group, cumulative_qty, cycle`.
+- UI layers MAY enrich this with presentation-only data (e.g., on-hand totals, formatting), but MUST NOT alter resolution logic.
+
+### Revisions (normative)
+
+- Snapshot generation (copying entity contents, artifact hashing, BOM tree snapshot `bom_tree.yml`) is implemented in core.
+- Callers MUST NOT replicate snapshot logic or mutate revision directories directly.
+
+### Versioning and Compatibility
+
+- Core API is versioned under `core/v1`. CLI/Web MUST target the same major version.
+- Any breaking change requires a new `core/vX/` and corresponding UI updates.
+
+### Forbidden Patterns (non-exhaustive)
+
+- Reading `entities/<sfid>/refs/released` directly in CLI/Web.
+- Implementing custom BOM recursion in CLI/Web.
+- Accessing private helpers (names prefixed with `_`) from outside core.
+
 ### Build entities (`b_*`)
 
 Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given top part (optionally parameterized by config).
