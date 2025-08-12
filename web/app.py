@@ -303,24 +303,14 @@ def entities_view(sfid):
     try:
         datarepo_path = get_datarepo_path()
         entity = get_entity(datarepo_path, sfid)
-
-        # Structure presence per PLM SPEC (best-effort; directories may be optional)
-        ent_dir = Path(datarepo_path) / "entities" / sfid
-        files_dir = ent_dir / "files"
-        working_dir = files_dir
-        revisions_dir = ent_dir / "revisions"
-        refs_dir = ent_dir / "refs"
-        structure = {
-            'files_root': 'files',
-            'has_files': working_dir.exists(),
-            'has_revisions': revisions_dir.exists(),
-            'has_refs': refs_dir.exists(),
-            'released_rev': None,
-        }
+        # Released revision label (if any)
+        released_rev = None
         try:
+            ent_dir = Path(datarepo_path) / "entities" / sfid
+            refs_dir = ent_dir / "refs"
             rel_fp = refs_dir / "released"
             if rel_fp.exists():
-                structure['released_rev'] = (rel_fp.read_text() or '').strip() or None
+                released_rev = (rel_fp.read_text() or '').strip() or None
         except Exception:
             pass
 
@@ -362,7 +352,7 @@ def entities_view(sfid):
                     'alternates_group': alternates_group,
                 })
 
-        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, structure=structure)
+        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, released_rev=released_rev)
     except Exception as e:
         flash(f'Error viewing entity: {e}', 'error')
         return redirect(url_for('entities_list'))

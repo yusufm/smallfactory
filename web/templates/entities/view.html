@@ -331,64 +331,13 @@
       {% endif %}
     </div>
 
-    <!-- Structure + Revisions + JSON -->
+    <!-- Structure + Revisions -->
     <div>
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Structure</h2>
-        </div>
-        <div class="px-6 py-4 text-sm text-gray-800 space-y-2">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">{{ (structure.files_root if structure else 'files') }}/</span>
-              {% if structure and structure.has_files %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">revisions/</span>
-              {% if structure and structure.has_revisions %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">refs/</span>
-              {% if structure and structure.has_refs %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-              {% if structure and structure.released_rev %}
-                <span class="ml-2 text-xs text-gray-600">released: {{ structure.released_rev }}</span>
-              {% endif %}
-            </div>
-          </div>
-          {% if structure and structure.has_files %}
-          <div class="pt-3">
-            <div class="text-xs text-gray-500 mb-1">Files actions</div>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open src</button>
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open exports</button>
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open docs</button>
-            </div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
-          {% if structure and structure.released_rev %}
-            <span class="text-xs text-gray-600">released: {{ structure.released_rev }}</span>
+          {% if released_rev %}
+            <span class="text-xs text-gray-600">released: {{ released_rev }}</span>
           {% endif %}
         </div>
         <div class="px-6 py-4 text-sm text-gray-700">
@@ -415,17 +364,7 @@
           </div>
         </div>
       </div>
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Raw JSON</h2>
-        </div>
-        <div class="p-4">
-          <details>
-            <summary class="cursor-pointer text-sm text-blue-700 hover:underline">Show raw JSON</summary>
-            <pre class="mt-2 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
-          </details>
-        </div>
-      </div>
+      
     </div>
   </div>
 </div>
@@ -446,7 +385,7 @@ function confirmRetire(){
 const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
-const FILES_ROOT = '{{ structure.files_root if structure else "files" }}';
+const FILES_ROOT = 'files';
 
 // -----------------
 // Overview inline edit
