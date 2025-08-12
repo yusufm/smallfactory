@@ -111,7 +111,7 @@ Notes:
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
 uom: ea                    # optional; defaults to 'ea' if omitted
-policy: make               # optional (make|buy)
+policy: make               # optional (make|buy|phantom)
 attrs:                     # free-form attributes (string|number|bool|array|object)
   voltage: [120, 240]
 
@@ -338,6 +338,7 @@ Algorithm (conceptual):
 1. Depth-first walk from `entities/<top_part>/entity.yml`.
    - Use provided `rev` selector or default to `released`.
    - Apply provided `config` to evaluate `when` rules.
+   - If the current part has `policy: phantom`, treat it as pass-through: do not include the phantom part itself in the flattened result and do not consider on-hand for it; traverse into its `bom` and accumulate child quantities into the parent.
 3. For each bom line:
    - Evaluate `when` against `config`; skip if it doesn’t match.
    - Determine target revision:
