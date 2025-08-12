@@ -452,7 +452,8 @@ function toggleOverviewMode(){
     ovwEditMode = true;
     if(disp) disp.classList.add('hidden');
     if(ed) ed.classList.remove('hidden');
-    if(btn) btn.textContent = 'Close';
+    // Hide the top-right Edit button while editing; Save/Cancel are available below
+    if(btn) btn.classList.add('hidden');
     ovwInitialState = getOverviewCurrentState();
   }else{
     // attempt to close editor
@@ -473,6 +474,7 @@ function doCloseOverviewEditor(){
   if(disp) disp.classList.remove('hidden');
   if(ed) ed.classList.add('hidden');
   if(btn) btn.textContent = 'Edit';
+  if(btn) btn.classList.remove('hidden');
   const err = document.getElementById('ovw-error');
   if(err) err.textContent = '';
 }
@@ -1132,14 +1134,12 @@ function closeBomTreeModal(){
 async function loadBomTree(){
   const err = document.getElementById('bom-tree-error');
   const cont = document.getElementById('bom-tree-container');
-  const md = document.getElementById('bom-tree-depth');
   if(err) err.textContent = '';
   if(cont) cont.innerHTML = '<div class="text-sm text-gray-500">Loading…</div>';
   // keep download link in sync with current inputs
   updateBomTreeDownloadHref();
   try{
-    const q = md && md.value !== '' ? `?max_depth=${encodeURIComponent(md.value)}` : '';
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep${q}`);
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep`);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load deep BOM');
     const nodes = data.nodes||[];
@@ -1150,9 +1150,7 @@ async function loadBomTree(){
 function updateBomTreeDownloadHref(){
   const a = document.getElementById('bom-tree-download');
   if(!a) return;
-  const md = document.getElementById('bom-tree-depth');
   const params = new URLSearchParams();
-  if(md && md.value !== '') params.set('max_depth', md.value);
   params.set('format', 'csv');
   const qs = params.toString();
   a.href = `/api/entities/${encodeURIComponent(SFID)}/bom/deep${qs?('?' + qs):''}`;
@@ -1313,16 +1311,13 @@ function renderDeepBomTree(nodes){
       <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
         <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sitemap mr-2"></i>Deep BOM Tree</h3>
         <div class="flex items-center gap-2">
-          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
+          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
             <i class="fas fa-download mr-1"></i>Download CSV
           </a>
           <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeBomTreeModal()">×</button>
         </div>
       </div>
       <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2 text-sm">
-        <label class="text-gray-600">Max depth</label>
-        <input id="bom-tree-depth" type="number" min="0" class="w-24 border border-gray-300 rounded px-2 py-1" placeholder="(all)">
-        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="loadBomTree()">Apply</button>
         <div id="bom-tree-error" class="ml-auto text-sm text-red-600"></div>
       </div>
       <div class="p-5 max-h-[70vh] overflow-auto">
