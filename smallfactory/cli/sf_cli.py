@@ -35,6 +35,7 @@ from smallfactory.core.v1.entities import (
     bom_set_line as ent_bom_set_line,
     bom_alt_add as ent_bom_alt_add,
     bom_alt_remove as ent_bom_alt_remove,
+    resolved_bom_tree as ent_resolved_bom_tree,
 )
 
 # Files core API (design area only)
@@ -1021,34 +1022,19 @@ def main():
             return None
 
     def _walk_bom(datarepo_path: pathlib.Path, root_sfid: str, *, max_depth: int | None = None) -> list:
-        """Walk the BOM tree starting at root_sfid and return a flat list of nodes with level metadata.
+        """Use core resolved_bom_tree() and enrich with on-hand totals for CLI output.
 
-        Each node dict contains: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total.
+        Returns nodes with fields compatible with previous CLI output:
+        parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total.
         """
-        nodes: list = []
-        name_cache: dict[str, str] = {}
+        core_nodes = ent_resolved_bom_tree(datarepo_path, root_sfid, max_depth=max_depth)
         onhand_cache: dict[str, int | None] = {}
-
-        def get_name(sfid: str) -> str:
-            if sfid in name_cache:
-                return name_cache[sfid]
-            try:
-                ent = ent_get_entity(datarepo_path, sfid)
-                name = str(ent.get("name", sfid))
-            except Exception:
-                name = sfid
-            name_cache[sfid] = name
-            return name
 
         def get_onhand_total(sfid: str) -> int | None:
             if sfid in onhand_cache:
                 return onhand_cache[sfid]
             try:
-                if not sfid:
-                    onhand_cache[sfid] = None
-                    return None
-                # Only compute for parts; other entities may not have inventory
-                if not sfid.startswith("p_"):
+                if not sfid or not isinstance(sfid, str) or not sfid.startswith("p_"):
                     onhand_cache[sfid] = None
                     return None
                 oh = inventory_onhand(datarepo_path, part=sfid)
@@ -1059,69 +1045,24 @@ def main():
                 onhand_cache[sfid] = None
                 return None
 
-        def recurse(parent_sfid: str, level: int, parent_mult: int | None, path_stack: list[str]):
-            if max_depth is not None and level > max_depth:
-                return
-            try:
-                lines = ent_bom_list(datarepo_path, parent_sfid)
-            except Exception:
-                return
-            for line in lines or []:
-                child = str(line.get("use", "")).strip()
-                if not child:
-                    continue
-                qty = line.get("qty", 1)
-                rev = line.get("rev", "released")
-                alts = line.get("alternates") if isinstance(line.get("alternates"), list) else []
-                alt_group = line.get("alternates_group")
-                qty_int = _to_int_or_none(qty)
-                cum = qty_int if parent_mult is None else (qty_int * parent_mult if (qty_int is not None and parent_mult is not None) else None)
-
-                cycle = child in path_stack
-                node = {
-                    "parent": parent_sfid,
-                    "use": child,
-                    "name": get_name(child),
-                    "qty": qty,
-                    "rev": rev,
-                    "level": level,
-                    "is_alt": False,
-                    "alternates_group": alt_group,
-                    "cumulative_qty": cum,
-                    "cycle": bool(cycle),
-                    "onhand_total": get_onhand_total(child),
-                }
-                nodes.append(node)
-
-                # Recurse into child part BOMs unless cycle or not a part
-                if not cycle and child.startswith("p_"):
-                    recurse(child, level + 1, cum if (cum is not None) else parent_mult, path_stack + [child])
-
-                # Emit alternates and recurse into them too
-                for alt in alts:
-                    alt_use = str((alt or {}).get("use", "")).strip()
-                    if not alt_use:
-                        continue
-                    alt_node = {
-                        "parent": parent_sfid,
-                        "use": alt_use,
-                        "name": get_name(alt_use),
-                        "qty": qty,  # alternates inherit the same qty requirement
-                        "rev": rev,
-                        "level": level + 1,
-                        "is_alt": True,
-                        "alternates_group": alt_group,
-                        "cumulative_qty": cum,
-                        "cycle": alt_use in path_stack,
-                        "onhand_total": get_onhand_total(alt_use),
-                    }
-                    nodes.append(alt_node)
-                    if alt_use.startswith("p_") and alt_use not in path_stack:
-                        recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use])
-
-        # Start traversal at root children (level 0 for first-level components)
-        recurse(root_sfid, 0, 1, [root_sfid])
-        return nodes
+        out: list = []
+        for n in core_nodes:
+            # Map core fields to CLI-compatible fields
+            out.append({
+                "parent": n.get("parent"),
+                "use": n.get("use"),
+                "name": n.get("name"),
+                "qty": n.get("qty"),
+                # CLI historically exposed the spec under 'rev'
+                "rev": n.get("rev_spec", "released"),
+                "level": n.get("level"),
+                "is_alt": n.get("is_alt", False),
+                "alternates_group": n.get("alternates_group"),
+                "cumulative_qty": n.get("cumulative_qty"),
+                "cycle": n.get("cycle", False),
+                "onhand_total": get_onhand_total(n.get("use")),
+            })
+        return out
 
     def cmd_bom_ls(args):
         datarepo_path = _repo_path()
