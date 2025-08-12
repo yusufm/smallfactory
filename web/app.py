@@ -52,6 +52,12 @@ from smallfactory.core.v1.vision import (
     extract_invoice_part as vlm_extract_invoice_part,
 )
 
+# Assistant (LLM + RAG)
+from smallfactory.core.v1.assistant import (
+    chat as assistant_chat,
+    reindex as assistant_reindex,
+)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
 
@@ -1279,6 +1285,29 @@ def stickers_batch():
             fields_text=fields_raw,
             sfids_text=sfids_text,
         )
+
+# -------------------------------
+# Assistant API (chat + reindex)
+# -------------------------------
+@app.route('/api/assistant/chat', methods=['POST'])
+def api_assistant_chat():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        messages = payload.get('messages') or []
+        context = payload.get('context') or {}
+        res = assistant_chat(messages, context)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/assistant/reindex', methods=['POST'])
+def api_assistant_reindex():
+    try:
+        res = assistant_reindex()
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 @app.errorhandler(404)
 def not_found(error):
