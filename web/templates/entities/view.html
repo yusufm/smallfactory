@@ -343,7 +343,6 @@
               <span class="font-medium">{{ (structure.files_root if structure else 'files') }}/</span>
               {% if structure and structure.has_files %}
                 <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_files_src else 'n' }}, exports: {{ 'y' if structure.has_files_exports else 'n' }}, docs: {{ 'y' if structure.has_files_docs else 'n' }}</span>
               {% else %}
                 <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
               {% endif %}

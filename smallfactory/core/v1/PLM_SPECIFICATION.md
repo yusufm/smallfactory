@@ -28,12 +28,12 @@ entities/<sfid>/
   entity.yml              # required; schema below
   files/                  # optional; working files area (copied into snapshots)
   revisions/              # optional; immutable snapshots by rev label
-    A/
+    1/
       meta.yml            # required for a snapshot
-    B/
+    2/
       ...
   refs/
-    released              # text file containing the current rev label (e.g., "B")
+    released              # text file containing the current rev label (e.g., "2")
 ```
 
 ### Directory intentions (what goes where)
@@ -148,7 +148,7 @@ artifacts:                 # files relative to this snapshot dir
 ### Released pointer (`refs/released`)
 A single-line text file containing the current revision label, e.g.:
 ```
-B
+2
 ```
 
 ---

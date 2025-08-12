@@ -313,9 +313,6 @@ def entities_view(sfid):
         structure = {
             'files_root': 'files',
             'has_files': working_dir.exists(),
-            'has_files_src': (working_dir / "src").exists(),
-            'has_files_exports': (working_dir / "exports").exists(),
-            'has_files_docs': (working_dir / "docs").exists(),
             'has_revisions': revisions_dir.exists(),
             'has_refs': refs_dir.exists(),
             'released_rev': None,
