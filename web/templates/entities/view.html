@@ -47,15 +47,61 @@
         <button type="button" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50" onclick="openBomTreeModal()"><i class="fas fa-sitemap mr-2"></i>BOM Tree</button>
         {% endif %}
         {% if not entity.get('retired') %}
-        <form method="POST" action="{{ url_for('entities_retire', sfid=entity.sfid) }}" onsubmit="return confirmRetire();">
+        <form id="retire-form" method="POST" action="{{ url_for('entities_retire', sfid=entity.sfid) }}">
           <input type="hidden" name="reason" id="retire-reason-input">
-          <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700"><i class="fas fa-user-slash mr-2"></i>Retire</button>
+          <button type="button" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700" onclick="openRetireModal()"><i class="fas fa-user-slash mr-2"></i>Retire</button>
         </form>
         {% endif %}
       </div>
     </div>
   </div>
 
+<!-- Files: Delete Modal -->
+<div id="df-delete-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeDfDeleteModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-trash-alt mr-2 text-red-500"></i>Delete</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeDfDeleteModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-2">
+        <p>Are you sure you want to delete <span id="df-delete-name" class="font-mono text-gray-900"></span>?</p>
+        <div id="df-delete-error" class="text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeDfDeleteModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700" onclick="submitDfDeleteModal()">Delete</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDfDeleteModal(); });</script>
+</div>
+
+<!-- Files: Move Modal -->
+<div id="df-move-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeDfMoveModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-arrows-alt mr-2 text-blue-500"></i>Move</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeDfMoveModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-3">
+        <div>Move <span id="df-move-from" class="font-mono text-gray-900"></span> to:</div>
+        <div>
+          <label for="df-move-dst" class="block text-sm font-medium text-gray-700">Destination path (relative to <span class="font-mono">${FILES_ROOT}</span>)</label>
+          <input id="df-move-dst" type="text" class="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. drawings/specs.pdf" onkeydown="if(event.key==='Enter'){ submitDfMoveModal(); }">
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm text-gray-700 select-none"><input id="df-move-ow" type="checkbox" class="rounded border-gray-300"> Overwrite destination if exists</label>
+        <div id="df-move-error" class="text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeDfMoveModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="submitDfMoveModal()">Move</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDfMoveModal(); });</script>
+</div>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <!-- Fields -->
     <div class="lg:col-span-2">
@@ -73,43 +119,43 @@
             </div>
             <div>
               <dt class="text-sm font-medium text-gray-600">Name</dt>
-              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
+              <dd id="ovw-name-display" class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
             </div>
             {% if entity.get('description') %}
             <div class="sm:col-span-2">
               <dt class="text-sm font-medium text-gray-600">Description</dt>
-              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('description') }}</dd>
+              <dd id="ovw-description-display" class="mt-1 text-sm text-gray-900">{{ entity.get('description') }}</dd>
             </div>
             {% endif %}
             {% if entity.get('category') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">Category</dt>
-              <dd class="mt-1 text-sm text-gray-900">{{ entity.get('category') }}</dd>
+              <dd id="ovw-category-display" class="mt-1 text-sm text-gray-900">{{ entity.get('category') }}</dd>
             </div>
             {% endif %}
             {% set a = entity.get('attrs') or {} %}
             {% if a.get('manufacturer') or a.get('mfr') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">Manufacturer</dt>
-              <dd class="mt-1 text-sm text-gray-900">{{ a.get('manufacturer') or a.get('mfr') }}</dd>
+              <dd id="ovw-manufacturer-display" class="mt-1 text-sm text-gray-900">{{ a.get('manufacturer') or a.get('mfr') }}</dd>
             </div>
             {% endif %}
             {% if a.get('mpn') or a.get('mfr_pn') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">MPN</dt>
-              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('mpn') or a.get('mfr_pn') }}</span></dd>
+              <dd class="mt-1"><span id="ovw-mpn-display" class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('mpn') or a.get('mfr_pn') }}</span></dd>
             </div>
             {% endif %}
             {% if a.get('vendor') or a.get('supplier') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">Supplier</dt>
-              <dd class="mt-1 text-sm text-gray-900">{{ a.get('vendor') or a.get('supplier') }}</dd>
+              <dd id="ovw-supplier-display" class="mt-1 text-sm text-gray-900">{{ a.get('vendor') or a.get('supplier') }}</dd>
             </div>
             {% endif %}
             {% if a.get('sku') or a.get('spn') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">SKU</dt>
-              <dd class="mt-1"><span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('sku') or a.get('spn') }}</span></dd>
+              <dd class="mt-1"><span id="ovw-sku-display" class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800 font-mono">{{ a.get('sku') or a.get('spn') }}</span></dd>
             </div>
             {% endif %}
             <div>
@@ -117,29 +163,48 @@
               <dd class="mt-1">
                 {% set policy = (entity.get('policy') or '').lower() %}
                 {% if policy == 'make' %}
-                  <span class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">make</span>
+                  <span id="ovw-policy-display" class="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800">make</span>
                 {% elif policy == 'buy' %}
-                  <span class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800">buy</span>
+                  <span id="ovw-policy-display" class="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800">buy</span>
                 {% elif policy == 'phantom' %}
-                  <span class="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800">phantom</span>
+                  <span id="ovw-policy-display" class="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800">phantom</span>
                 {% else %}
-                  <span class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">unspecified</span>
+                  <span id="ovw-policy-display" class="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-700">unspecified</span>
                 {% endif %}
               </dd>
             </div>
             <div>
               <dt class="text-sm font-medium text-gray-600">UOM</dt>
               <dd class="mt-1">
-                <span class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">{{ entity.get('uom', 'ea') }}</span>
+                <span id="ovw-uom-display" class="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">{{ entity.get('uom', 'ea') }}</span>
               </dd>
             </div>
             {% if entity.get('tags') %}
             <div class="sm:col-span-2">
               <dt class="text-sm font-medium text-gray-600">Tags</dt>
-              <dd class="mt-1 space-x-1">
+              <dd id="ovw-tags-display" class="mt-1 space-x-1">
                 {% for t in entity.get('tags') %}
                   <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">{{ t }}</span>
                 {% endfor %}
+              </dd>
+            </div>
+            {% endif %}
+            {% set attrs = entity.get('attrs') or {} %}
+            {% set skip_keys = ['manufacturer','mfr','mpn','mfr_pn','vendor','supplier','sku','spn'] %}
+            {% if attrs and attrs.items() %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Attributes</dt>
+              <dd class="mt-1">
+                <div id="ovw-attrs-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {% for k, v in (attrs|dictsort) %}
+                    {% if k not in skip_keys %}
+                    <div class="border border-gray-100 rounded p-3">
+                      <div class="text-xs font-medium text-gray-500">{{ k }}</div>
+                      <div class="mt-1 text-sm text-gray-900 break-words">{{ v }}</div>
+                    </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
               </dd>
             </div>
             {% endif %}
@@ -182,6 +247,22 @@
                 <label class="block text-xs font-medium text-gray-700">Tags (comma-separated)</label>
                 <input id="ovw-tags" type="text" value="{% if entity.get('tags') %}{{ entity.get('tags')|join(', ') }}{% endif %}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
               </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Attributes</label>
+                <div id="ovw-attrs-editor-list" class="mt-1 space-y-2">
+                  {% set attrs = entity.get('attrs') or {} %}
+                  {% for k, v in (attrs|dictsort) %}
+                  <div class="grid grid-cols-12 gap-2 items-center">
+                    <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key" value="{{ k }}">
+                    <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value" value="{{ v }}">
+                    <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="mt-2">
+                  <button type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="ovwAddAttrRow()">Add attribute</button>
+                </div>
+              </div>
             </div>
             <div class="mt-4 flex items-center gap-2">
               <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveOverview()">Save</button>
@@ -192,51 +273,6 @@
         </div>
       </div>
 
-      <!-- Attributes -->
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
-        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Attributes</h2>
-          <button id="attrs-edit-toggle" type="button" class="text-blue-600 hover:text-blue-900 text-sm" onclick="toggleAttrsMode()">Edit</button>
-        </div>
-        <div class="px-6 py-4">
-          <div id="attrs-display">
-          {% set attrs = entity.get('attrs') %}
-          {% if attrs and attrs.items() %}
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {% for k, v in attrs.items() %}
-            <div class="border border-gray-100 rounded p-3">
-              <div class="text-xs font-medium text-gray-500">{{ k }}</div>
-              <div class="mt-1 text-sm text-gray-900 break-words">{{ v }}</div>
-            </div>
-            {% endfor %}
-          </div>
-          {% else %}
-          <div class="text-sm text-gray-500">No attributes defined.</div>
-          {% endif %}
-          </div>
-
-          <div id="attrs-editor" class="hidden">
-            <div id="attrs-editor-list" class="space-y-2">
-              {% set attrs = entity.get('attrs') or {} %}
-              {% for k, v in attrs.items() %}
-              <div class="grid grid-cols-12 gap-2 items-center">
-                <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key" value="{{ k }}">
-                <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value" value="{{ v }}">
-                <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
-              </div>
-              {% endfor %}
-            </div>
-            <div class="mt-2">
-              <button type="button" class="px-2.5 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="addAttrRow()">Add attribute</button>
-            </div>
-            <div class="mt-4 flex items-center gap-2">
-              <button type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" onclick="saveAttrs()">Save</button>
-              <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="cancelAttrs()">Cancel</button>
-              <span id="attrs-error" class="ml-2 text-sm text-red-600"></span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -265,6 +301,35 @@
                 </tr>
               </thead>
               <tbody id="df-tbody" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Revisions -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-700">
+          <div class="flex flex-wrap items-end gap-2">
+            <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
+            <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="openRevConfirmModal()">Create & release revision</button>
+          </div>
+          <div id="revisions-error" class="mt-2 text-sm text-red-600"></div>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">ID</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Status</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Created</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Released</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Notes</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="revisions-tbody" class="divide-y divide-gray-100"></tbody>
             </table>
           </div>
         </div>
@@ -331,103 +396,7 @@
       {% endif %}
     </div>
 
-    <!-- Structure + Revisions + JSON -->
-    <div>
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Structure</h2>
-        </div>
-        <div class="px-6 py-4 text-sm text-gray-800 space-y-2">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">{{ (structure.files_root if structure else 'files') }}/</span>
-              {% if structure and structure.has_files %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_files_src else 'n' }}, exports: {{ 'y' if structure.has_files_exports else 'n' }}, docs: {{ 'y' if structure.has_files_docs else 'n' }}</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">revisions/</span>
-              {% if structure and structure.has_revisions %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-            </div>
-          </div>
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="font-medium">refs/</span>
-              {% if structure and structure.has_refs %}
-                <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-              {% else %}
-                <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
-              {% endif %}
-              {% if structure and structure.released_rev %}
-                <span class="ml-2 text-xs text-gray-600">released: {{ structure.released_rev }}</span>
-              {% endif %}
-            </div>
-          </div>
-          {% if structure and structure.has_files %}
-          <div class="pt-3">
-            <div class="text-xs text-gray-500 mb-1">Files actions</div>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open src</button>
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open exports</button>
-              <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open docs</button>
-            </div>
-          </div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
-          {% if structure and structure.released_rev %}
-            <span class="text-xs text-gray-600">released: {{ structure.released_rev }}</span>
-          {% endif %}
-        </div>
-        <div class="px-6 py-4 text-sm text-gray-700">
-          <div class="flex flex-wrap items-end gap-2">
-            <div class="text-xs text-gray-600">current: <span id="revisions-current-rev" class="font-mono">—</span></div>
-            <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
-            <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="bumpRevision()">Create & release revision</button>
-          </div>
-          <div id="revisions-error" class="mt-2 text-sm text-red-600"></div>
-          <div class="mt-3 overflow-x-auto">
-            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">ID</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Status</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Created</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Released</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Notes</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="revisions-tbody" class="divide-y divide-gray-100"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-lg font-semibold text-gray-900">Raw JSON</h2>
-        </div>
-        <div class="p-4">
-          <details>
-            <summary class="cursor-pointer text-sm text-blue-700 hover:underline">Show raw JSON</summary>
-            <pre class="mt-2 text-xs text-gray-700 overflow-x-auto">{{ entity | tojson(indent=2) }}</pre>
-          </details>
-        </div>
-      </div>
-    </div>
+    <!-- Right column intentionally left blank after moving Revisions -->
   </div>
 </div>
 {% endblock %}
@@ -435,10 +404,9 @@
 {% block scripts %}
 <script>
 function confirmRetire(){
-  const reason = prompt('Provide an optional reason for retiring this entity (or leave blank):');
-  if(reason === null) return false; // cancelled
-  document.getElementById('retire-reason-input').value = (reason||'').trim();
-  return true;
+  // Replaced native prompt with styled modal
+  openRetireModal();
+  return false;
 }
 
 // -----------------
@@ -447,22 +415,58 @@ function confirmRetire(){
 const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
-const FILES_ROOT = '{{ structure.files_root if structure else "files" }}';
+const FILES_ROOT = 'files';
+const ATTR_SKIP_KEYS = new Set(['manufacturer','mfr','mpn','mfr_pn','vendor','supplier','sku','spn']);
 
 // -----------------
 // Overview inline edit
 // -----------------
 let ovwEditMode = false;
+let ovwInitialState = null;
+function getOverviewCurrentState(){
+  const name = document.getElementById('ovw-name')?.value || '';
+  const description = document.getElementById('ovw-description')?.value || '';
+  const category = document.getElementById('ovw-category')?.value || '';
+  const policy = document.getElementById('ovw-policy')?.value || '';
+  const uom = document.getElementById('ovw-uom')?.value || '';
+  const tags = document.getElementById('ovw-tags')?.value || '';
+  const list = document.getElementById('ovw-attrs-editor-list');
+  const rows = Array.from(list ? list.children : []);
+  const attrs = {};
+  rows.forEach(row => {
+    const inputs = row.querySelectorAll('input');
+    if(inputs.length >= 2){
+      const k = (inputs[0].value||'').trim();
+      const v = inputs[1].value;
+      if(k){ attrs[k] = v; }
+    }
+  });
+  return { name, description, category, policy, uom, tags, attrs };
+}
 function toggleOverviewMode(){
-  ovwEditMode = !ovwEditMode;
   const disp = document.getElementById('overview-display');
   const ed = document.getElementById('overview-editor');
   const btn = document.getElementById('ovw-edit-toggle');
-  if(disp) disp.classList.toggle('hidden', ovwEditMode);
-  if(ed) ed.classList.toggle('hidden', !ovwEditMode);
-  if(btn) btn.textContent = ovwEditMode ? 'Done' : 'Edit';
+  if(!ovwEditMode){
+    // open editor
+    ovwEditMode = true;
+    if(disp) disp.classList.add('hidden');
+    if(ed) ed.classList.remove('hidden');
+    // Hide the top-right Edit button while editing; Save/Cancel are available below
+    if(btn) btn.classList.add('hidden');
+    ovwInitialState = getOverviewCurrentState();
+  }else{
+    // attempt to close editor
+    const cur = getOverviewCurrentState();
+    const changed = JSON.stringify(cur) !== JSON.stringify(ovwInitialState||{});
+    if(changed){
+      openOvwDiscardModal();
+      return; // keep editor open until user decides
+    }
+    doCloseOverviewEditor();
+  }
 }
-function cancelOverview(){
+function doCloseOverviewEditor(){
   ovwEditMode = false;
   const disp = document.getElementById('overview-display');
   const ed = document.getElementById('overview-editor');
@@ -470,8 +474,35 @@ function cancelOverview(){
   if(disp) disp.classList.remove('hidden');
   if(ed) ed.classList.add('hidden');
   if(btn) btn.textContent = 'Edit';
+  if(btn) btn.classList.remove('hidden');
   const err = document.getElementById('ovw-error');
   if(err) err.textContent = '';
+}
+function cancelOverview(){
+  // behave like closing the editor; confirm on unsaved changes
+  if(ovwEditMode){
+    const cur = getOverviewCurrentState();
+    const changed = JSON.stringify(cur) !== JSON.stringify(ovwInitialState||{});
+    if(changed){ openOvwDiscardModal(); return; }
+  }
+  doCloseOverviewEditor();
+}
+
+// Overview Discard Modal controls
+function openOvwDiscardModal(){ const m = document.getElementById('ovw-discard-modal'); if(m) m.classList.remove('hidden'); }
+function closeOvwDiscardModal(){ const m = document.getElementById('ovw-discard-modal'); if(m) m.classList.add('hidden'); }
+function confirmOvwDiscardModal(){ closeOvwDiscardModal(); doCloseOverviewEditor(); }
+function ovwAddAttrRow(){
+  const list = document.getElementById('ovw-attrs-editor-list');
+  if(!list) return;
+  const div = document.createElement('div');
+  div.className = 'grid grid-cols-12 gap-2 items-center';
+  div.innerHTML = `
+    <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key">
+    <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value">
+    <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
+  `;
+  list.appendChild(div);
 }
 async function saveOverview(){
   const name = document.getElementById('ovw-name').value;
@@ -483,57 +514,8 @@ async function saveOverview(){
   const err = document.getElementById('ovw-error');
   if(err) err.textContent = '';
   try{
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ updates: { name, description, category, policy, uom, tags } })
-    });
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Failed to update');
-    window.location.reload();
-  }catch(e){ if(err) err.textContent = e.message||String(e); }
-}
-
-// -----------------
-// Attributes inline edit
-// -----------------
-let attrsEditMode = false;
-function toggleAttrsMode(){
-  attrsEditMode = !attrsEditMode;
-  const disp = document.getElementById('attrs-display');
-  const ed = document.getElementById('attrs-editor');
-  const btn = document.getElementById('attrs-edit-toggle');
-  if(disp) disp.classList.toggle('hidden', attrsEditMode);
-  if(ed) ed.classList.toggle('hidden', !attrsEditMode);
-  if(btn) btn.textContent = attrsEditMode ? 'Done' : 'Edit';
-}
-function cancelAttrs(){
-  attrsEditMode = false;
-  const disp = document.getElementById('attrs-display');
-  const ed = document.getElementById('attrs-editor');
-  const btn = document.getElementById('attrs-edit-toggle');
-  if(disp) disp.classList.remove('hidden');
-  if(ed) ed.classList.add('hidden');
-  if(btn) btn.textContent = 'Edit';
-  const err = document.getElementById('attrs-error');
-  if(err) err.textContent = '';
-}
-function addAttrRow(){
-  const list = document.getElementById('attrs-editor-list');
-  if(!list) return;
-  const div = document.createElement('div');
-  div.className = 'grid grid-cols-12 gap-2 items-center';
-  div.innerHTML = `
-    <input type="text" class="col-span-4 border border-gray-300 rounded px-2 py-1" placeholder="key">
-    <input type="text" class="col-span-7 border border-gray-300 rounded px-2 py-1" placeholder="value">
-    <button type="button" class="col-span-1 text-red-600 hover:text-red-800" title="Remove" onclick="this.parentElement.remove()">×</button>
-  `;
-  list.appendChild(div);
-}
-async function saveAttrs(){
-  const err = document.getElementById('attrs-error');
-  if(err) err.textContent = '';
-  try{
-    const list = document.getElementById('attrs-editor-list');
+    // Build attrs from editor list
+    const list = document.getElementById('ovw-attrs-editor-list');
     const rows = Array.from(list ? list.children : []);
     const attrs = {};
     rows.forEach(row => {
@@ -546,11 +528,63 @@ async function saveAttrs(){
     });
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ updates: { attrs } })
+      body: JSON.stringify({ updates: { name, description, category, policy, uom, tags, attrs } })
     });
     const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Failed to update attributes');
-    window.location.reload();
+    if(!data.success) throw new Error(data.error||'Failed to update');
+    // Inline update display (best-effort; only updates existing elements)
+    const setText = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt||''; };
+    setText('ovw-name-display', name||SFID);
+    setText('ovw-description-display', description||'');
+    setText('ovw-category-display', category||'');
+    // Policy badge
+    const polEl = document.getElementById('ovw-policy-display');
+    if(polEl){
+      const lower = (policy||'').toLowerCase();
+      polEl.textContent = lower||'unspecified';
+      polEl.classList.remove('bg-blue-100','text-blue-800','bg-amber-100','text-amber-800','bg-purple-100','text-purple-800','bg-gray-100','text-gray-700');
+      if(lower==='make') polEl.classList.add('bg-blue-100','text-blue-800');
+      else if(lower==='buy') polEl.classList.add('bg-amber-100','text-amber-800');
+      else if(lower==='phantom') polEl.classList.add('bg-purple-100','text-purple-800');
+      else polEl.classList.add('bg-gray-100','text-gray-700');
+    }
+    // UOM
+    setText('ovw-uom-display', uom||'ea');
+    // Tags
+    const tagsEl = document.getElementById('ovw-tags-display');
+    if(tagsEl){
+      const parts = (tags||'').split(',').map(s=>s.trim()).filter(Boolean);
+      tagsEl.innerHTML = parts.map(t=>`<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">${t}</span>`).join(' ');
+    }
+    // Common attrs
+    const manufacturer = attrs.manufacturer || attrs.mfr || '';
+    const mpn = attrs.mpn || attrs.mfr_pn || '';
+    const supplier = attrs.vendor || attrs.supplier || '';
+    const skuVal = attrs.sku || attrs.spn || '';
+    setText('ovw-manufacturer-display', manufacturer);
+    const mpnEl = document.getElementById('ovw-mpn-display'); if(mpnEl) mpnEl.textContent = mpn;
+    setText('ovw-supplier-display', supplier);
+    const skuEl = document.getElementById('ovw-sku-display'); if(skuEl) skuEl.textContent = skuVal;
+    // Rebuild generic attributes grid
+    const grid = document.getElementById('ovw-attrs-grid');
+    if(grid){
+      const entries = Object.keys(attrs).filter(k=>!ATTR_SKIP_KEYS.has(k)).sort();
+      grid.innerHTML = entries.map(k=>`
+        <div class="border border-gray-100 rounded p-3">
+          <div class="text-xs font-medium text-gray-500">${k}</div>
+          <div class="mt-1 text-sm text-gray-900 break-words">${attrs[k]}</div>
+        </div>
+      `).join('');
+    }
+    // Close editor
+    ovwInitialState = getOverviewCurrentState();
+    ovwEditMode = false;
+    const disp = document.getElementById('overview-display');
+    const ed = document.getElementById('overview-editor');
+    const btn = document.getElementById('ovw-edit-toggle');
+    if(disp) disp.classList.remove('hidden');
+    if(ed) ed.classList.add('hidden');
+    if(btn) btn.textContent = 'Edit';
   }catch(e){ if(err) err.textContent = e.message||String(e); }
 }
 
@@ -737,8 +771,6 @@ async function loadRevisions(){
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions`);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load revisions');
-    const cur = document.getElementById('revisions-current-rev');
-    if(cur) cur.textContent = data.rev || '—';
     renderRevisionsRows(data.revisions||[]);
     showRevError('');
   }catch(e){ showRevError(e.message||String(e)); }
@@ -839,10 +871,8 @@ function dfRenderList(items){
     const size = isDir ? '—' : (it.size!=null?it.size:'—');
     const mtime = it.mtime||'—';
     const actions = isDir
-      ? `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="dfMovePrompt('${(it.path||'').replace(/'/g, "\\'")}', true)">Move</button>`+
-        `<button class="text-xs text-red-700 hover:underline" onclick="dfDeleteConfirm('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
-      : `<button class="text-xs text-blue-700 hover:underline mr-2" onclick="dfMovePrompt('${(it.path||'').replace(/'/g, "\\'")}', false)">Move</button>`+
-        `<button class="text-xs text-red-700 hover:underline" onclick="dfDeleteConfirm('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
+      ? `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
+      : `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50 hover:bg-gray-50">
         <td class="px-3 py-1.5 font-mono">${nameHtml}</td>
@@ -893,30 +923,67 @@ async function dfUploadSelected(ev){
   }
 }
 
-async function dfDeleteConfirm(relPath, isDir){
-  if(!confirm(`Delete ${isDir?'folder':'file'} "${relPath}"?`)) return;
+// Files: Delete/Move Modals
+let dfDeleteState = { path: '', isDir: false };
+let dfMoveState = { path: '', isDir: false };
+
+function openDfDeleteModal(relPath, isDir){
+  dfDeleteState = { path: relPath, isDir: !!isDir };
+  const nameEl = document.getElementById('df-delete-name');
+  if(nameEl){ nameEl.textContent = `${isDir?'folder':'file'} "${relPath}"`; }
+  const m = document.getElementById('df-delete-modal');
+  if(m) m.classList.remove('hidden');
+}
+function closeDfDeleteModal(){
+  const m = document.getElementById('df-delete-modal');
+  if(m) m.classList.add('hidden');
+  const err = document.getElementById('df-delete-error');
+  if(err) err.textContent = '';
+}
+async function submitDfDeleteModal(){
   try{
-    const url = isDir ? '/api/entities/'+encodeURIComponent(SFID)+'/files/rmdir' : '/api/entities/'+encodeURIComponent(SFID)+'/files/delete';
-    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: relPath }) });
+    const url = dfDeleteState.isDir ? '/api/entities/'+encodeURIComponent(SFID)+'/files/rmdir' : '/api/entities/'+encodeURIComponent(SFID)+'/files/delete';
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ path: dfDeleteState.path }) });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to delete');
+    closeDfDeleteModal();
     dfLoad();
-  }catch(e){ dfShowError(e.message||String(e)); }
+  }catch(e){ const err = document.getElementById('df-delete-error'); if(err) err.textContent = e.message||String(e); }
 }
 
-async function dfMovePrompt(relPath, isDir){
-  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to ${FILES_ROOT} root):`, relPath||'');
-  if(dst==null) return;
-  const ow = confirm('Overwrite destination if it exists?');
+function openDfMoveModal(relPath, isDir){
+  dfMoveState = { path: relPath, isDir: !!isDir };
+  const fromEl = document.getElementById('df-move-from');
+  const dstEl = document.getElementById('df-move-dst');
+  const owEl = document.getElementById('df-move-ow');
+  if(fromEl) fromEl.textContent = `${isDir?'folder':'file'} "${relPath}"`;
+  if(dstEl) dstEl.value = relPath||'';
+  if(owEl) owEl.checked = false;
+  const m = document.getElementById('df-move-modal');
+  if(m) m.classList.remove('hidden');
+}
+function closeDfMoveModal(){
+  const m = document.getElementById('df-move-modal');
+  if(m) m.classList.add('hidden');
+  const err = document.getElementById('df-move-error');
+  if(err) err.textContent = '';
+}
+async function submitDfMoveModal(){
+  const dstEl = document.getElementById('df-move-dst');
+  const owEl = document.getElementById('df-move-ow');
+  const dst = (dstEl?.value||'').trim();
+  const ow = !!(owEl?.checked);
+  if(!dst){ const err = document.getElementById('df-move-error'); if(err) err.textContent = 'Destination is required.'; return; }
   try{
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/files/move`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ src: relPath, dst: (dst||'').trim(), dir: isDir?'1':'0', overwrite: ow?'1':'0' })
+      body: JSON.stringify({ src: dfMoveState.path, dst, dir: dfMoveState.isDir?'1':'0', overwrite: ow?'1':'0' })
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to move');
+    closeDfMoveModal();
     dfLoad();
-  }catch(e){ dfShowError(e.message||String(e)); }
+  }catch(e){ const err = document.getElementById('df-move-error'); if(err) err.textContent = e.message||String(e); }
 }
 
 // Removed legacy dfSetSubdir(): no fixed subdirectories anymore
@@ -949,6 +1016,83 @@ function renderRevisionsRows(list){
   });
 }
 
+function openRevConfirmModal(){
+  const m = document.getElementById('rev-confirm-modal');
+  const notesEl = document.getElementById('rev-notes');
+  const target = document.getElementById('rev-confirm-notes');
+  if(target){
+    const notes = (notesEl?.value||'').trim();
+    target.textContent = notes || '—';
+  }
+  if(m){ m.classList.remove('hidden'); }
+}
+
+function closeRevConfirmModal(){
+  const m = document.getElementById('rev-confirm-modal');
+  if(m){ m.classList.add('hidden'); }
+  const err = document.getElementById('rev-confirm-error');
+  if(err){ err.textContent = ''; }
+}
+
+async function submitRevConfirmModal(){
+  // Close first to keep UI responsive
+  closeRevConfirmModal();
+  await bumpRevision();
+}
+
+// Retire: modal handlers
+function openRetireModal(){
+  const m = document.getElementById('retire-modal');
+  const inp = document.getElementById('retire-reason-input-modal');
+  if(inp) inp.value = '';
+  if(m) m.classList.remove('hidden');
+}
+function closeRetireModal(){
+  const m = document.getElementById('retire-modal');
+  if(m) m.classList.add('hidden');
+}
+function submitRetireModal(){
+  const modalInput = document.getElementById('retire-reason-input-modal');
+  const hiddenInput = document.getElementById('retire-reason-input');
+  const form = document.getElementById('retire-form');
+  if(hiddenInput && modalInput){ hiddenInput.value = (modalInput.value||'').trim(); }
+  if(form) form.submit();
+}
+
+// Release notes (release existing revision): modal handlers
+let releaseNotesTargetRev = null;
+function openReleaseNotesModal(rev){
+  releaseNotesTargetRev = rev || null;
+  const m = document.getElementById('release-notes-modal');
+  const ta = document.getElementById('release-notes-text');
+  const err = document.getElementById('release-notes-error');
+  if(err) err.textContent = '';
+  if(ta) ta.value = '';
+  if(m) m.classList.remove('hidden');
+}
+function closeReleaseNotesModal(){
+  const m = document.getElementById('release-notes-modal');
+  const err = document.getElementById('release-notes-error');
+  if(err) err.textContent = '';
+  if(m) m.classList.add('hidden');
+}
+async function submitReleaseNotesModal(){
+  const ta = document.getElementById('release-notes-text');
+  const err = document.getElementById('release-notes-error');
+  const rev = releaseNotesTargetRev;
+  if(!rev){ closeReleaseNotesModal(); return; }
+  try{
+    const notes = (ta?.value||'').trim();
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(rev)}/release`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(notes?{notes}:{})
+    });
+    const data = await res.json();
+    if(!data.success) throw new Error(data.error||'Failed to release revision');
+    closeReleaseNotesModal();
+    await loadRevisions();
+  }catch(e){ if(err) err.textContent = e.message||String(e); }
+}
+
 async function bumpRevision(){
   const notes = (document.getElementById('rev-notes')?.value||'').trim();
   try{
@@ -965,16 +1109,7 @@ async function bumpRevision(){
 }
 
 async function releaseRevision(rev){
-  const notes = prompt('Optional release notes (leave blank for none):')||'';
-  try{
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(rev)}/release`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(notes?{notes}:{})
-    });
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Failed to release revision');
-    await loadRevisions();
-  }catch(e){ showRevError(e.message||String(e)); }
+  openReleaseNotesModal(rev);
 }
 
 // Initial load from files root
@@ -999,14 +1134,12 @@ function closeBomTreeModal(){
 async function loadBomTree(){
   const err = document.getElementById('bom-tree-error');
   const cont = document.getElementById('bom-tree-container');
-  const md = document.getElementById('bom-tree-depth');
   if(err) err.textContent = '';
   if(cont) cont.innerHTML = '<div class="text-sm text-gray-500">Loading…</div>';
   // keep download link in sync with current inputs
   updateBomTreeDownloadHref();
   try{
-    const q = md && md.value !== '' ? `?max_depth=${encodeURIComponent(md.value)}` : '';
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep${q}`);
+    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/deep`);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load deep BOM');
     const nodes = data.nodes||[];
@@ -1017,9 +1150,7 @@ async function loadBomTree(){
 function updateBomTreeDownloadHref(){
   const a = document.getElementById('bom-tree-download');
   if(!a) return;
-  const md = document.getElementById('bom-tree-depth');
   const params = new URLSearchParams();
-  if(md && md.value !== '') params.set('max_depth', md.value);
   params.set('format', 'csv');
   const qs = params.toString();
   a.href = `/api/entities/${encodeURIComponent(SFID)}/bom/deep${qs?('?' + qs):''}`;
@@ -1085,6 +1216,94 @@ function renderDeepBomTree(nodes){
   <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDfMkdirModal(); });</script>
 </div>
 
+<!-- Revisions: Confirm Release Modal -->
+<div id="rev-confirm-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeRevConfirmModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-tags mr-2"></i>Confirm Release</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeRevConfirmModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-3">
+        <p>You're about to create and release a new revision for <span class="font-mono text-blue-700">{{ entity.sfid }}</span>.</p>
+        <div class="bg-gray-50 border border-gray-200 rounded p-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</div>
+          <div id="rev-confirm-notes" class="text-gray-800 break-words">—</div>
+        </div>
+        <div id="rev-confirm-error" class="text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeRevConfirmModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="submitRevConfirmModal()">Create & Release</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeRevConfirmModal(); });</script>
+</div>
+
+<!-- Overview: Discard Changes Modal -->
+<div id="ovw-discard-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeOvwDiscardModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-exclamation-triangle mr-2 text-amber-500"></i>Discard changes?</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeOvwDiscardModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-2">
+        <p>You have unsaved changes in the Overview editor. Do you want to discard them?</p>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeOvwDiscardModal()">Keep Editing</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700" onclick="confirmOvwDiscardModal()">Discard</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeOvwDiscardModal(); });</script>
+</div>
+
+<!-- Retire: Reason Modal -->
+<div id="retire-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeRetireModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-user-slash mr-2"></i>Retire Entity</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeRetireModal()">×</button>
+      </div>
+      <div class="px-5 py-4">
+        <label for="retire-reason-input-modal" class="block text-sm font-medium text-gray-700">Reason (optional)</label>
+        <textarea id="retire-reason-input-modal" class="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" rows="3" placeholder="e.g. superseded by new part"></textarea>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeRetireModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-700" onclick="submitRetireModal()">Retire</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeRetireModal(); });</script>
+</div>
+
+<!-- Revisions: Release Notes Modal -->
+<div id="release-notes-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeReleaseNotesModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-tag mr-2"></i>Release Notes</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeReleaseNotesModal()">×</button>
+      </div>
+      <div class="px-5 py-4">
+        <label for="release-notes-text" class="block text-sm font-medium text-gray-700">Notes (optional)</label>
+        <textarea id="release-notes-text" class="mt-1 w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" rows="3" placeholder="Add any release notes"></textarea>
+        <div id="release-notes-error" class="mt-2 text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeReleaseNotesModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="submitReleaseNotesModal()">Release</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeReleaseNotesModal(); });</script>
+</div>
+
 <!-- BOM Tree Modal -->
 <div id="bom-tree-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
   <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeBomTreeModal();">
@@ -1092,16 +1311,13 @@ function renderDeepBomTree(nodes){
       <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
         <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-sitemap mr-2"></i>Deep BOM Tree</h3>
         <div class="flex items-center gap-2">
-          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
+          <a id="bom-tree-download" href="#" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700" title="Download CSV" onclick="updateBomTreeDownloadHref();" download>
             <i class="fas fa-download mr-1"></i>Download CSV
           </a>
           <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeBomTreeModal()">×</button>
         </div>
       </div>
       <div class="px-5 py-3 border-b border-gray-100 flex items-center gap-2 text-sm">
-        <label class="text-gray-600">Max depth</label>
-        <input id="bom-tree-depth" type="number" min="0" class="w-24 border border-gray-300 rounded px-2 py-1" placeholder="(all)">
-        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="loadBomTree()">Apply</button>
         <div id="bom-tree-error" class="ml-auto text-sm text-red-600"></div>
       </div>
       <div class="p-5 max-h-[70vh] overflow-auto">

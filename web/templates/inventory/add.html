@@ -167,7 +167,7 @@
                 const deltaEl = document.getElementById('delta');
                 const seed = (fieldId === 'sfid') ? (sfidEl.value||'').trim() : (locEl.value||'').trim();
                 if(!seed){
-                    alert('Enter an SFID first.');
+                    showToast('Enter an SFID first.', { type: 'error' });
                     return;
                 }
                 const paramsNext = new URLSearchParams();
