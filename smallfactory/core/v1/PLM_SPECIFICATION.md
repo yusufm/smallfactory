@@ -11,6 +11,23 @@ Status: DRAFT — breaking changes permitted until PROD.
 
 ---
 
+## Global Identifiers (SFIDs)
+
+The smallFactory ID (`sfid`) is the canonical identifier for every entity.
+
+- Globally unique and never reused (temporal uniqueness).
+- Filesystem-safe across Windows/macOS/Linux.
+- Authoritative regex (pattern):
+  ```regex
+  ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
+  ```
+- Prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier.
+- Identity is the directory path `entities/<sfid>/`; do not include an `sfid` key in `entity.yml`.
+- Do not include a `kind` field; kind is inferred from the `sfid` prefix.
+- See Appendix: SFID naming conventions (recommended) for human-friendly patterns.
+
+---
+
 ## Repository layout (top-level)
 ```
 entities/                 # canonical source of truth for all entities
@@ -213,28 +230,12 @@ events:
 ---
 
 ## Inventory (MVP)
-
-SFID quick reference:
-
-- Authoritative regex:
-  ```regex
-  ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
+ 
+ SFIDs: See "Global Identifiers (SFIDs)" for the authoritative regex, prefixes, and invariants. For human-friendly patterns, see Appendix: SFID naming conventions (recommended).
+ 
+  Layout:
   ```
-- Common prefixes used here:
-  - Locations: `l_*` (e.g., `l_a1`, `l_bin7`, `l_line1`)
-  - Parts: `p_*` (e.g., `p_m3x10`, `p_cap_10uf`)
-
-Recommended naming conventions (non-normative):
-
-- Parts (`p_*`):
-  - Structure: `p_<part-number>[ _<classification> ... ]`
-  - In `<part-number>`, prefer hyphens for subcodes (e.g., `stm32-c`, `m3x10`).
-  - Classifications are separated by `_`; inside each classification use `[a-z0-9-]` (no `_`).
-  - Examples: `p_m3x10`, `p_m3x10_lot23`, `p_stm32-c_sn39402`.
-
-Layout:
-```
-inventory/
+  inventory/
   <sfid>/
     journal.ndjson           # append-only; one JSON object per line
     onhand.generated.yml     # optional per-part cache; do not hand-edit
@@ -479,6 +480,23 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 - PRs should state: "Specification compliant? Yes/No" and link to this file.
 
 ---
+
+## Appendix: SFID naming conventions (recommended)
+
+- Purpose: Improve searchability, interchangeability grouping, and lot/serial tracking. These conventions are HIGHLY RECOMMENDED but not required.
+
+- Parts (`p_*`):
+  - Structure: `p_<part-number>[ _<classification> ... ]`
+  - `<part-number>`: use lowercase letters/digits; `-` may separate subcodes (e.g., `stm32-c`, `m3x10`). Prefer hyphens in the base; reserve `_` for classification separators.
+  - Classification order and specificity: classifications SHOULD progress from general → specific left-to-right. Do not reorder once established.
+  - Prefix search rule: prefix matches at classification boundaries SHOULD find all more-specific variants. Example: `p_1kr` matches `p_1kr_lot21` and `p_1kr_lot21_sn39402`.
+  - Classification charset: within a classification, use `[a-z0-9-]`; do not use `_` inside classifications (only as the classification delimiter).
+  - Examples:
+    - `p_1kr`
+    - `p_1kr_lot21`, `p_1kr_lot52`
+    - `p_m3x10`
+    - `p_m3x10_lot23`
+    - `p_stm32-c_sn39402`, `p_stm32-c_sn59404`
 
 ## Optional: `.gitattributes` for LFS
 ```
