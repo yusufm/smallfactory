@@ -332,6 +332,21 @@ def cut_revision(
         elif child.is_dir():
             shutil.copytree(child, dest)
 
+    # Build and persist a resolved BOM tree for this snapshot before hashing artifacts
+    try:
+        bom_nodes = _build_bom_tree_nodes(datarepo_path, sfid)
+        bom_doc = {
+            "format": "bom_tree.v1",
+            "root": sfid,
+            "rev": label,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "nodes": bom_nodes,
+        }
+        _write_yaml(snap_dir / "bom_tree.yml", bom_doc)
+    except Exception:
+        # Non-fatal; if BOM cannot be generated, proceed without it
+        pass
+
     # Record artifacts and hashes for all copied files (exclude meta.yml which we write later)
     for p in snap_dir.rglob("*"):
         if p.is_file():
@@ -348,6 +363,8 @@ def cut_revision(
             role = "file"
             if rel_str == "entity.yml":
                 role = "entity"
+            elif rel_str == "bom_tree.yml":
+                role = "bom-tree"
             elif rel.parts and rel.parts[0] == "refs":
                 role = "ref"
             else:
@@ -400,6 +417,120 @@ def cut_revision(
 
     info = get_revisions(datarepo_path, sfid)
     return {"sfid": sfid, "rev": info.get("rev"), "revisions": info.get("revisions", [])}
+
+
+# -------------------------------
+# BOM traversal (resolved tree for snapshots)
+# -------------------------------
+def _resolve_rev_for_child(datarepo_path: Path, child_sfid: str, rev_spec) -> Optional[str]:
+    """Resolve a child rev spec to an actual label.
+
+    - If rev_spec is 'released' or falsy, return the current released pointer label (if any).
+    - Otherwise return str(rev_spec).
+    """
+    try:
+        s = ("" if rev_spec is None else str(rev_spec)).strip()
+    except Exception:
+        s = ""
+    if not s or s.lower() == "released":
+        try:
+            return _read_released_pointer(datarepo_path, child_sfid)
+        except Exception:
+            return None
+    return s
+
+
+def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Optional[int] = None) -> List[Dict]:
+    """Walk the BOM starting at root_sfid and return flat list of resolved nodes.
+
+    Node fields: parent, use, name, qty, rev_spec, rev (resolved), level, is_alt,
+    alternates_group, cumulative_qty, cycle
+    """
+    nodes: List[Dict] = []
+
+    def _get_name(sfid: str) -> str:
+        try:
+            ent = get_entity(datarepo_path, sfid)
+            name = str(ent.get("name", sfid))
+        except Exception:
+            name = sfid
+        return name
+
+    def _to_int_or_none(val):
+        try:
+            if isinstance(val, bool):
+                return None
+            return int(val)
+        except Exception:
+            return None
+
+    def recurse(parent_sfid: str, level: int, parent_mult: Optional[int], path_stack: List[str]):
+        if max_depth is not None and level > max_depth:
+            return
+        try:
+            lines = bom_list(datarepo_path, parent_sfid)
+        except Exception:
+            return
+        for line in lines or []:
+            if not isinstance(line, dict):
+                continue
+            child = str(line.get("use", "")).strip()
+            if not child:
+                continue
+            qty = line.get("qty", 1)
+            rev_spec = line.get("rev", "released")
+            alts = line.get("alternates") if isinstance(line.get("alternates"), list) else []
+            alt_group = line.get("alternates_group")
+            qty_int = _to_int_or_none(qty)
+            cum = qty_int if parent_mult is None else (qty_int * parent_mult if (qty_int is not None and parent_mult is not None) else None)
+            cycle = child in path_stack
+            node = {
+                "parent": parent_sfid,
+                "use": child,
+                "name": _get_name(child),
+                "qty": qty,
+                "rev_spec": rev_spec,
+                "rev": _resolve_rev_for_child(datarepo_path, child, rev_spec),
+                "level": level,
+                "is_alt": False,
+                "alternates_group": alt_group,
+                "cumulative_qty": cum,
+                "cycle": bool(cycle),
+            }
+            nodes.append(node)
+            if not cycle and child.startswith("p_"):
+                recurse(child, level + 1, cum if (cum is not None) else parent_mult, path_stack + [child])
+            for alt in alts:
+                alt_use = str((alt or {}).get("use", "")).strip()
+                if not alt_use:
+                    continue
+                alt_node = {
+                    "parent": parent_sfid,
+                    "use": alt_use,
+                    "name": _get_name(alt_use),
+                    "qty": qty,
+                    "rev_spec": rev_spec,
+                    "rev": _resolve_rev_for_child(datarepo_path, alt_use, rev_spec),
+                    "level": level + 1,
+                    "is_alt": True,
+                    "alternates_group": alt_group,
+                    "cumulative_qty": cum,
+                    "cycle": alt_use in path_stack,
+                }
+                nodes.append(alt_node)
+                if alt_use.startswith("p_") and alt_use not in path_stack:
+                    recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use])
+
+    recurse(root_sfid, 0, 1, [root_sfid])
+    return nodes
+
+
+def resolved_bom_tree(datarepo_path: Path, root_sfid: str, *, max_depth: Optional[int] = None) -> List[Dict]:
+    """Public API: return resolved BOM nodes for a root SFID.
+
+    Wrapper over internal traversal to be used by CLI/Web and other layers.
+    """
+    return _build_bom_tree_nodes(datarepo_path, root_sfid, max_depth=max_depth)
 
 
 def bump_revision(datarepo_path: Path, sfid: str, *, notes: Optional[str] = None) -> dict:

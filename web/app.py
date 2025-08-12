@@ -42,6 +42,7 @@ from smallfactory.core.v1.entities import (
     bom_set_line,
     bom_alt_add,
     bom_alt_remove,
+    resolved_bom_tree as ent_resolved_bom_tree,
 )
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
@@ -753,36 +754,19 @@ def api_bom_get(sfid):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
-# Deep BOM traversal (recursive)
+# Deep BOM traversal using core API
 def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
-    """Return a flat list of deep BOM nodes with metadata.
+    """Return a flat list of deep BOM nodes with metadata via core traversal.
 
-    Each node: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total
-    - level: 1 for immediate children of parent
-    - is_alt: True if node came from an alternate list
-    - cumulative_qty: multiplied along the path when quantities are integers, else None
-    - cycle: True if 'use' already appears in the current path; recursion stops on cycles
+    Preserves web semantics:
+    - level: 1 for immediate children (core is 0-based; we add +1)
+    - includes resolved_rev (resolved label) alongside rev (spec)
+    - enriches with onhand_total
     """
-    nodes = []
+    core_nodes = ent_resolved_bom_tree(datarepo_path, parent_sfid, max_depth=max_depth)
     onhand_cache: dict[str, int | None] = {}
 
-    def _get_name(sfid: str) -> str:
-        try:
-            ent = get_entity(datarepo_path, sfid)
-            return ent.get('name', sfid)
-        except Exception:
-            return sfid
-
-    def _mul(a, b):
-        try:
-            ai = int(a)
-            bi = int(b)
-            return ai * bi
-        except Exception:
-            return None
-
     def _get_onhand_total(sfid: str) -> int | None:
-        # Only parts have inventory
         if not isinstance(sfid, str) or not sfid.startswith('p_'):
             return None
         if sfid in onhand_cache:
@@ -796,99 +780,22 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
             onhand_cache[sfid] = None
             return None
 
-    def _dfs(cur_parent: str, level: int, path_stack: list[str], cum_qty: int | None):
-        try:
-            blist = bom_list(datarepo_path, cur_parent)
-        except Exception:
-            blist = []
-        if not isinstance(blist, list):
-            blist = []
-
-        for line in blist:
-            if not isinstance(line, dict):
-                continue
-            use = str(line.get('use', '')).strip()
-            if not use:
-                continue
-            qty = line.get('qty', 1) or 1
-            rev = line.get('rev', 'released') or 'released'
-            # Resolve 'released' pointer to concrete label if available (SPEC)
-            resolved_rev = rev
-            if rev == 'released' and use.startswith('p_'):
-                try:
-                    ptr = (datarepo_path / 'entities' / use / 'refs' / 'released')
-                    if ptr.exists():
-                        val = ptr.read_text(encoding='utf-8').strip()
-                        if val:
-                            resolved_rev = val
-                except Exception:
-                    pass
-            is_cycle = use in path_stack
-            cqty = _mul(cum_qty if cum_qty is not None else 1, qty)
-            node = {
-                'parent': cur_parent,
-                'use': use,
-                'name': _get_name(use),
-                'qty': qty,
-                'rev': rev,
-                'resolved_rev': resolved_rev,
-                'level': level,
-                'is_alt': False,
-                'alternates_group': line.get('alternates_group'),
-                'cumulative_qty': cqty,
-                'cycle': bool(is_cycle),
-                'onhand_total': _get_onhand_total(use),
-            }
-            nodes.append(node)
-
-            # Recurse into primary child if part and within depth and not a cycle
-            if not is_cycle and use.startswith('p_'):
-                if max_depth is None or level < max_depth:
-                    _dfs(use, level + 1, path_stack + [use], cqty)
-
-            # Alternates (each as its own node one level deeper)
-            alts = line.get('alternates')
-            if isinstance(alts, list):
-                for alt in alts:
-                    if not isinstance(alt, dict):
-                        continue
-                    aus = str(alt.get('use', '')).strip()
-                    if not aus:
-                        continue
-                    a_cycle = aus in path_stack
-                    acqty = _mul(cum_qty if cum_qty is not None else 1, qty)
-                    # Resolve released pointer for alternate
-                    a_resolved_rev = rev
-                    if rev == 'released' and aus.startswith('p_'):
-                        try:
-                            aptr = (datarepo_path / 'entities' / aus / 'refs' / 'released')
-                            if aptr.exists():
-                                aval = aptr.read_text(encoding='utf-8').strip()
-                                if aval:
-                                    a_resolved_rev = aval
-                        except Exception:
-                            pass
-                    a_node = {
-                        'parent': cur_parent,
-                        'use': aus,
-                        'name': _get_name(aus),
-                        'qty': qty,
-                        'rev': rev,
-                        'resolved_rev': a_resolved_rev,
-                        'level': level + 1,
-                        'is_alt': True,
-                        'alternates_group': line.get('alternates_group'),
-                        'cumulative_qty': acqty,
-                        'cycle': bool(a_cycle),
-                        'onhand_total': _get_onhand_total(aus),
-                    }
-                    nodes.append(a_node)
-                    if not a_cycle and aus.startswith('p_'):
-                        if max_depth is None or (level + 1) < max_depth:
-                            _dfs(aus, level + 2, path_stack + [aus], acqty)
-
-    # Start traversal at level 1 (children of parent)
-    _dfs(parent_sfid, 1, [parent_sfid], 1)
+    nodes = []
+    for n in core_nodes:
+        nodes.append({
+            'parent': n.get('parent'),
+            'use': n.get('use'),
+            'name': n.get('name'),
+            'qty': n.get('qty'),
+            'rev': n.get('rev_spec', 'released'),
+            'resolved_rev': n.get('rev'),
+            'level': (n.get('level') or 0) + 1,
+            'is_alt': n.get('is_alt', False),
+            'alternates_group': n.get('alternates_group'),
+            'cumulative_qty': n.get('cumulative_qty'),
+            'cycle': n.get('cycle', False),
+            'onhand_total': _get_onhand_total(n.get('use')),
+        })
     return nodes
 
 
