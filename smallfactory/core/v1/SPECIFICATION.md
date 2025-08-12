@@ -21,7 +21,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity.
   ```regex
   ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
   ```
-- Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier.
+- Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build.
 - Identity is the directory path `entities/<sfid>/`; do not include an `sfid` key in `entity.yml`.
 - Do not include a `kind` field; kind is inferred from the `sfid` prefix.
 - See Appendix: SFID naming conventions (recommended) for human-friendly patterns.
@@ -78,14 +78,13 @@ Top‑level directories (recap):
 
 ### Build entities (`b_*`)
 
-Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given top part (optionally parameterized by config), and binds to the resolved lock (`build.lock.yml`).
+Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given top part (optionally parameterized by config).
 
 Example `entities/b_2025_0001/entity.yml`:
 ```yaml
 top_part: p_toaster_assembly       # required top-level part being built
 config:                            # optional config passed to resolver (used by `when` rules)
   voltage: 120
-lockfile: entities/b_2025_0001/build.lock.yml
 qty_planned: 100                   # optional
 qty_completed: 20                  # optional; tooling may derive/update
 site: l_line1                      # optional production line/location
@@ -107,13 +106,12 @@ units:
 ```
 
 Notes:
-- A Build points to an immutable lockfile; updating the lock requires producing a new lock and, if needed, a new Build entity.
-- Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
+ - Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
 
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
 uom: ea                    # optional; defaults to 'ea' if omitted
-policy: make               # optional (make|buy|phantom)
+policy: make               # optional (make|buy)
 attrs:                     # free-form attributes (string|number|bool|array|object)
   voltage: [120, 240]
 
@@ -136,7 +134,7 @@ bom:
 Note on kind inference and validation:
 
 - Do not include a `kind` field; tooling infers kind from the `sfid` prefix.
-- Recognized prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier. More may be added later.
+- Recognized prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build. More may be added later.
 - If a `kind` field appears, the linter errors; kinds are prefix-inferred only.
 - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/`.
 - No legacy aliases: `children` is invalid; only `bom` is accepted.
@@ -204,7 +202,6 @@ A single-line text file containing the current revision label, e.g.:
 ```
 workorders/workorder-000123/
   order.yml
-  build.lock.yml           # copy of the lock used for this work order
 ```
 
 ```yaml
@@ -302,13 +299,15 @@ Linter rules:
       p_res_1k: 500
     total: 684
     ```
- - Behavior:
-   - On each `sf inventory post`, tooling updates both:
-     - `inventory/<part_sfid>/onhand.generated.yml` (by_location, total)
-     - `inventory/_location/<location_sfid>/onhand.generated.yml` (parts, total)
-   - `sf inventory rebuild` regenerates per-part caches from journals, then per-location caches from per-part caches.
-{{ ... }}
-   - Do not hand-edit generated files.
+  - Behavior:
+    - On each `sf inventory post`, tooling updates both:
+      - `inventory/<part_sfid>/onhand.generated.yml` (by_location, total)
+      - `inventory/_location/<location_sfid>/onhand.generated.yml` (parts, total)
+    - `sf inventory rebuild` regenerates per-part caches from journals, then per-location caches from per-part caches.
+    - The per-location cache includes only parts with nonzero on-hand at that location (omit zeros).
+    - Both caches are updated in the same commit as the journal append; commit messages include `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
+    - `as_of` timestamps reflect the authoritative time derived from the journal entry’s ULID for posts; for rebuilds, `as_of` is the rebuild time.
+    - Do not hand-edit generated files.
 
 Appendix: .gitattributes (recommended)
 ```
@@ -348,7 +347,7 @@ Algorithm (conceptual):
      - Try `alternates` in order, then `alternates_group` (pick any **released** member).
      - If none valid → error.
 4. Accumulate quantities (respecting nested assemblies) and return the resolved tree + a flattened list.
-5. Optionally write `build.lock.yml` with all `{use, rev, qty}` (and artifact hashes if desired).
+5. Return the resolved result; downstream systems may persist their own representations if desired.
 
 **Note:** There are no separate BOM files. The BOM is the `bom` list present in each part's `entity.yml`.
 
@@ -359,7 +358,6 @@ Algorithm (conceptual):
 sf part revision cut <sfid> <revision> --include exports docs --note "..."
 sf part revision release <sfid> <revision>
 sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
-sf lock <top_part> [--rev <selector|label>] [--config <kv|yaml>] [--output <path>]
 sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
@@ -367,7 +365,7 @@ sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
  
 # Build lifecycle (minimal):
-sf build create <b_sfid> --top-part <p_sfid> [--rev <selector|label>] [--config <kv|yaml>] [--lockfile <path>] [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
+sf build create <b_sfid> --top-part <p_sfid> [--rev <selector|label>] [--config <kv|yaml>] [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
 sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty-completed <n>]
 ```
 
@@ -375,7 +373,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
 
 ## Conventions & constraints
 - `entities/<sfid>/entity.yml` is **required** and must include:
-  - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `b_`, `sup_`). The prefix determines the kind.
+  - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `b_`). The prefix determines the kind.
   - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
   - Only parts (explicit or inferred) may define `bom`, `files/`, `revisions/`, and `refs/`.
   - No legacy aliases: the `children` key MUST NOT appear.
@@ -383,7 +381,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
 - Revision directories under `revisions/` are **immutable** once released.
 - `refs/released` is the **only pointer** you flip to advance the world.
 - Large binaries (`*.step`, `*.stl`, `*.pdf`) should be tracked with **Git LFS**.
-- SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `b_`, `sup_`).
+- SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `b_`).
 
 - Auto-commit history:
   - All mutating operations auto-commit with clear messages including the required `::sfid::` tokens.
@@ -408,7 +406,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
   - All tools and interfaces (CLI, Web, scripts, integrations) MUST call the Core API for all reads and writes.
   - Direct file mutations are not supported; the API performs validation, defaulting, linting, and writes with required commit metadata.
 
-Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `b_...`, `sup_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`), change record `eco` ID, or supplier-provided IDs.
+Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.g., `p_...`, `l_...`, `b_...`). External identifiers keep their native names, e.g., manufacturer part numbers (`mpn`) or change record `eco` IDs.
 
 ---
 
@@ -416,9 +414,9 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 
 - Minimal required fields:
   - All entities: omit the `sfid` field; identity is the directory name and must be a valid SFID with a recognized prefix. Do not include a `kind` field.
-  - Parts (explicit or inferred): `uom` is optional; default 'ea'.
+  - Parts (explicit or inferred): `uom` is optional and defaults to 'ea'.
 - Kind inference:
-  - Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build, `sup_` → supplier.
+  - Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build.
 - BOM defaults (applied by resolver and validated by linter):
   - `qty` defaults to `1` if omitted.
   - `rev` defaults to `released` if omitted.
@@ -428,7 +426,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
   - Traverse `bom` only for parts (explicit or inferred).
   - Treat missing `qty` as `1` and missing `rev` as `released`.
   - If the chosen revision is not released, try `alternates` then `alternates_group`; error if none are valid.
-  - `policy: buy` parts with no `revisions/` and no `refs/released` are allowed; treat as implicit released. In `build.lock.yml`, record `rev: implicit` for such parts.
+  - `policy: buy` parts with no `revisions/` and no `refs/released` are allowed; treat as implicit released.
 - Linter behavior (friendly but strict):
   - Explain inferred kinds and defaulted fields; error on kind/prefix mismatch, invalid keys, `bom` on non-part, and any legacy keys. Do not error on missing `uom`; default to 'ea' at read time.
 
@@ -440,8 +438,8 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
    - Only `entities/p_adapter/refs/released` changes to `"B"`.
 3) `sf resolve p_toaster_assembly`
    - Uses `rev: released` pointers; no product files edited.
-4) `sf lock p_toaster_assembly`
-   - Produces a reproducible build recipe; work orders and builds reference it.
+4) Produce units using the resolved BOM.
+  - Work orders and builds reference the resolved state implicitly via repo commit and released pointers.
 
 ---
 
@@ -513,3 +511,43 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 *.sldprt filter=lfs diff=lfs merge=lfs -text
 *.sldasm filter=lfs diff=lfs merge=lfs -text
 ```
+
+---
+
+
+---
+
+## Entities by prefix (allowed keys)
+
+Allowed top-level keys in `entities/<sfid>/entity.yml` by inferred kind (from prefix):
+
+- Parts (`p_*`): `uom`, `policy`, `attrs`, `bom`.
+- Locations (`l_*`): `attrs` (free-form descriptive metadata).
+- Builds (`b_*`): `top_part`, `config`, `qty_planned`, `qty_completed`, `site`, `workorder`, `status`, `opened_at`, `closed_at`, `notes`, `units`.
+
+Notes:
+
+- Do not include `sfid` or `kind`; both are inferred from the directory name.
+- Only parts may define `bom`, `files/`, `revisions/`, and `refs/` directories.
+
+---
+
+## Alternates catalog (optional)
+
+An optional, explicit registry of alternates groups may be maintained for deterministic selection when `alternates_group` is specified in a BOM line.
+
+- Layout:
+  - `catalog/alternates/<group>.yml`
+- Example:
+  ```yaml
+  # catalog/alternates/ISO_M3x10.yml
+  group: ISO_M3x10
+  members:
+    - p_m3x10_zinc
+    - p_m3x10_ss
+    - p_m3x10_blackoxide
+  ```
+- Resolver behavior with `alternates_group`:
+  - Consider `members` in listed order and select the first member whose `refs/released` exists and is valid; otherwise error.
+  - If the catalog file is missing, the resolver will error when an `alternates_group` is encountered.
+
