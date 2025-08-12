@@ -1023,10 +1023,11 @@ def main():
     def _walk_bom(datarepo_path: pathlib.Path, root_sfid: str, *, max_depth: int | None = None) -> list:
         """Walk the BOM tree starting at root_sfid and return a flat list of nodes with level metadata.
 
-        Each node dict contains: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle.
+        Each node dict contains: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total.
         """
         nodes: list = []
         name_cache: dict[str, str] = {}
+        onhand_cache: dict[str, int | None] = {}
 
         def get_name(sfid: str) -> str:
             if sfid in name_cache:
@@ -1038,6 +1039,25 @@ def main():
                 name = sfid
             name_cache[sfid] = name
             return name
+
+        def get_onhand_total(sfid: str) -> int | None:
+            if sfid in onhand_cache:
+                return onhand_cache[sfid]
+            try:
+                if not sfid:
+                    onhand_cache[sfid] = None
+                    return None
+                # Only compute for parts; other entities may not have inventory
+                if not sfid.startswith("p_"):
+                    onhand_cache[sfid] = None
+                    return None
+                oh = inventory_onhand(datarepo_path, part=sfid)
+                total = int(oh.get("total", 0)) if isinstance(oh, dict) else None
+                onhand_cache[sfid] = total
+                return total
+            except Exception:
+                onhand_cache[sfid] = None
+                return None
 
         def recurse(parent_sfid: str, level: int, parent_mult: int | None, path_stack: list[str]):
             if max_depth is not None and level > max_depth:
@@ -1069,6 +1089,7 @@ def main():
                     "alternates_group": alt_group,
                     "cumulative_qty": cum,
                     "cycle": bool(cycle),
+                    "onhand_total": get_onhand_total(child),
                 }
                 nodes.append(node)
 
@@ -1092,6 +1113,7 @@ def main():
                         "alternates_group": alt_group,
                         "cumulative_qty": cum,
                         "cycle": alt_use in path_stack,
+                        "onhand_total": get_onhand_total(alt_use),
                     }
                     nodes.append(alt_node)
                     if alt_use.startswith("p_") and alt_use not in path_stack:
@@ -1128,7 +1150,9 @@ def main():
                     rev = n.get("rev", "released")
                     cum = n.get("cumulative_qty")
                     cum_s = f" (cum={cum})" if cum is not None else ""
-                    print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{cum_s}")
+                    oh = n.get("onhand_total")
+                    oh_s = f" onhand={oh}" if oh is not None else ""
+                    print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{oh_s}{cum_s}")
 
     def cmd_bom_add(args):
         datarepo_path = _repo_path()

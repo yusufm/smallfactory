@@ -1216,6 +1216,7 @@ function renderDeepBomTree(nodes){
     const cyc = !!n.cycle;
     const qty = (n.qty==null?1:n.qty);
     const cqty = n.cumulative_qty!=null ? ` <span class="ml-1 text-xs text-gray-500">(cum ${esc(n.cumulative_qty)})</span>` : '';
+    const oh = (n.onhand_total!=null) ? ` <span class="ml-2 text-[10px] uppercase tracking-wide text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">on-hand ${esc(n.onhand_total)}</span>` : '';
     const flags = `${isAlt?'<span class="ml-2 text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">ALT</span>':''}`+
                   `${cyc?'<span class="ml-2 text-[10px] uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">CYCLE</span>':''}`;
     // Close until target level
@@ -1232,7 +1233,7 @@ function renderDeepBomTree(nodes){
             ` <span class="text-gray-900">${esc(n.name||n.use)}</span>`+
             ` <span class="text-gray-700">× ${esc(qty)}</span>`+
             ` <span class="text-xs text-gray-500">${esc(n.rev||'released')}</span>`+
-            flags + cqty;
+            oh + flags + cqty;
   });
   while(cur > 0){ html += '</li></ul>'; cur--; }
   return html;
