@@ -240,7 +240,7 @@
 
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Design Files</h2>
+          <h2 class="text-lg font-semibold text-gray-900">Files</h2>
           <div class="flex items-center gap-1 text-sm"></div>
         </div>
         <div class="px-6 py-3 text-sm text-gray-800">
@@ -340,10 +340,10 @@
         <div class="px-6 py-4 text-sm text-gray-800 space-y-2">
           <div class="flex items-center justify-between">
             <div>
-              <span class="font-medium">design/</span>
-              {% if structure and structure.has_design %}
+              <span class="font-medium">{{ (structure.files_root if structure else 'files') }}/</span>
+              {% if structure and structure.has_files %}
                 <span class="ml-2 inline-flex items-center text-green-700">✔︎ present</span>
-                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_design_src else 'n' }}, exports: {{ 'y' if structure.has_design_exports else 'n' }}, docs: {{ 'y' if structure.has_design_docs else 'n' }}</span>
+                <span class="ml-2 text-xs text-gray-500">src: {{ 'y' if structure.has_files_src else 'n' }}, exports: {{ 'y' if structure.has_files_exports else 'n' }}, docs: {{ 'y' if structure.has_files_docs else 'n' }}</span>
               {% else %}
                 <span class="ml-2 inline-flex items-center text-gray-500">○ absent</span>
               {% endif %}
@@ -372,9 +372,9 @@
               {% endif %}
             </div>
           </div>
-          {% if structure and structure.has_design %}
+          {% if structure and structure.has_files %}
           <div class="pt-3">
-            <div class="text-xs text-gray-500 mb-1">Design actions</div>
+            <div class="text-xs text-gray-500 mb-1">Files actions</div>
             <div class="flex flex-wrap gap-2">
               <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open src</button>
               <button type="button" disabled title="Coming soon" class="px-2.5 py-1 rounded-md text-xs border border-gray-300 bg-white text-gray-700 cursor-not-allowed opacity-50">Open exports</button>
@@ -447,6 +447,7 @@ function confirmRetire(){
 const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
+const FILES_ROOT = '{{ structure.files_root if structure else "files" }}';
 
 // -----------------
 // Overview inline edit
@@ -744,7 +745,7 @@ async function loadRevisions(){
 }
 
 // -----------------
-// Design Files (paths relative to design/ root)
+// Files (paths are relative to the active files root)
 // -----------------
 let dfPath = '';
 
@@ -757,7 +758,7 @@ function dfUpdateTabs(){ /* removed: legacy subdir tabs */ }
 
 function dfBreadcrumbHtml(){
   const parts = (dfPath||'').split('/').filter(Boolean);
-  let html = `<button type="button" class="text-gray-500 hover:underline" onclick="dfGoto('')">design</button>`;
+  let html = `<button type="button" class="text-gray-500 hover:underline" onclick="dfGoto('')">${FILES_ROOT}</button>`;
   let acc = '';
   parts.forEach((p, idx) => {
     acc = acc ? `${acc}/${p}` : p;
@@ -904,7 +905,7 @@ async function dfDeleteConfirm(relPath, isDir){
 }
 
 async function dfMovePrompt(relPath, isDir){
-  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to design root):`, relPath||'');
+  const dst = prompt(`Move ${isDir?'folder':'file'} to (relative to ${FILES_ROOT} root):`, relPath||'');
   if(dst==null) return;
   const ow = confirm('Overwrite destination if it exists?');
   try{
@@ -976,7 +977,7 @@ async function releaseRevision(rev){
   }catch(e){ showRevError(e.message||String(e)); }
 }
 
-// Initial load from design root
+// Initial load from files root
 dfLoad();
 loadRevisions();
 if(isPart){ bomLoad(); }
@@ -1062,7 +1063,7 @@ function renderDeepBomTree(nodes){
 {% endblock %}
 
 {% block modals %}
-<!-- Design Files: New Folder Modal -->
+<!-- Files: New Folder Modal -->
 <div id="df-mkdir-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
   <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeDfMkdirModal();">
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">

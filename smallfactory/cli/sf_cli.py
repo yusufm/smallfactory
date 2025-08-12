@@ -144,38 +144,38 @@ def main():
     ent_rev_release.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
     ent_rev_release.add_argument("--notes", default=None, help="Optional release notes")
 
-    # entities > files group (design-area file and folder management)
-    ent_files = ent_sub.add_parser("files", help="Manage design files and folders (mutable)")
+    # entities > files group (working files area)
+    ent_files = ent_sub.add_parser("files", help="Manage files and folders (working area)")
     files_sub = ent_files.add_subparsers(dest="files_cmd", required=False, parser_class=SFArgumentParser)
 
-    ef_ls = files_sub.add_parser("ls", help="List files and folders under design/")
+    ef_ls = files_sub.add_parser("ls", help="List files and folders under files/")
     ef_ls.add_argument("sfid", help="Entity SFID")
-    ef_ls.add_argument("--path", default=None, help="Relative path within design/ (optional)")
+    ef_ls.add_argument("--path", default=None, help="Relative path within files/ (optional)")
     ef_ls.add_argument("-r", "--recursive", action="store_true", help="Recursive listing")
     ef_ls.add_argument("--glob", default=None, help="Glob filter applied to relative paths")
 
-    ef_mkdir = files_sub.add_parser("mkdir", help="Create a folder under design/")
+    ef_mkdir = files_sub.add_parser("mkdir", help="Create a folder under files/")
     ef_mkdir.add_argument("sfid", help="Entity SFID")
-    ef_mkdir.add_argument("path", help="Folder path to create (relative to design/)")
+    ef_mkdir.add_argument("path", help="Folder path to create (relative to files/)")
 
     ef_rmdir = files_sub.add_parser("rmdir", help="Remove an empty folder (only .gitkeep allowed)")
     ef_rmdir.add_argument("sfid", help="Entity SFID")
-    ef_rmdir.add_argument("path", help="Folder path to remove (relative to design/)")
+    ef_rmdir.add_argument("path", help="Folder path to remove (relative to files/)")
 
-    ef_add = files_sub.add_parser("add", help="Upload a file into design/")
+    ef_add = files_sub.add_parser("add", help="Upload a file into files/")
     ef_add.add_argument("sfid", help="Entity SFID")
     ef_add.add_argument("src", help="Local source filepath")
-    ef_add.add_argument("dst", help="Destination path under design/ (e.g., foo/bar.ext)")
+    ef_add.add_argument("dst", help="Destination path under files/ (e.g., foo/bar.ext)")
     ef_add.add_argument("--overwrite", action="store_true", help="Overwrite destination if exists")
 
-    ef_rm = files_sub.add_parser("rm", help="Delete a file from design/")
+    ef_rm = files_sub.add_parser("rm", help="Delete a file from files/")
     ef_rm.add_argument("sfid", help="Entity SFID")
-    ef_rm.add_argument("path", help="File path to remove (relative to design/)")
+    ef_rm.add_argument("path", help="File path to remove (relative to files/)")
 
-    ef_mv = files_sub.add_parser("mv", help="Move/rename a file or folder within design/")
+    ef_mv = files_sub.add_parser("mv", help="Move/rename a file or folder within files/")
     ef_mv.add_argument("sfid", help="Entity SFID")
-    ef_mv.add_argument("src", help="Source path (relative to design/)")
-    ef_mv.add_argument("dst", help="Destination path (relative to design/)")
+    ef_mv.add_argument("src", help="Source path (relative to files/)")
+    ef_mv.add_argument("dst", help="Destination path (relative to files/)")
     ef_mv.add_argument("--dir", action="store_true", help="Treat paths as directories (move_dir)")
     ef_mv.add_argument("--overwrite", action="store_true", help="Overwrite destination if exists")
 
@@ -764,7 +764,7 @@ def main():
         else:
             print(f"[smallFactory] Retired entity '{args.sfid}'")
 
-    # Entities > Files handlers (design area)
+    # Entities > Files handlers (working files area)
     def _print_or_dump(obj, human_line: str | None = None):
         fmt = _fmt()
         if fmt == "json":
@@ -773,6 +773,16 @@ def main():
             print(yaml.safe_dump(obj, sort_keys=False))
         elif human_line is not None:
             print(human_line)
+
+    def _files_root_name(datarepo_path: pathlib.Path, sfid: str) -> str:
+        ent_dir = pathlib.Path(datarepo_path) / "entities" / sfid
+        files_dir = ent_dir / "files"
+        design_dir = ent_dir / "design"
+        if files_dir.exists():
+            return "files"
+        if design_dir.exists():
+            return "design"
+        return "files"
 
     def _suggest_commit(sfid: str, op: str, details: str | None = None):
         # Per user preference: do not auto-commit, just suggest a command
@@ -796,7 +806,7 @@ def main():
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         if _fmt() == "human":
-            base = "design"
+            base = _files_root_name(datarepo_path, args.sfid)
             rel = getattr(args, "path", None)
             print(f"{args.sfid} {base}{('/' + rel) if rel else ''}:")
             dirs = [i for i in res.get("items", []) if i.get("type") == "dir"]
@@ -816,8 +826,9 @@ def main():
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        _print_or_dump(res, human_line=f"[smallFactory] Created folder design/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-mkdir", f"path=design/{args.path}")
+        root = _files_root_name(datarepo_path, args.sfid)
+        _print_or_dump(res, human_line=f"[smallFactory] Created folder {root}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-mkdir", f"path={root}/{args.path}")
 
     def cmd_entities_files_rmdir(args):
         datarepo_path = _repo_path()
@@ -826,8 +837,9 @@ def main():
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        _print_or_dump(res, human_line=f"[smallFactory] Removed empty folder design/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-rmdir", f"path=design/{args.path}")
+        root = _files_root_name(datarepo_path, args.sfid)
+        _print_or_dump(res, human_line=f"[smallFactory] Removed empty folder {root}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-rmdir", f"path={root}/{args.path}")
 
     def cmd_entities_files_add(args):
         datarepo_path = _repo_path()
@@ -847,8 +859,9 @@ def main():
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        _print_or_dump(res, human_line=f"[smallFactory] Uploaded file to design/{args.dst} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-add", f"path=design/{args.dst}")
+        root = _files_root_name(datarepo_path, args.sfid)
+        _print_or_dump(res, human_line=f"[smallFactory] Uploaded file to {root}/{args.dst} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-add", f"path={root}/{args.dst}")
 
     def cmd_entities_files_rm(args):
         datarepo_path = _repo_path()
@@ -857,8 +870,9 @@ def main():
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
-        _print_or_dump(res, human_line=f"[smallFactory] Deleted file design/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-rm", f"path=design/{args.path}")
+        root = _files_root_name(datarepo_path, args.sfid)
+        _print_or_dump(res, human_line=f"[smallFactory] Deleted file {root}/{args.path} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-rm", f"path={root}/{args.path}")
 
     def cmd_entities_files_mv(args):
         datarepo_path = _repo_path()
@@ -883,8 +897,9 @@ def main():
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
         kind = "folder" if bool(getattr(args, "dir", False)) else "file"
-        _print_or_dump(res, human_line=f"[smallFactory] Moved {kind} within design: {args.src} -> {args.dst} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-mv", f"src=design/{args.src} dst=design/{args.dst}")
+        root = _files_root_name(datarepo_path, args.sfid)
+        _print_or_dump(res, human_line=f"[smallFactory] Moved {kind} within {root}: {args.src} -> {args.dst} on '{args.sfid}'")
+        _suggest_commit(args.sfid, "files-mv", f"src={root}/{args.src} dst={root}/{args.dst}")
 
 
     # Entities > Revision handlers

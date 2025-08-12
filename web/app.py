@@ -306,14 +306,16 @@ def entities_view(sfid):
 
         # Structure presence per PLM SPEC (best-effort; directories may be optional)
         ent_dir = Path(datarepo_path) / "entities" / sfid
-        design_dir = ent_dir / "design"
+        files_dir = ent_dir / "files"
+        working_dir = files_dir
         revisions_dir = ent_dir / "revisions"
         refs_dir = ent_dir / "refs"
         structure = {
-            'has_design': design_dir.exists(),
-            'has_design_src': (design_dir / "src").exists(),
-            'has_design_exports': (design_dir / "exports").exists(),
-            'has_design_docs': (design_dir / "docs").exists(),
+            'files_root': 'files',
+            'has_files': working_dir.exists(),
+            'has_files_src': (working_dir / "src").exists(),
+            'has_files_exports': (working_dir / "exports").exists(),
+            'has_files_docs': (working_dir / "docs").exists(),
             'has_revisions': revisions_dir.exists(),
             'has_refs': refs_dir.exists(),
             'released_rev': None,
@@ -874,7 +876,7 @@ def api_bom_set(sfid):
 
 
 # -----------------------
-# Design files API endpoints (AJAX)
+# Files API endpoints (AJAX)
 # -----------------------
 from smallfactory.core.v1.files import (
     list_files as files_list,
@@ -885,6 +887,10 @@ from smallfactory.core.v1.files import (
     move_file as files_move_file,
     move_dir as files_move_dir,
 )
+
+def _files_root_name(datarepo_path: Path, sfid: str) -> str:
+    # Canonical working root is 'files' only (no legacy support)
+    return "files"
 
 @app.route('/api/entities/<sfid>/files', methods=['GET'])
 def api_files_list(sfid):
@@ -909,8 +915,9 @@ def api_files_mkdir(sfid):
             return jsonify({'success': False, 'error': 'Missing path'}), 400
         res = files_mkdir(datarepo_path, sfid, path=path)
         # Git autocommit
-        rel = f"entities/{sfid}/design/{path}".rstrip('/')
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: mkdir {sfid} design/{path}", [rel])
+        root_name = _files_root_name(datarepo_path, sfid)
+        rel = f"entities/{sfid}/{root_name}/{path}".rstrip('/')
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: mkdir {sfid} {root_name}/{path}", [rel])
         return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -926,8 +933,9 @@ def api_files_rmdir(sfid):
             return jsonify({'success': False, 'error': 'Missing path'}), 400
         res = files_rmdir(datarepo_path, sfid, path=path)
         # Stage only the removed directory path to capture deletions beneath it
-        stage_target = f"entities/{sfid}/design/{path}".rstrip('/')
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: rmdir {sfid} design/{path}", [stage_target])
+        root_name = _files_root_name(datarepo_path, sfid)
+        stage_target = f"entities/{sfid}/{root_name}/{path}".rstrip('/')
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: rmdir {sfid} {root_name}/{path}", [stage_target])
         return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -944,8 +952,9 @@ def api_files_upload(sfid):
             return jsonify({'success': False, 'error': 'Missing path or file'}), 400
         b = f.read()
         res = files_upload(datarepo_path, sfid, path=path, file_bytes=b, overwrite=overwrite)
-        rel = f"entities/{sfid}/design/{path}"
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: upload {sfid} design/{path}", [rel])
+        root_name = _files_root_name(datarepo_path, sfid)
+        rel = f"entities/{sfid}/{root_name}/{path}"
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: upload {sfid} {root_name}/{path}", [rel])
         return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -960,8 +969,9 @@ def api_files_delete(sfid):
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'}), 400
         res = files_delete(datarepo_path, sfid, path=path)
-        rel = f"entities/{sfid}/design/{path}"
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: delete {sfid} design/{path}", [rel])
+        root_name = _files_root_name(datarepo_path, sfid)
+        rel = f"entities/{sfid}/{root_name}/{path}"
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: delete {sfid} {root_name}/{path}", [rel])
         return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -983,15 +993,16 @@ def api_files_move(sfid):
         else:
             res = files_move_file(datarepo_path, sfid, src=src, dst=dst, overwrite=overwrite)
         # Stage both src and dst paths only to capture renames/deletions
+        root_name = _files_root_name(datarepo_path, sfid)
         stage_paths = []
         if is_dir:
             stage_paths = [
-                f"entities/{sfid}/design/{src}".rstrip('/'),
-                f"entities/{sfid}/design/{dst}".rstrip('/'),
+                f"entities/{sfid}/{root_name}/{src}".rstrip('/'),
+                f"entities/{sfid}/{root_name}/{dst}".rstrip('/'),
             ]
         else:
-            stage_paths = [f"entities/{sfid}/design/{src}", f"entities/{sfid}/design/{dst}"]
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: move {sfid} design: {src} -> {dst}", stage_paths)
+            stage_paths = [f"entities/{sfid}/{root_name}/{src}", f"entities/{sfid}/{root_name}/{dst}"]
+        did_commit = _maybe_git_autocommit(datarepo_path, f"web: move {sfid} {root_name}: {src} -> {dst}", stage_paths)
         return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400

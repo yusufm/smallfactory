@@ -28,8 +28,10 @@ def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
     return _entities_dir(datarepo_path) / sfid
 
 
-def _design_root(datarepo_path: Path, sfid: str) -> Path:
-    root = _entity_dir(datarepo_path, sfid) / "design"
+def _files_root(datarepo_path: Path, sfid: str) -> Path:
+    """Return the working files root for an entity (files/ only)."""
+    ent = _entity_dir(datarepo_path, sfid)
+    root = ent / "files"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -52,7 +54,7 @@ def _resolve_within(root: Path, rel_path: Optional[str]) -> Path:
     try:
         candidate.relative_to(root_res)
     except Exception:
-        raise ValueError("Path escapes the design root scope")
+        raise ValueError("Path escapes the files root scope")
     return candidate
 
 
@@ -68,13 +70,13 @@ def list_files(
     recursive: bool = False,
     glob: Optional[str] = None,
 ) -> Dict:
-    """List files and folders under entities/<sfid>/design[/path].
+    """List files and folders under entities/<sfid>/files[/path].
 
     Returns dict: { "sfid", "path", "items": [ {type, name, path, size, mtime} ] }
     - type: 'file' or 'dir'
-    - path: POSIX-style path relative to design/
+    - path: POSIX-style path relative to the files root
     """
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     base = _resolve_within(root, path)
     if not base.exists():
         return {"sfid": sfid, "path": path or "", "items": []}
@@ -122,7 +124,7 @@ def list_files(
 
 
 # -------------------------------
-# Mutations (design area only)
+# Mutations (files area only)
 # -------------------------------
 
 def mkdir(
@@ -131,11 +133,11 @@ def mkdir(
     *,
     path: str,
 ) -> Dict:
-    """Create a folder and place a .gitkeep inside so git tracks it."""
-    root = _design_root(datarepo_path, sfid)
+    """Create a folder in the files area and place a .gitkeep so git tracks it."""
+    root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if root == target:
-        raise ValueError("Refusing to create the design root itself")
+        raise ValueError("Refusing to create the files root itself")
     target.mkdir(parents=True, exist_ok=True)
     keep = target / ".gitkeep"
     if not keep.exists():
@@ -150,12 +152,12 @@ def rmdir(
     path: str,
 ) -> Dict:
     """Delete an empty folder. Empty means only optional .gitkeep present."""
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_dir():
         raise FileNotFoundError("Folder does not exist")
     if target == root:
-        raise ValueError("Cannot remove the design root")
+        raise ValueError("Cannot remove the files root")
     # Determine emptiness ignoring .gitkeep
     children = [p for p in target.iterdir() if p.name != ".gitkeep"]
     if children:
@@ -176,8 +178,8 @@ def upload_file(
     file_bytes: bytes,
     overwrite: bool = False,
 ) -> Dict:
-    """Upload (write) a file to design area at path. Creates parents as needed."""
-    root = _design_root(datarepo_path, sfid)
+    """Upload (write) a file to the files area at path. Creates parents as needed."""
+    root = _files_root(datarepo_path, sfid)
     dest = _resolve_within(root, path)
     if dest.exists() and dest.is_dir():
         raise IsADirectoryError("Destination is a directory")
@@ -195,7 +197,7 @@ def delete_file(
     *,
     path: str,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_file():
         raise FileNotFoundError("File not found")
@@ -211,7 +213,7 @@ def move_file(
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)
     if not src_p.exists() or not src_p.is_file():
@@ -238,13 +240,13 @@ def move_dir(
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)
     if not src_p.exists() or not src_p.is_dir():
         raise FileNotFoundError("Source folder not found")
     if src_p == root:
-        raise ValueError("Cannot move the design root")
+        raise ValueError("Cannot move the files root")
     if dst_p.exists():
         if dst_p.is_file():
             raise NotADirectoryError("Destination is a file")
@@ -273,8 +275,8 @@ def stream_file(
     *,
     path: str,
 ) -> Dict:
-    """Return in-memory bytes and metadata for a design file."""
-    root = _design_root(datarepo_path, sfid)
+    """Return in-memory bytes and metadata for a files-area file."""
+    root = _files_root(datarepo_path, sfid)
     p = _resolve_within(root, path)
     if not p.exists() or not p.is_file():
         raise FileNotFoundError("File not found")
@@ -289,12 +291,12 @@ def zip_files(
     *,
     paths: Iterable[str],
 ) -> bytes:
-    """Return a zip archive (bytes) containing the requested design files/folders.
+    """Return a zip archive (bytes) containing the requested files/folders.
 
     - Folder entries include their entire contents.
-    - Paths are validated and must reside under the design root.
+    - Paths are validated and must reside under the files root.
     """
-    root = _design_root(datarepo_path, sfid)
+    root = _files_root(datarepo_path, sfid)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for rel in paths:
