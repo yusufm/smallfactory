@@ -738,7 +738,7 @@ def _enrich_bom_rows(datarepo_path, bom):
                 'qty': qty,
                 'rev': rev,
                 'alternates': alternates,
-                'alternates_group': line.get('alternates_group')
+                'alternates_group': line.get('alternates_group'),
             })
     return rows
 
@@ -757,13 +757,14 @@ def api_bom_get(sfid):
 def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
     """Return a flat list of deep BOM nodes with metadata.
 
-    Each node: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle
+    Each node: parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total
     - level: 1 for immediate children of parent
     - is_alt: True if node came from an alternate list
     - cumulative_qty: multiplied along the path when quantities are integers, else None
     - cycle: True if 'use' already appears in the current path; recursion stops on cycles
     """
     nodes = []
+    onhand_cache: dict[str, int | None] = {}
 
     def _get_name(sfid: str) -> str:
         try:
@@ -778,6 +779,21 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
             bi = int(b)
             return ai * bi
         except Exception:
+            return None
+
+    def _get_onhand_total(sfid: str) -> int | None:
+        # Only parts have inventory
+        if not isinstance(sfid, str) or not sfid.startswith('p_'):
+            return None
+        if sfid in onhand_cache:
+            return onhand_cache[sfid]
+        try:
+            oh = inventory_onhand(datarepo_path, part=sfid)
+            total = int(oh.get('total', 0)) if isinstance(oh, dict) else None
+            onhand_cache[sfid] = total
+            return total
+        except Exception:
+            onhand_cache[sfid] = None
             return None
 
     def _dfs(cur_parent: str, level: int, path_stack: list[str], cum_qty: int | None):
@@ -821,6 +837,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
                 'alternates_group': line.get('alternates_group'),
                 'cumulative_qty': cqty,
                 'cycle': bool(is_cycle),
+                'onhand_total': _get_onhand_total(use),
             }
             nodes.append(node)
 
@@ -863,6 +880,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
                         'alternates_group': line.get('alternates_group'),
                         'cumulative_qty': acqty,
                         'cycle': bool(a_cycle),
+                        'onhand_total': _get_onhand_total(aus),
                     }
                     nodes.append(a_node)
                     if not a_cycle and aus.startswith('p_'):
@@ -893,7 +911,7 @@ def api_bom_deep(sfid):
         fmt = (request.args.get('format') or '').lower()
         if fmt == 'csv':
             # Build CSV from nodes
-            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle']
+            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle', 'onhand_total']
             sio = io.StringIO()
             writer = csv.DictWriter(sio, fieldnames=headers)
             writer.writeheader()
