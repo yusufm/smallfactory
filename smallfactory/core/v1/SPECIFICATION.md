@@ -7,7 +7,7 @@ Status: DRAFT — breaking changes permitted until PROD.
 - **Parts** are entities with an optional `bom` (i.e., assemblies) — one schema.
 - **No standalone BOM files** — BOM is inferred from `bom`.
 - **Revisions** are immutable snapshots inside each part; a `released` pointer selects the current one.
-- **Finished goods/SKUs** reference a top part + optional config; serials are created at build time.
+- **Finished goods/SKUs** reference a top part + optional config; per-unit serials are recorded within Build entities.
 
 ---
 
@@ -34,7 +34,6 @@ entities/                 # canonical source of truth for all entities
 finished_goods/           # SKUs and build records (no per-unit data here)
 inventory/                # per-part journals and generated on-hand caches
 workorders/               # work orders (optional, but recommended)
-serials/                  # per-unit records (one file per unit)
 ```
 
 ---
@@ -71,7 +70,7 @@ Top‑level directories (recap):
 
   • `finished_goods/<sku>/sku.yml` — Defines the top part and optional config; `rev` defaults to `released` if omitted.
 
-  • `finished_goods/<sku>/builds/<date-or-id>/build.lock.yml` — Resolved, reproducible BOM lock captured at build start; referenced by work orders and serials.
+  • `finished_goods/<sku>/builds/<date-or-id>/build.lock.yml` — Resolved, reproducible BOM lock captured at build start; referenced by work orders and builds.
 
 • **`inventory/`** — Per‑part journals and derived on‑hand caches:
 
@@ -81,7 +80,7 @@ Top‑level directories (recap):
 
 • **`workorders/`** — One directory per work order, at minimum containing `order.yml` (qty/site/status, etc.).
 
-• **`serials/`** — One file per built unit at `serials/<sku>/<year>/<ULID>.yml`, recording status and events over the unit’s lifecycle.
+ 
 
 ### Build entities (`b_*`)
 
@@ -101,10 +100,19 @@ status: open                       # open|in_progress|completed|canceled
 opened_at: 2025-08-10T19:40:00Z    # optional timestamps
 closed_at: 2025-08-11T02:12:00Z
 notes: "First pilot run on new fixture"
+
+# Per-unit tracking lives here; no top-level serials/ directory
+units:
+  - serial: 01J9Z9Q6H3J6NRS4K1YV3M8U5K   # ULID or OEM serial; unique per unit
+    label: TOAST-25-223-0001             # optional human label
+    status: built                        # built|shipped|scrapped|reworked|...
+    events:
+      - ts: 2025-08-10T20:12:33Z
+        action: test
+        result: pass
 ```
 
 Notes:
-- Serials may reference a Build via `build: b_*` in addition to or instead of `workorder`.
 - A Build points to an immutable lockfile; updating the lock requires producing a new lock and, if needed, a new Build entity.
 - Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
 
@@ -218,7 +226,7 @@ sku:
 
 ---
 
-## Work orders & serials (where per-unit data lives)
+## Work orders & per‑unit tracking (via builds)
 **Work order (optional but recommended):**
 ```
 workorders/workorder-000123/
@@ -234,23 +242,7 @@ qty: 3
 site: l_sanjose
 opened_at: 2025-08-10T19:40:00Z
 ```
-
-**Serials (canonical, one file per unit):**
-```
-serials/<sku>/<year>/<ULID>.yml
-```
-```yaml
-serial: 01J9Z9Q6H3J6NRS4K1YV3M8U5K
-label: TOAST-25-223-0001
-sku: fg_toaster_black_120v
-workorder: workorder-000123
-lockfile: ../../../../finished_goods/fg_toaster_black_120v/builds/2025-08-10/build.lock.yml
-status: built
-events:
-  - ts: 2025-08-10T20:12:33Z
-    action: test
-    result: pass
-```
+Per‑unit records (serials, events) are captured under the associated Build’s `entities/b_*/entity.yml` in the `units` list.
 
 ---
 
@@ -321,7 +313,7 @@ Linter rules:
 
 - Validate that `part` (derived from path) and `location` SFIDs exist in `entities/`.
 - Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom`.
-- For serialized parts, prefer `qty_delta` ∈ {+1, −1} with a `serial` pointer.
+- For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
 - Generated files (`onhand.generated.yml`) must not be hand-edited.
  Optional per-location on-hand cache (reverse index):
  
@@ -394,11 +386,15 @@ sf part revision cut <sfid> <revision> --include exports docs --note "..."
 sf part revision release <sfid> <revision>
 sf resolve finished_goods/<sku>
 sf lock finished_goods/<sku> [--output <path>]
-sf serial mint --workorder <workorder> --qty <n>
+sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
 sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
+ 
+# Build lifecycle (minimal):
+sf build create <b_sfid> --sku <sku> --lockfile <path> [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
+sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty-completed <n>]
 ```
 
 ---
@@ -428,6 +424,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - Commit metadata tokens:
   - Commits that affect an entity MUST include `::sfid::<SFID>` in the message.
   - For inventory posts, include both tokens: `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
+  - For builds, include `::sfid::<BUILD_SFID>` (e.g., `::sfid::b_2025_0001`).
 - Output modes: CLI and API support `human`, `json`, and `yaml` outputs; field shapes are stable within a major version.
 - Determinism: Given the same repo state and inputs, operations produce the same results.
 - Branding: User-facing name is "smallFactory" (lowercase s, uppercase F).
@@ -472,7 +469,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 3) `sf resolve finished_goods/fg_toaster_black_120v`
    - Uses `rev: released` pointers; no product files edited.
 4) `sf lock finished_goods/fg_toaster_black_120v`
-   - Produces a reproducible build recipe; work orders and serials reference it.
+   - Produces a reproducible build recipe; work orders and builds reference it.
 
 ---
 
@@ -532,7 +529,6 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
      - `b_<sku>_<yyyymmdd>` e.g., `b_fg_toaster_black_120v_20250810`
    - Charset: `[a-z0-9_-]`; avoid uppercase. Keep tokens general → specific left-to-right.
    - Example references:
-     - Serials may include `build: b_2025_0001`.
      - Commits touching a build MUST include `::sfid::b_...`.
 
 ## Optional: `.gitattributes` for LFS
