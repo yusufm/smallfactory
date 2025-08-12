@@ -270,6 +270,35 @@
         </div>
       </div>
 
+      <!-- Revisions -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
+        </div>
+        <div class="px-6 py-4 text-sm text-gray-700">
+          <div class="flex flex-wrap items-end gap-2">
+            <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
+            <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="openRevConfirmModal()">Create & release revision</button>
+          </div>
+          <div id="revisions-error" class="mt-2 text-sm text-red-600"></div>
+          <div class="mt-3 overflow-x-auto">
+            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">ID</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Status</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Created</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Released</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Notes</th>
+                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="revisions-tbody" class="divide-y divide-gray-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {% set is_part = (entity.sfid and entity.sfid[:2] == 'p_') %}
       {% if is_part %}
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" id="bom-card">
@@ -331,41 +360,7 @@
       {% endif %}
     </div>
 
-    <!-- Structure + Revisions -->
-    <div>
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
-        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 class="text-lg font-semibold text-gray-900">Revisions</h2>
-          {% if released_rev %}
-            <span class="text-xs text-gray-600">released: {{ released_rev }}</span>
-          {% endif %}
-        </div>
-        <div class="px-6 py-4 text-sm text-gray-700">
-          <div class="flex flex-wrap items-end gap-2">
-            <div class="text-xs text-gray-600">current: <span id="revisions-current-rev" class="font-mono">—</span></div>
-            <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
-            <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="bumpRevision()">Create & release revision</button>
-          </div>
-          <div id="revisions-error" class="mt-2 text-sm text-red-600"></div>
-          <div class="mt-3 overflow-x-auto">
-            <table class="min-w-full w-full table-auto text-sm divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">ID</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Status</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Created</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Released</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Notes</th>
-                  <th class="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 sticky top-0 z-10">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="revisions-tbody" class="divide-y divide-gray-100"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-      
-    </div>
+    <!-- Right column intentionally left blank after moving Revisions -->
   </div>
 </div>
 {% endblock %}
@@ -675,8 +670,6 @@ async function loadRevisions(){
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions`);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load revisions');
-    const cur = document.getElementById('revisions-current-rev');
-    if(cur) cur.textContent = data.rev || '—';
     renderRevisionsRows(data.revisions||[]);
     showRevError('');
   }catch(e){ showRevError(e.message||String(e)); }
@@ -887,6 +880,30 @@ function renderRevisionsRows(list){
   });
 }
 
+function openRevConfirmModal(){
+  const m = document.getElementById('rev-confirm-modal');
+  const notesEl = document.getElementById('rev-notes');
+  const target = document.getElementById('rev-confirm-notes');
+  if(target){
+    const notes = (notesEl?.value||'').trim();
+    target.textContent = notes || '—';
+  }
+  if(m){ m.classList.remove('hidden'); }
+}
+
+function closeRevConfirmModal(){
+  const m = document.getElementById('rev-confirm-modal');
+  if(m){ m.classList.add('hidden'); }
+  const err = document.getElementById('rev-confirm-error');
+  if(err){ err.textContent = ''; }
+}
+
+async function submitRevConfirmModal(){
+  // Close first to keep UI responsive
+  closeRevConfirmModal();
+  await bumpRevision();
+}
+
 async function bumpRevision(){
   const notes = (document.getElementById('rev-notes')?.value||'').trim();
   try{
@@ -1021,6 +1038,31 @@ function renderDeepBomTree(nodes){
     </div>
   </div>
   <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDfMkdirModal(); });</script>
+</div>
+
+<!-- Revisions: Confirm Release Modal -->
+<div id="rev-confirm-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeRevConfirmModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-tags mr-2"></i>Confirm Release</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeRevConfirmModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-3">
+        <p>You're about to create and release a new revision for <span class="font-mono text-blue-700">{{ entity.sfid }}</span>.</p>
+        <div class="bg-gray-50 border border-gray-200 rounded p-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</div>
+          <div id="rev-confirm-notes" class="text-gray-800 break-words">—</div>
+        </div>
+        <div id="rev-confirm-error" class="text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeRevConfirmModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="submitRevConfirmModal()">Create & Release</button>
+      </div>
+    </div>
+  </div>
+  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeRevConfirmModal(); });</script>
 </div>
 
 <!-- BOM Tree Modal -->
