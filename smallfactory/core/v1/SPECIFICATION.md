@@ -7,7 +7,7 @@ Status: DRAFT — breaking changes permitted until PROD.
 - **Parts** are entities with an optional `bom` (i.e., assemblies) — one schema.
 - **No standalone BOM files** — BOM is inferred from `bom`.
 - **Revisions** are immutable snapshots inside each part; a `released` pointer selects the current one.
-- **Finished goods/SKUs** reference a top part + optional config; per-unit serials are recorded within Build entities.
+- **Finished goods** are Build entities of a top part + optional config; per-unit serials are recorded within the Build.
 
 ---
 
@@ -31,7 +31,6 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity.
 ## Repository layout (top-level)
 ```
 entities/                 # canonical source of truth for all entities
-finished_goods/           # SKUs and build records (no per-unit data here)
 inventory/                # per-part journals and generated on-hand caches
 workorders/               # work orders (optional, but recommended)
 ```
@@ -63,16 +62,11 @@ entities/<sfid>/
 • **`refs/`** — Small text pointers that select important revisions (e.g., `refs/released` contains the current rev label). Tooling updates these; avoid manual edits.
 
 Top‑level directories (recap):
+ 
+ • **`entities/`** — Canonical home of all entities; one directory per SFID.
 
-• **`entities/`** — Canonical home of all entities; one directory per SFID.
-
-• **`finished_goods/`** — SKUs and build records. Recommended layout:
-
-  • `finished_goods/<sku>/sku.yml` — Defines the top part and optional config; `rev` defaults to `released` if omitted.
-
-  • `finished_goods/<sku>/builds/<date-or-id>/build.lock.yml` — Resolved, reproducible BOM lock captured at build start; referenced by work orders and builds.
-
-• **`inventory/`** — Per‑part journals and derived on‑hand caches:
+ 
+ • **`inventory/`** — Per‑part journals and derived on‑hand caches:
 
   • `inventory/p_*/journal.ndjson` — Append‑only quantity deltas by location.
 
@@ -84,14 +78,14 @@ Top‑level directories (recap):
 
 ### Build entities (`b_*`)
 
-Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given SKU (or top part), and binds to the resolved lock (`build.lock.yml`).
+Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given top part (optionally parameterized by config), and binds to the resolved lock (`build.lock.yml`).
 
 Example `entities/b_2025_0001/entity.yml`:
 ```yaml
-sku: fg_toaster_black_120v         # SKU being built (preferred)
-# Alternatively, specify the top part explicitly if not using a SKU:
-# top_part: p_toaster_assembly
-lockfile: finished_goods/fg_toaster_black_120v/builds/2025-08-10/build.lock.yml
+top_part: p_toaster_assembly       # required top-level part being built
+config:                            # optional config passed to resolver (used by `when` rules)
+  voltage: 120
+lockfile: entities/b_2025_0001/build.lock.yml
 qty_planned: 100                   # optional
 qty_completed: 20                  # optional; tooling may derive/update
 site: l_line1                      # optional production line/location
@@ -203,28 +197,7 @@ A single-line text file containing the current revision label, e.g.:
 
 ---
 
-## Finished goods (SKUs)
-```
-finished_goods/<sku>/
-  sku.yml
-  builds/
-    2025-08-10/
-      build.lock.yml      # generated: exact revs used for this build
-```
-
-### `sku.yml`
-```yaml
-top_part: p_toaster
-rev: released              # selector; can be explicit label if you want a frozen SKU
-config:                    # optional config passed to resolver (used by `when` rules)
-  voltage: 120
-sku:
-  upc: 123456789012
-  color: black
-  region: US
-```
-
----
+ 
 
 ## Work orders & per‑unit tracking (via builds)
 **Work order (optional but recommended):**
@@ -359,12 +332,13 @@ total: 184
 ---
 
 ## Resolver behavior (deterministic)
-**Input:** a path to `finished_goods/<sku>` (and repo state/commit).  
+**Input:** a top part SFID (and optional config/rev selector), plus repo state/commit.  
 **Output:** a fully resolved BOM with exact part SFIDs and revision labels.
 
 Algorithm (conceptual):
-1. Load `sku.yml` → get `top_part`, SKU `rev` selector (e.g., `released`), and `config`.
-2. Depth-first walk from `entities/<top_part>/entity.yml`.
+1. Depth-first walk from `entities/<top_part>/entity.yml`.
+   - Use provided `rev` selector or default to `released`.
+   - Apply provided `config` to evaluate `when` rules.
 3. For each bom line:
    - Evaluate `when` against `config`; skip if it doesn’t match.
    - Determine target revision:
@@ -384,8 +358,8 @@ Algorithm (conceptual):
 ```
 sf part revision cut <sfid> <revision> --include exports docs --note "..."
 sf part revision release <sfid> <revision>
-sf resolve finished_goods/<sku>
-sf lock finished_goods/<sku> [--output <path>]
+sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
+sf lock <top_part> [--rev <selector|label>] [--config <kv|yaml>] [--output <path>]
 sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
@@ -393,7 +367,7 @@ sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
  
 # Build lifecycle (minimal):
-sf build create <b_sfid> --sku <sku> --lockfile <path> [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
+sf build create <b_sfid> --top-part <p_sfid> [--rev <selector|label>] [--config <kv|yaml>] [--lockfile <path>] [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
 sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty-completed <n>]
 ```
 
@@ -428,7 +402,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
 - Output modes: CLI and API support `human`, `json`, and `yaml` outputs; field shapes are stable within a major version.
 - Determinism: Given the same repo state and inputs, operations produce the same results.
 - Branding: User-facing name is "smallFactory" (lowercase s, uppercase F).
-- Predictable layout: Top-level directories (e.g., `entities/`, `inventory/`, `finished_goods/`, `workorders/`) are stable; new capabilities add new top-level dirs.
+- Predictable layout: Top-level directories (e.g., `entities/`, `inventory/`, `workorders/`) are stable; new capabilities add new top-level dirs.
 
 - Single source of truth API:
   - All tools and interfaces (CLI, Web, scripts, integrations) MUST call the Core API for all reads and writes.
@@ -455,8 +429,6 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
   - Treat missing `qty` as `1` and missing `rev` as `released`.
   - If the chosen revision is not released, try `alternates` then `alternates_group`; error if none are valid.
   - `policy: buy` parts with no `revisions/` and no `refs/released` are allowed; treat as implicit released. In `build.lock.yml`, record `rev: implicit` for such parts.
-- Finished goods defaults:
-  - In `finished_goods/<sku>/sku.yml`, `rev` defaults to `released` if omitted.
 - Linter behavior (friendly but strict):
   - Explain inferred kinds and defaulted fields; error on kind/prefix mismatch, invalid keys, `bom` on non-part, and any legacy keys. Do not error on missing `uom`; default to 'ea' at read time.
 
@@ -466,9 +438,9 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 1) Edit CAD for **p_adapter**, export into `files/`, commit.
 2) `sf part revision cut p_adapter B && sf part revision release p_adapter B`
    - Only `entities/p_adapter/refs/released` changes to `"B"`.
-3) `sf resolve finished_goods/fg_toaster_black_120v`
+3) `sf resolve p_toaster_assembly`
    - Uses `rev: released` pointers; no product files edited.
-4) `sf lock finished_goods/fg_toaster_black_120v`
+4) `sf lock p_toaster_assembly`
    - Produces a reproducible build recipe; work orders and builds reference it.
 
 ---
@@ -526,7 +498,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
    - Suggested structures (pick one and keep it consistent):
      - `b_<yyyy>_<ordinal>` e.g., `b_2025_0001`
      - `b_<yyyymmdd>_<line>_<run>` e.g., `b_20250810_line1_run3`
-     - `b_<sku>_<yyyymmdd>` e.g., `b_fg_toaster_black_120v_20250810`
+     - `b_<top>_<yyyymmdd>` e.g., `b_p_toaster_assembly_20250810`
    - Charset: `[a-z0-9_-]`; avoid uppercase. Keep tokens general → specific left-to-right.
    - Example references:
      - Commits touching a build MUST include `::sfid::b_...`.
