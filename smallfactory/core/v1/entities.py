@@ -127,20 +127,24 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     data_to_write = dict(data)
     data_to_write.pop("sfid", None)
     _write_yaml(fp, data_to_write)
-    # Optional scaffold for parts (p_*) per PLM SPEC (design/, revisions/, refs/)
+    # Optional scaffold for parts (p_*) per PLM SPEC (files/, revisions/, refs/)
     # We create empty directories with .gitkeep files so Git tracks them.
     paths_to_commit = [fp]
     try:
         if sfid.startswith("p_"):
             root_dir = fp.parent
-            # design subtree
-            design = root_dir / "design"
-            for sub in (design / "src", design / "exports", design / "docs"):
+            # files subtree
+            files_root = root_dir / "files"
+            for sub in (files_root / "src", files_root / "exports", files_root / "docs"):
                 sub.mkdir(parents=True, exist_ok=True)
                 keep = sub / ".gitkeep"
                 if not keep.exists():
                     keep.write_text("")
-                paths_to_commit.append(keep)
+            paths_to_commit.extend([
+                files_root / "src" / ".gitkeep",
+                files_root / "exports" / ".gitkeep",
+                files_root / "docs" / ".gitkeep",
+            ])
             # revisions dir (no snapshots yet)
             revisions = root_dir / "revisions"
             revisions.mkdir(parents=True, exist_ok=True)
@@ -284,14 +288,12 @@ def cut_revision(
     sfid: str,
     rev: Optional[str] = None,
     *,
-    include_exports: bool = True,
-    include_docs: bool = True,
     notes: Optional[str] = None,
 ) -> dict:
     """Create a new draft snapshot under revisions/<rev>/ per SPEC.
 
     Fully self-contained snapshot: copies the entire entity directory except the
-    'revisions' subtree. This includes entity.yml, refs/, design/, and any other
+    'revisions' subtree. This includes entity.yml, refs/, files/, and any other
     files/directories under the entity.
 
     - Writes meta.yml with rev, status: draft, generated_at, notes?, source_commit?,
@@ -333,6 +335,8 @@ def cut_revision(
     # Record artifacts and hashes for all copied files (exclude meta.yml which we write later)
     for p in snap_dir.rglob("*"):
         if p.is_file():
+            if p.name == ".gitkeep":
+                continue
             rel = p.relative_to(snap_dir)
             rel_str = str(rel).replace("\\", "/")
             # Compute sha256
@@ -344,12 +348,19 @@ def cut_revision(
             role = "file"
             if rel_str == "entity.yml":
                 role = "entity"
-            elif rel_str.startswith("design/exports/"):
-                role = "cad-export"
-            elif rel_str.startswith("design/docs/"):
-                role = "doc"
             elif rel.parts and rel.parts[0] == "refs":
                 role = "ref"
+            else:
+                # Subdir-agnostic best-effort classification by file type
+                suffix = p.suffix.lower()
+                if suffix in {".step", ".stp", ".iges", ".igs", ".stl", ".dxf", ".dwg", ".3mf", ".obj"}:
+                    role = "cad-export"
+                elif suffix in {".pdf", ".svg"}:
+                    role = "drawing"
+                elif suffix in {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}:
+                    role = "image"
+                elif suffix in {".md", ".txt"}:
+                    role = "doc"
             artifacts.append({
                 "role": role,
                 "path": rel_str,

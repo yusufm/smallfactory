@@ -26,15 +26,10 @@ serials/                  # per-unit records (one file per unit)
 ```
 entities/<sfid>/
   entity.yml              # required; schema below
-  design/                 # optional; WIP CAD/docs (not copied per rev)
-    src/
-    exports/
-    docs/
+  files/                  # optional; working files area (copied into snapshots)
   revisions/              # optional; immutable snapshots by rev label
     A/
       meta.yml            # required for a snapshot
-      exports/            # copied artifacts (STEP/STL/PDF/etc.)
-      docs/
     B/
       ...
   refs/
@@ -43,21 +38,11 @@ entities/<sfid>/
 
 ### Directory intentions (what goes where)
 
-• **`design/`** — Working area for in‑progress design assets. Not part of any specific revision by default and not copied automatically when you cut a revision.
-
-  • **`design/src/`** — Editable sources (e.g., native CAD files, scripts, spreadsheets). Track with Git/Git LFS as appropriate.
-
-  • **`design/exports/`** — Generated exports from sources (e.g., STEP/STL/DXF/Gerbers/PDF/images). When cutting a revision, you typically copy a curated subset into `revisions/<rev>/exports/`.
-
-  • **`design/docs/`** — Working notes/specs/images/drawings. For released documentation, place a frozen copy under `revisions/<rev>/docs/`.
+• **`files/`** — Working area for in‑progress files (e.g., CAD and documentation). Included in snapshots when you cut a revision. There is no prescribed substructure under `files/`; organize as needed.
 
 • **`revisions/<rev>/`** — Immutable snapshot for a specific revision label. Treat contents as read‑only once created (and especially once released).
 
   • **`revisions/<rev>/meta.yml`** — Snapshot metadata (rev, status, source commit, notes, artifact list, hashes, etc.).
-
-  • **`revisions/<rev>/exports/`** — Frozen artifacts for that revision (e.g., STEP/STL/PDF). These are the reproducible, released copies selected from the working `design/exports/` at cut time.
-
-  • **`revisions/<rev>/docs/`** — Frozen documentation for that revision (e.g., spec PDFs, dimensioned drawings, images). Not edited after the cut.
 
 • **`refs/`** — Small text pointers that select important revisions (e.g., `refs/released` contains the current rev label). Tooling updates these; avoid manual edits.
 
@@ -109,7 +94,7 @@ Note on kind inference and validation:
 - Do not include a `kind` field; tooling infers kind from the `sfid` prefix.
 - Recognized prefixes (v0.1): `p_` → part, `l_` → location, `sup_` → supplier. More may be added later.
 - If a `kind` field appears, the linter errors; kinds are prefix-inferred only.
-- For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `design/`, `revisions/`, and `refs/`.
+- For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/`.
 - No legacy aliases: `children` is invalid; only `bom` is accepted.
 
 BOM defaults (to minimize boilerplate):
@@ -140,7 +125,7 @@ attrs:
 
 Notes:
 
-- No `revisions/`, `refs/`, `design/`, or `docs/` are required for such parts.
+- No `revisions/`, `refs/`, or `files/` are required for such parts.
 - When used in a BOM with `rev: released` (or when `rev` is omitted), the resolver will accept the implicit released snapshot.
 
 ### Revision snapshot (`revisions/<rev>/meta.yml`)
@@ -153,10 +138,10 @@ generated_at: 2025-08-10T19:40:00Z
 notes: "Slots +2mm; tolerance update."
 artifacts:                 # files relative to this snapshot dir
   - role: cad-export
-    path: exports/adapter.step
+    path: adapter.step
     sha256: 1a7f...59
   - role: drawing
-    path: exports/adapter.pdf
+    path: adapter.pdf
     sha256: 4c5e...aa
 ```
 
@@ -396,7 +381,7 @@ sf lint   # validate schema + referential integrity + allowed fields by kind
 - `entities/<sfid>/entity.yml` is **required** and must include:
   - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `sup_`). The prefix determines the kind.
   - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
-  - Only parts (explicit or inferred) may define `bom`, `design/`, `revisions/`, and `refs/`.
+  - Only parts (explicit or inferred) may define `bom`, `files/`, `revisions/`, and `refs/`.
   - No legacy aliases: the `children` key MUST NOT appear.
   - For `policy: buy` parts, `revisions/` and `refs/` may be omitted; such parts are treated as having an implicit released snapshot.
 - Revision directories under `revisions/` are **immutable** once released.
@@ -455,8 +440,8 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 ---
 
 ## Tiny end-to-end example (happy path)
-1) Edit CAD for **p_adapter**, export to `design/exports/`, commit.
-2) `sf part revision cut p_adapter B --include exports docs && sf part revision release p_adapter B`
+1) Edit CAD for **p_adapter**, export into `files/`, commit.
+2) `sf part revision cut p_adapter B && sf part revision release p_adapter B`
    - Only `entities/p_adapter/refs/released` changes to `"B"`.
 3) `sf resolve finished_goods/fg_toaster_black_120v`
    - Uses `rev: released` pointers; no product files edited.
