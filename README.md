@@ -42,7 +42,8 @@ $ python3 sf.py entities set p_m3x10 name "M3x10 SHCS (DIN 912)"
 # 8. Check updated inventory status
 $ python3 sf.py inventory ls
 
-# Note: All changes are automatically committed to git!
+# Note: All mutating CLI operations automatically create a Git commit (and push if an origin exists).
+# Commit messages include machine-readable tokens like ::sfid::<SFID>.
 ```
 
 ---
@@ -183,6 +184,27 @@ Show a table of all inventory items. Use `-F json` or `-F yaml` for machine-read
 $ python3 sf.py inventory rm p_m3x10
 ```
 Remove all inventory entries for an `sfid` across all locations. Prompts for confirmation in human mode.
+
+## 🧱 Build Entities (Finished Goods)
+
+Use dedicated subcommands to set build-specific fields with validation.
+
+### Set Serial Number
+
+```sh
+$ python3 sf.py entities build serial b_2024_0001 SN123
+```
+
+### Set Built-at Datetime (ISO 8601)
+
+```sh
+$ python3 sf.py entities build datetime b_2024_0001 2024-06-01T12:00:00Z
+# also accepted: 2024-06-01T12:00:00+00:00
+```
+
+- Validates ISO 8601 format (supports trailing `Z`).
+- Supports output formats: `-F human` (default), `-F json`, `-F yaml`.
+- Automatically commits changes to Git with required metadata tokens.
 
 ---
 

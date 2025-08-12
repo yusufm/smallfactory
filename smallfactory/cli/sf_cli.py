@@ -4,6 +4,7 @@ import argparse
 import pathlib
 import json
 import yaml
+import datetime
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
@@ -121,13 +122,42 @@ def main():
     ent_show = ent_sub.add_parser("show", aliases=["view"], help="Show an entity")
     ent_show.add_argument("sfid", help="Entity SFID")
 
-    ent_set = ent_sub.add_parser("set", help="Update fields for an entity")
+    ent_set = ent_sub.add_parser(
+        "set",
+        help="Update fields for an entity",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  sf entities set b_<build_sfid> serialnumber=SN123 datetime=2024-06-01T12:00:00Z\n\n"
+            "Notes:\n"
+            "  - For build entities, you can set 'serialnumber' and 'datetime' (ISO 8601)."
+        ),
+    )
     ent_set.add_argument("sfid", help="Entity SFID")
-    ent_set.add_argument("pairs", nargs="+", help="key=value fields to set")
+    ent_set.add_argument(
+        "pairs",
+        nargs="+",
+        help=(
+            "key=value fields to set (e.g., name=Widget; for builds: "
+            "serialnumber=SN123 datetime=2024-06-01T12:00:00Z)"
+        ),
+    )
 
     ent_retire = ent_sub.add_parser("retire", help="Retire (soft-delete) an entity")
     ent_retire.add_argument("sfid", help="Entity SFID")
     ent_retire.add_argument("--reason", default=None, help="Retirement reason")
+
+    # entities > build group (build-specific operations)
+    ent_build = ent_sub.add_parser("build", help="Operations for build entities (finished goods)")
+    build_sub = ent_build.add_subparsers(dest="build_cmd", required=False, parser_class=SFArgumentParser)
+
+    b_serial = build_sub.add_parser("serial", help="Set serial number on a build entity")
+    b_serial.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    b_serial.add_argument("value", help="Serial number value to set")
+
+    b_dt = build_sub.add_parser("datetime", help="Set built-at datetime on a build entity (ISO 8601)")
+    b_dt.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    b_dt.add_argument("value", help="ISO 8601 datetime (e.g., 2024-06-01T12:00:00Z)")
 
     # entities > revision group (revision management for parts)
     ent_rev = ent_sub.add_parser("revision", help="Revision operations for part entities")
@@ -749,6 +779,44 @@ def main():
             changed = ", ".join(sorted(updates.keys()))
             print(f"[smallFactory] Updated entity '{args.sfid}' fields: {changed}")
 
+    def cmd_entities_build_serial(args):
+        datarepo_path = _repo_path()
+        try:
+            ent = ent_update_entity_fields(datarepo_path, args.sfid, {"serialnumber": args.value})
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            print(f"[smallFactory] Set serialnumber on '{args.sfid}' to '{args.value}'")
+
+    def cmd_entities_build_datetime(args):
+        datarepo_path = _repo_path()
+        # Basic ISO-8601 validation (accepts trailing Z)
+        val = (args.value or "").strip()
+        try:
+            probe = val[:-1] + "+00:00" if val.endswith("Z") else val
+            datetime.datetime.fromisoformat(probe)
+        except Exception:
+            print("[smallFactory] Error: invalid ISO 8601 datetime. Examples: 2024-06-01T12:00:00Z or 2024-06-01T12:00:00+00:00")
+            sys.exit(2)
+        try:
+            ent = ent_update_entity_fields(datarepo_path, args.sfid, {"datetime": val})
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(ent, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(ent, sort_keys=False))
+        else:
+            print(f"[smallFactory] Set datetime on '{args.sfid}' to '{val}'")
+
     def cmd_entities_retire(args):
         datarepo_path = _repo_path()
         try:
@@ -784,13 +852,6 @@ def main():
             return "design"
         return "files"
 
-    def _suggest_commit(sfid: str, op: str, details: str | None = None):
-        # Per user preference: do not auto-commit, just suggest a command
-        msg = f"[smallFactory] {op} {sfid}\n::sfid::{sfid}\n::sf-op::{op}"
-        if details:
-            msg = f"{msg}\n{details}"
-        print("Suggested commit:")
-        print("  git add -A && git commit -m \"" + msg.replace("\"", "'") + "\"")
 
     def cmd_entities_files_ls(args):
         datarepo_path = _repo_path()
@@ -828,7 +889,6 @@ def main():
             sys.exit(1)
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Created folder {root}/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-mkdir", f"path={root}/{args.path}")
 
     def cmd_entities_files_rmdir(args):
         datarepo_path = _repo_path()
@@ -839,7 +899,6 @@ def main():
             sys.exit(1)
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Removed empty folder {root}/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-rmdir", f"path={root}/{args.path}")
 
     def cmd_entities_files_add(args):
         datarepo_path = _repo_path()
@@ -861,7 +920,6 @@ def main():
             sys.exit(1)
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Uploaded file to {root}/{args.dst} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-add", f"path={root}/{args.dst}")
 
     def cmd_entities_files_rm(args):
         datarepo_path = _repo_path()
@@ -872,7 +930,6 @@ def main():
             sys.exit(1)
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Deleted file {root}/{args.path} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-rm", f"path={root}/{args.path}")
 
     def cmd_entities_files_mv(args):
         datarepo_path = _repo_path()
@@ -899,7 +956,6 @@ def main():
         kind = "folder" if bool(getattr(args, "dir", False)) else "file"
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Moved {kind} within {root}: {args.src} -> {args.dst} on '{args.sfid}'")
-        _suggest_commit(args.sfid, "files-mv", f"src={root}/{args.src} dst={root}/{args.dst}")
 
 
     # Entities > Revision handlers
@@ -1255,6 +1311,8 @@ def main():
             sub = f"revision:{getattr(args, 'rev_cmd', None)}"
         elif ent_sc == "files":
             sub = f"files:{getattr(args, 'files_cmd', None)}"
+        elif ent_sc == "build":
+            sub = f"build:{getattr(args, 'build_cmd', None)}"
         else:
             sub = ent_sc
     elif cmd == "bom":
@@ -1284,6 +1342,8 @@ def main():
         ("entities", "files:add"): cmd_entities_files_add,
         ("entities", "files:rm"): cmd_entities_files_rm,
         ("entities", "files:mv"): cmd_entities_files_mv,
+        ("entities", "build:serial"): cmd_entities_build_serial,
+        ("entities", "build:datetime"): cmd_entities_build_datetime,
         ("bom", "ls"): cmd_bom_ls,
         ("bom", "list"): cmd_bom_ls,
         ("bom", "add"): cmd_bom_add,

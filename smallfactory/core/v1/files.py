@@ -9,8 +9,10 @@ import fnmatch
 import mimetypes
 import zipfile
 from datetime import datetime
+import subprocess
 
 from .config import validate_sfid
+from .gitutils import git_commit_paths
 
 
 # -------------------------------
@@ -140,8 +142,17 @@ def mkdir(
         raise ValueError("Refusing to create the files root itself")
     target.mkdir(parents=True, exist_ok=True)
     keep = target / ".gitkeep"
+    did_create = False
     if not keep.exists():
         keep.write_text("")
+        did_create = True
+    # Auto-commit only if we actually created a placeholder to stage
+    if did_create:
+        rel = str(target.relative_to(root)).replace("\\", "/")
+        msg = (
+            f"[smallFactory] files-mkdir {sfid}\n::sfid::{sfid}\n::sf-op::files-mkdir\npath=files/{rel}"
+        )
+        git_commit_paths(datarepo_path, [keep], msg)
     return {"sfid": sfid, "path": str(target.relative_to(root)).replace("\\", "/")}
 
 
@@ -165,7 +176,13 @@ def rmdir(
     # Remove .gitkeep then the dir
     keep = target / ".gitkeep"
     if keep.exists():
-        keep.unlink()
+        # Stage deletion of .gitkeep and commit
+        rel = str(target.relative_to(root)).replace("\\", "/")
+        msg = (
+            f"[smallFactory] files-rmdir {sfid}\n::sfid::{sfid}\n::sf-op::files-rmdir\npath=files/{rel}"
+        )
+        git_commit_paths(datarepo_path, [keep], msg, delete=True)
+    # Remove the now-empty directory from working tree
     target.rmdir()
     return {"sfid": sfid, "removed": str(target.relative_to(root)).replace("\\", "/")}
 
@@ -188,6 +205,12 @@ def upload_file(
     dest.parent.mkdir(parents=True, exist_ok=True)
     with open(dest, "wb") as f:
         f.write(file_bytes)
+    # Auto-commit new/updated file
+    rel = str(dest.relative_to(root)).replace("\\", "/")
+    msg = (
+        f"[smallFactory] files-add {sfid}\n::sfid::{sfid}\n::sf-op::files-add\npath=files/{rel}"
+    )
+    git_commit_paths(datarepo_path, [dest], msg)
     return {"sfid": sfid, "path": str(dest.relative_to(root)).replace("\\", "/"), "size": len(file_bytes)}
 
 
@@ -201,7 +224,12 @@ def delete_file(
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_file():
         raise FileNotFoundError("File not found")
-    target.unlink()
+    # Auto-commit deletion (stage via git rm)
+    rel = str(target.relative_to(root)).replace("\\", "/")
+    msg = (
+        f"[smallFactory] files-rm {sfid}\n::sfid::{sfid}\n::sf-op::files-rm\npath=files/{rel}"
+    )
+    git_commit_paths(datarepo_path, [target], msg, delete=True)
     return {"sfid": sfid, "removed": str(target.relative_to(root)).replace("\\", "/")}
 
 
@@ -224,7 +252,15 @@ def move_file(
         if not overwrite:
             raise FileExistsError("Destination exists (use overwrite=True)")
     dst_p.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(src_p), str(dst_p))
+    # Use git mv so the rename is staged properly
+    subprocess.run(["git", "mv", str(src_p), str(dst_p)], cwd=datarepo_path, check=True)
+    # Commit the staged rename by adding destination (harmless if already staged)
+    rel_src = str(src_p.relative_to(root)).replace("\\", "/")
+    rel_dst = str(dst_p.relative_to(root)).replace("\\", "/")
+    msg = (
+        f"[smallFactory] files-mv {sfid}\n::sfid::{sfid}\n::sf-op::files-mv\nsrc=files/{rel_src} dst=files/{rel_dst}"
+    )
+    git_commit_paths(datarepo_path, [dst_p], msg)
     return {
         "sfid": sfid,
         "src": str(src_p.relative_to(root)).replace("\\", "/"),
@@ -257,7 +293,14 @@ def move_dir(
             raise OSError("Destination folder is not empty")
     else:
         dst_p.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(src_p), str(dst_p))
+    # Use git mv for directories as well
+    subprocess.run(["git", "mv", str(src_p), str(dst_p)], cwd=datarepo_path, check=True)
+    rel_src = str(src_p.relative_to(root)).replace("\\", "/")
+    rel_dst = str(dst_p.relative_to(root)).replace("\\", "/")
+    msg = (
+        f"[smallFactory] files-mv {sfid}\n::sfid::{sfid}\n::sf-op::files-mv\nsrc=files/{rel_src} dst=files/{rel_dst}"
+    )
+    git_commit_paths(datarepo_path, [dst_p], msg)
     return {
         "sfid": sfid,
         "src": str(src_p.relative_to(root)).replace("\\", "/"),

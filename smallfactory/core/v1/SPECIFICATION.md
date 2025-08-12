@@ -78,8 +78,15 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity in sma
   | --- | --- | --- | --- |
   | Location | `l_` | `l_a1` | Physical storage/location (e.g., shelf, bin, room) |
   | Part | `p_` | `p_m3x10` | Discrete part/stock item |
+  | Build | `b_` | `b_2024_0001` | Finished-good build record; may carry per-unit metadata |
 
   Additional prefixes will be added here as new entity types are defined.
+
+Build entity fields (for `b_`):
+
+- `serialnumber` (string): Unit serial number. Tooling provides `sf entities build serial` to set this.
+- `datetime` (ISO 8601 string): When the unit was built. Tooling provides `sf entities build datetime` to set this.
+- Other canonical fields follow the global schema; avoid duplicating audit data already present in Git history.
 
 ### sfid Naming Conventions (Recommended)
 
