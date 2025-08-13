@@ -1,6 +1,6 @@
 # smallFactory
-
-### What is smallFactory
+ 
+## What is smallFactory
 A Git-native toolset for small teams to manage the things they make.
 
 - Design
@@ -11,7 +11,7 @@ A Git-native toolset for small teams to manage the things they make.
   - Track built parts, serial numbers, test results, photos, etc.
   - Manage inventory.
 
-### Why smallFactory
+## Why smallFactory
 
 - Built for small teams: minimal setup, low overhead, fast workflows.
 - Git-native and portable: plain files under Git; diffs, reviews, history. No database, no lock‑in.
@@ -19,19 +19,19 @@ A Git-native toolset for small teams to manage the things they make.
 - Tools that fit your flow: CLI and lightweight web UI; human/JSON/YAML output; commits locally, pushes if origin exists.
 - Extensible by design: readable YAML/JSON so you can script, automate, and integrate.
 
-## ✨ Features
-- 🧩 **Entities & metadata** — parts, assemblies, locations; attributes, tags
-- 🔖 **Revisions & releases** — numeric (1, 2, ...), immutable snapshots; released pointer
-- 🧱 **BOM** — alternates, recursion, cycle detection; in-app editor
-- 📦 **Inventory** — per-location quantities; add/adjust; default location; mobile Quick Adjust (QR scan)
-- 🏷️ **Stickers** — QR-only for entities/locations; batch sticker sheets; configurable fields
-- 📁 **Files workspace** — upload/move/delete; folders; zip/download; revisions snapshot entire entity folder
-- 🌐 **Web UI** — Flask + Tailwind; responsive; search/filter; inline editing; manage BOM/Revisions
-- 👁️ **Vision-assisted intake** — parse invoices; batch-create parts
-- 🔗 **Git-native workflow** — plain files; auto-commits with ::sfid::<...>; optional push to remote
-- 🛠️ **CLI + API** — human/JSON/YAML outputs; entities, inventory, BOM, revisions, validate, web
+## Features
+- **Entities & metadata** — parts, assemblies, locations; attributes, tags
+- **Revisions & releases** — numeric (1, 2, ...), immutable snapshots; released pointer
+- **BOM** — alternates, recursion, cycle detection; in-app editor
+- **Inventory** — per-location quantities; add/adjust; default location; mobile Quick Adjust (QR scan)
+- **Stickers** — QR-only for entities/locations; batch sticker sheets; configurable fields
+- **Files workspace** — upload/move/delete; folders; zip/download; revisions snapshot entire entity folder
+- **Web UI** — Flask + Tailwind; responsive; search/filter; inline editing; manage BOM/Revisions
+- **Vision-assisted intake** — parse invoices; batch-create parts
+- **Git-native workflow** — plain files; auto-commits with ::sfid::<...>; optional push to remote
+- **CLI + API** — human/JSON/YAML outputs; entities, inventory, BOM, revisions, validate, web
 
-## ⚡ Quickstart
+## Quickstart
 
 Get up and running with smallFactory inventory management in a few simple steps:
 
@@ -65,36 +65,7 @@ http://127.0.0.1:8080
 
 ---
 
-### What to read next
-- Web UI docs: `smallfactory/web/README.md`
-- Core spec: `smallfactory/core/v1/SPECIFICATION.md`
-- CLI docs: `smallfactory/README.md`
-
----
-
-### 📐 What is smallFactory?
-
-#### 1. A set of conventions (*the standard*)
-A simple, structured way to organize and store PLM data in Git — including parts, BOMs, revisions, and releases. All files are human-readable (e.g. YAML or JSON) and follow a consistent layout.
-
-#### 2. A CLI + API (*the coretools*)
-A minimal set of tools to safely create, edit, and validate PLM data using the standard format — ensuring data integrity and avoiding manual errors.
-
-#### 3. A sync-aware, Git-first workflow
-The tooling pulls from and pushes to your Git remote automatically (if connected), so collaborators stay in sync by default.
-
----
-
-## 🧱 How It Works
-
-#### 1. The smallFactory Core Repository (this one)
-- Provides the data spec and conventions
-- Contains the CLI (`sf`) and programmatic API
-- Offers documentation and reference implementations
-
-#### 2. Your PLM Data Repository
-- A normal Git repo (public or private)
-- Initialized with `python3 sf.py init`
-- Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
-
-> 📌 You control your PLM data — smallFactory just helps you manage it safely and consistently.
+## What to read next
+- [Web UI docs](web/README.md)
+- [Core spec](smallfactory/core/v1/SPECIFICATION.md)
+- [CLI docs](smallfactory/README.md)
