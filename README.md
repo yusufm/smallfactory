@@ -85,4 +85,4 @@ http://127.0.0.1:8080
 ## What to read next
 - [Web UI docs](web/README.md)
 - [Core spec](smallfactory/core/v1/SPECIFICATION.md)
-- [CLI docs](smallfactory/cli/README.md)
+- [CLI docs](docs/cli/README.md)
