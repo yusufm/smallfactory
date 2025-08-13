@@ -19,18 +19,6 @@ A Git-native toolset for small teams to manage the things they make.
 - Tools that fit your flow: CLI and lightweight web UI; human/JSON/YAML output; commits locally, pushes if origin exists.
 - Extensible by design: readable YAML/JSON so you can script, automate, and integrate.
 
-## Features
-- **Entities & metadata** — parts, assemblies, locations; attributes, tags
-- **Revisions & releases** — numeric (1, 2, ...), immutable snapshots; released pointer
-- **BOM** — alternates, recursion, cycle detection; in-app editor
-- **Inventory** — per-location quantities; add/adjust; default location; mobile Quick Adjust (QR scan)
-- **Stickers** — QR-only for entities/locations; batch sticker sheets; configurable fields
-- **Files workspace** — upload/move/delete; folders; zip/download; revisions snapshot entire entity folder
-- **Web UI** — Flask + Tailwind; responsive; search/filter; inline editing; manage BOM/Revisions
-- **Vision-assisted intake** — parse invoices; batch-create parts
-- **Git-native workflow** — plain files; auto-commits with ::sfid::<...>; optional push to remote
-- **CLI + API** — human/JSON/YAML outputs; entities, inventory, BOM, revisions, validate, web
-
 ## Quickstart
 
 Get up and running with smallFactory inventory management in a few simple steps:
@@ -62,6 +50,35 @@ http://127.0.0.1:8080
 # Note: All mutating CLI operations automatically create a Git commit (and push if an origin exists).
 # Commit messages include machine-readable tokens like ::sfid::<SFID>.
 ```
+
+## Features at a glance
+
+### Design
+- **Entities** — Organize parts, assemblies, and locations with names, tags, and metadata.
+- **Files workspace** — Upload, organize, and download design files and documents; snapshots captured in revisions.
+- **BOM** — Manage bills of materials with alternates; edit in the app; see structure at a glance.
+
+### Build & release
+- **Revisions** — One‑click, numbered revisions with clear release tracking.
+- **Stickers** — Generate QR stickers for parts and locations; print in batches with chosen fields.
+- **Camera capture** — Snap a photo of an invoice or label to auto‑extract parts data.
+- **Vision‑assisted intake** — Extract parts from invoices and batch‑create with review.
+
+### Operate
+- **Inventory** — Track quantities by location; adjust quickly with mobile QR scanning.
+- **Mobile access** — Optimized for phones with simple, touch‑first flows.
+- **Search & dashboard** — Find parts fast and see key stats at a glance.
+- **QR‑first workflows** — Label, scan, and act quickly on the floor.
+
+### Platform
+- **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
+- **Collaboration & history** — Work as a team with reviewable changes and a full history.
+- **Local‑first** — Runs on your machine; you control your data and workflow.
+- **Web UI** — Fast, clean, responsive interface with search and inline editing.
+- **CLI** — Powerful command‑line for automation; human‑ or machine‑readable output.
+- **Validation** — Built‑in checks to catch mistakes early.
+- **Custom fields & tags** — Capture the details that matter to your business.
+  - **Simple onboarding** — Start in minutes with an example repository.
 
 ---
 
