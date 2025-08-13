@@ -73,16 +73,16 @@ http://127.0.0.1:8080
 ### Platform
 - **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
 - **Collaboration & history** — Work as a team with reviewable changes and a full history.
-- **Local‑first** — Runs on your machine; you control your data and workflow.
+- **Local‑first** — Runs on your machine; you control your data and workflow; automatically updates your remote Git repo when configured.
 - **Web UI** — Fast, clean, responsive interface with search and inline editing.
 - **CLI** — Powerful command‑line for automation; human‑ or machine‑readable output.
 - **Validation** — Built‑in checks to catch mistakes early.
 - **Custom fields & tags** — Capture the details that matter to your business.
-  - **Simple onboarding** — Start in minutes with an example repository.
+- **Simple onboarding** — Start in minutes with an example repository.
 
 ---
 
 ## What to read next
 - [Web UI docs](web/README.md)
 - [Core spec](smallfactory/core/v1/SPECIFICATION.md)
-- [CLI docs](smallfactory/README.md)
+- [CLI docs](smallfactory/cli/README.md)
