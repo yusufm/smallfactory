@@ -19,6 +19,17 @@ A Git-native toolset for small teams to manage the things they make.
 - Tools that fit your flow: CLI and lightweight web UI; human/JSON/YAML output; commits locally, pushes if origin exists.
 - Extensible by design: readable YAML/JSON so you can script, automate, and integrate.
 
+## ✨ Features
+- 🧩 **Entities & metadata** — parts, assemblies, locations; attributes, tags
+- 🔖 **Revisions & releases** — numeric (1, 2, ...), immutable snapshots; released pointer
+- 🧱 **BOM** — alternates, recursion, cycle detection; in-app editor
+- 📦 **Inventory** — per-location quantities; add/adjust; default location; mobile Quick Adjust (QR scan)
+- 🏷️ **Stickers** — QR-only for entities/locations; batch sticker sheets; configurable fields
+- 📁 **Files workspace** — upload/move/delete; folders; zip/download; revisions snapshot entire entity folder
+- 🌐 **Web UI** — Flask + Tailwind; responsive; search/filter; inline editing; manage BOM/Revisions
+- 👁️ **Vision-assisted intake** — parse invoices; batch-create parts
+- 🔗 **Git-native workflow** — plain files; auto-commits with ::sfid::<...>; optional push to remote
+- 🛠️ **CLI + API** — human/JSON/YAML outputs; entities, inventory, BOM, revisions, validate, web
 
 ## ⚡ Quickstart
 
