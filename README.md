@@ -1,211 +1,88 @@
 # smallFactory
+ 
+## What is smallFactory
+A Git-native toolset for small teams to manage the things they make.
 
-A lightweight, Git-native PLM (Product Lifecycle Management) system built for simplicity, transparency, and extensibility.
+- Design
+  - Manage part/assembly metadata, drawings/CAD/notes files, BOMs, etc.
+- Snapshot
+  - 1-click revision control of parts.
+- Build
+  - Track built parts, serial numbers, test results, photos, etc.
+  - Manage inventory.
 
----
+## Why smallFactory
 
-## 📏 Specification & Versioning
+- Built for small teams: minimal setup, low overhead, fast workflows.
+- Git-native and portable: plain files under Git; diffs, reviews, history. No database, no lock‑in.
+- Opinionated, simple standard: Entities, BOMs, Revisions, Inventory, Files in a consistent layout.
+- Tools that fit your flow: CLI and lightweight web UI; human/JSON/YAML output; commits locally, pushes if origin exists.
+- Extensible by design: readable YAML/JSON so you can script, automate, and integrate.
 
-- API: v1.0 (DRAFT). We use Semantic Versioning; breaking changes require a MAJOR bump.
-- Authoritative Core API Specification lives at [smallfactory/core/v1/SPECIFICATION.md](smallfactory/core/v1/SPECIFICATION.md).
-- All changes must comply with the specification; if not, update the specification and version accordingly.
+## Quickstart
 
-## ⚡ Quickstart
-
-Get up and running with smallfactory inventory management in a few simple steps:
+Get up and running with smallFactory inventory management in a few simple steps:
 
 ```sh
-# 1. Initialize a new PLM data repository
-$ python3 sf.py init
+# Setup (once)
+# Prereqs: Python 3 and Git installed
+# Clone the smallFactory core repo
+$ git clone https://github.com/yusufm/smallfactory.git smallfactory
+$ cd smallfactory
 
-# 2. (Recommended) Create canonical entities for the location and item
-$ python3 sf.py entities add l_a1 name="Shelf A1"
-$ python3 sf.py entities add p_m3x10 name="M3x10 socket cap screw"
+# Optional: create and activate a virtual environment
+$ python3 -m venv .venv && source .venv/bin/activate
 
-# 3. Add inventory for the item at the location (sfid, location, quantity are required)
-$ python3 sf.py inventory add --sfid p_m3x10 --l_sfid l_a1 --quantity 10
- # custom fields like 'notes' are optional
-$ python3 sf.py inventory add --sfid p_prop --l_sfid l_b2 --quantity 20 --set notes="High-performance racing prop"
+# Install CLI dependencies
+$ python3 -m pip install -r requirements.txt
+# Optional: Web UI dependencies (if you plan to run the web app)
+$ python3 -m pip install -r web/requirements.txt
 
-# 4. View your inventory
-$ python3 sf.py inventory ls
+# Initialize by cloning the example datarepo
+$ python3 sf.py init --github-url git@github.com:yusufm/smallfactory_test_datarepo.git
 
-# 5. View details of a specific item
-$ python3 sf.py inventory show p_m3x10
+# Start the web server
+$ python3 sf.py web
 
-# 6. Adjust inventory when using parts
-$ python3 sf.py inventory adjust l_a1 p_m3x10 -2
-
-# 7. Update entity metadata (canonical)
-$ python3 sf.py entities set p_m3x10 name "M3x10 SHCS (DIN 912)"
-
-# 8. Check updated inventory status
-$ python3 sf.py inventory ls
+# Access the web UI
+http://127.0.0.1:8080
 
 # Note: All mutating CLI operations automatically create a Git commit (and push if an origin exists).
 # Commit messages include machine-readable tokens like ::sfid::<SFID>.
 ```
 
----
+## Features at a glance
 
-## 🧠 Philosophy
+### Design
+- **Entities** — Organize parts, assemblies, and locations with names, tags, and metadata.
+- **Files workspace** — Upload, organize, and download design files and documents; snapshots captured in revisions.
+- **BOM** — Manage bills of materials with alternates; edit in the app; see structure at a glance.
 
-Every decision in smallfactory is guided by this rule:
+### Build & release
+- **Revisions** — One‑click, numbered revisions with clear release tracking.
+- **Stickers** — Generate QR stickers for parts and locations; print in batches with chosen fields.
+- **Camera capture** — Snap a photo of an invoice or label to auto‑extract parts data.
+- **Vision‑assisted intake** — Extract parts from invoices and batch‑create with review.
 
-> _“If a 1–2 person team finds it confusing or burdensome, it doesn’t belong.”_
+### Operate
+- **Inventory** — Track quantities by location; adjust quickly with mobile QR scanning.
+- **Mobile access** — Optimized for phones with simple, touch‑first flows.
+- **Search & dashboard** — Find parts fast and see key stats at a glance.
+- **QR‑first workflows** — Label, scan, and act quickly on the floor.
 
-We believe powerful tools can be simple — and that PLM data should be understandable, accessible, and controlled by you.
-
----
-
-## 📐 What is smallfactory?
-
-smallfactory is:
-
-### 1. A set of conventions (*the standard*)
-A simple, structured way to organize and store PLM data in Git — including parts, BOMs, revisions, and releases. All files are human-readable (e.g. YAML or JSON) and follow a consistent layout.
-
-### 2. A CLI + API (*the coretools*)
-A minimal set of tools to safely create, edit, and validate PLM data using the standard format — ensuring data integrity and avoiding manual errors.
-
-### 3. A sync-aware, Git-first workflow
-The tooling pulls from and pushes to your Git remote automatically (if connected), so collaborators stay in sync by default.
-
----
-
-## 🔑 Core Principles
-
-- **🧰 Zero infrastructure**  
-  No servers. No databases. Just a Git repo and a CLI tool.
-
-- **🌱 Git-native**  
-  All PLM data lives in your Git repo in readable, version-controlled files.
-
-- **🧭 Opinionated conventions**  
-  smallFactory defines strict defaults so you don’t have to invent your own workflows or structure.
-
-- **♻️ Backward compatible**  
-  Formats and tooling evolve carefully, with minimal breaking changes.
-
-- **⚙️ Extensible and open**  
-  Anyone can build their own tools on top of the coretools and data standard.
-
-- **🔄 Sync by default**  
-  All operations try to sync with remote data repo as much as necessary. Unless offline, then will sync when connection is restored.
+### Platform
+- **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
+- **Collaboration & history** — Work as a team with reviewable changes and a full history.
+- **Local‑first** — Runs on your machine; you control your data and workflow.
+- **Web UI** — Fast, clean, responsive interface with search and inline editing.
+- **CLI** — Powerful command‑line for automation; human‑ or machine‑readable output.
+- **Validation** — Built‑in checks to catch mistakes early.
+- **Custom fields & tags** — Capture the details that matter to your business.
+  - **Simple onboarding** — Start in minutes with an example repository.
 
 ---
 
-## 🚀 Portability & Minimal Setup
-
-smallfactory is designed for global usability with minimal friction. Our approach:
-
-- **Plain Python (≥3.7):** Runs anywhere Python is available—no special environment or package manager required.
-- **requirements.txt:** All dependencies are listed in a single, standard file. Install everything with one command: `pip install -r requirements.txt`.
-- **YAML for data:** Human-friendly, easy to edit, and readable in any text editor. JSON is supported for machine-readability if needed.
-- **Single-file CLI:** The main tool is a single Python script (`sf.py`), runnable directly (`python3 sf.py ...`) or made executable (`./sf`). No build steps or complex install required.
-- **Zero infrastructure:** No databases, servers, or cloud dependencies—just files in your Git repo.
-- **Optional dev tools:** Linting and testing tools (like `pytest`, `flake8`) are included for contributors, but not required for end users.
-
-This means anyone, anywhere, can get started in seconds—clone, install, run. No virtualenvs or extra setup unless you want them.
-
----
-
-## 🧱 How It Works
-
-### 1. The `smallfactory` Core Repository (this one)
-- Provides the data spec and conventions
-- Contains the CLI (`sf`) and programmatic API
-- Offers documentation and reference implementations
-
-### 2. Your PLM Data Repository
-- A normal Git repo (public or private)
-- Initialized with `python3 sf.py init`
-- Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
-
-- As new capabilities (like inventory management, procurement, etc.) are added, they are always introduced as new **top-level directories** in the datarepo.
-
-> 📌 You control your PLM data — smallfactory just helps you manage it safely and consistently.
-
----
-
-## 🔍 What You Can Do
-
-- **Inventory Management**: Add, view, update, and delete inventory items with ID tracking
-- **Stock Control**: Adjust inventory quantities for usage and restocking
-- **Data Organization**: Store inventory data in human-readable YAML files
-- **Version Control**: Track all inventory changes using Git
-- **Flexible Fields**: Add custom fields beyond the required id, name, quantity, and location
-- **Multiple Output Formats**: View data in human-readable tables, JSON, or YAML formats
-- **Git Integration**: Automatic commits with detailed metadata for inventory changes
-
----
-
-
-
-## 📦 Inventory Management
-
-smallFactory lets you track and manage inventory.
-
-### Add Inventory for an Item at a Location
-
-```sh
-$ python3 sf.py inventory add --sfid p_m3x10 --l_sfid l_a1 --quantity 100
-```
-Adds or stages inventory for an existing entity at a specific location. The file is stored under `inventory/<l_*>/<SFID>.yml` and holds operational quantity state (non-canonical).
-
-> **Required fields:** `sfid`, `location` (must start with `l_`), and `quantity` (integer ≥ 0).
-> **Canonical metadata:** Item names/attributes live under `entities/<sfid>/entity.yml` and can be set via `sf entities add/set`.
-
-
-### Adjust Quantity
-
-```sh
-$ python3 sf.py inventory adjust l_a1 p_m3x10 -5
-```
-Increment or decrement the on-hand quantity at a specific location.
-
-### View an Inventory Item
-
-```sh
-$ python3 sf.py inventory show p_m3x10
-```
-Display all fields for a given `sfid`. Use `-F json` or `-F yaml` for machine-readable formats.
-
-### List All Inventory Items
-
-```sh
-$ python3 sf.py inventory ls
-```
-Show a table of all inventory items. Use `-F json` or `-F yaml` for machine-readable formats.
-
-### Delete an Inventory Item
-
-```sh
-$ python3 sf.py inventory rm p_m3x10
-```
-Remove all inventory entries for an `sfid` across all locations. Prompts for confirmation in human mode.
-
-## 🧱 Build Entities (Finished Goods)
-
-Use dedicated subcommands to set build-specific fields with validation.
-
-### Set Serial Number
-
-```sh
-$ python3 sf.py entities build serial b_2024_0001 SN123
-```
-
-### Set Built-at Datetime (ISO 8601)
-
-```sh
-$ python3 sf.py entities build datetime b_2024_0001 2024-06-01T12:00:00Z
-# also accepted: 2024-06-01T12:00:00+00:00
-```
-
-- Validates ISO 8601 format (supports trailing `Z`).
-- Supports output formats: `-F human` (default), `-F json`, `-F yaml`.
-- Automatically commits changes to Git with required metadata tokens.
-
----
-
-See `python3 sf.py --help` for full CLI options and argument details.
+## What to read next
+- [Web UI docs](web/README.md)
+- [Core spec](smallfactory/core/v1/SPECIFICATION.md)
+- [CLI docs](smallfactory/README.md)
