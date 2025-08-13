@@ -42,6 +42,7 @@ Get up and running with smallFactory inventory management in a few simple steps:
 # Clone the smallFactory core repo (replace <ORG> with your org/user)
 $ git clone https://github.com/yusufm/smallfactory.git smallfactory
 $ cd smallfactory
+
 # Optional: create and activate a virtual environment
 $ python3 -m venv .venv && source .venv/bin/activate
 # Install CLI dependencies
@@ -51,7 +52,7 @@ $ python3 -m pip install -r web/requirements.txt
 
 # Initialize a new PLM data repository
 $ python3 sf.py init
-# (optional) Set a default location in sfdatarepo.yml under inventory.default_location
+# init sets inventory.default_location to l_inbox (you can change it later in sfdatarepo.yml)
 
 # Create canonical entities for the location and item
 $ python3 sf.py entities add l_a1 name="Shelf A1"

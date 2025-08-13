@@ -447,13 +447,12 @@ def main():
             # Initial commit and optional push
             repo_ops.initial_commit_and_optional_push(repo_path, has_remote=has_remote)
 
-            # Scaffold minimal default location entity and set repo default in sfdatarepo.yml
-            # Only for freshly created local repos (avoid mutating cloned remotes automatically)
-            if not has_remote:
-                try:
-                    repo_ops.scaffold_default_location(repo_path, "l_inbox")
-                except Exception as e:
-                    print(f"[smallFactory] Warning: could not scaffold default location/config: {e}")
+            # Ensure default location is present and configured in sfdatarepo.yml.
+            # This is idempotent and safe for both newly created and cloned repos.
+            try:
+                repo_ops.scaffold_default_location(repo_path, "l_inbox")
+            except Exception as e:
+                print(f"[smallFactory] Warning: could not scaffold default location/config: {e}")
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
