@@ -1,11 +1,7 @@
 # smallFactory
 
 ### What is smallFactory
-- smallFactory is a Git-native toolset for small teams to manage their small factories.
-- Your product data lives as plain files in a Git repo, with a simple Web UI and CLI on top.
-- No database. No lock-in. Everything is portable, reviewable, and versioned.
-
-### Key journeys
+A Git-native toolset for small teams to manage the things they make.
 
 - Design
   - Manage part/assembly metadata, drawings/CAD/notes files, BOMs, etc.
@@ -16,14 +12,13 @@
   - Manage inventory.
 
 ### Why smallFactory
-- Git-native: secure, reviewable, versioned history.
-- Own your data: plain files; no database and no lock-in.
-- Simple model: Entities, BOMs, Revisions, Inventory, Files.
-- Small-team friendly: low overhead and low friction.
-- Practical inventory: post deltas and view on-hand by part or location.
 
+- Built for small teams: minimal setup, low overhead, fast workflows.
+- Git-native and portable: plain files under Git; diffs, reviews, history. No database, no lock‑in.
+- Opinionated, simple standard: Entities, BOMs, Revisions, Inventory, Files in a consistent layout.
+- Tools that fit your flow: CLI and lightweight web UI; human/JSON/YAML output; commits locally, pushes if origin exists.
+- Extensible by design: readable YAML/JSON so you can script, automate, and integrate.
 
----
 
 ## ⚡ Quickstart
 
@@ -38,6 +33,7 @@ $ cd smallfactory
 
 # Optional: create and activate a virtual environment
 $ python3 -m venv .venv && source .venv/bin/activate
+
 # Install CLI dependencies
 $ python3 -m pip install -r requirements.txt
 # Optional: Web UI dependencies (if you plan to run the web app)
@@ -59,32 +55,31 @@ $ python3 sf.py web
 ---
 
 ### What to read next
-- Core spec and details: `smallfactory/core/v1/SPECIFICATION.md`
-- Quickstart: see the Quickstart section below
+- Core spec: `smallfactory/core/v1/SPECIFICATION.md`
 
 ---
 
-## 📐 What is smallFactory?
+### 📐 What is smallFactory?
 
-### 1. A set of conventions (*the standard*)
+#### 1. A set of conventions (*the standard*)
 A simple, structured way to organize and store PLM data in Git — including parts, BOMs, revisions, and releases. All files are human-readable (e.g. YAML or JSON) and follow a consistent layout.
 
-### 2. A CLI + API (*the coretools*)
+#### 2. A CLI + API (*the coretools*)
 A minimal set of tools to safely create, edit, and validate PLM data using the standard format — ensuring data integrity and avoiding manual errors.
 
-### 3. A sync-aware, Git-first workflow
+#### 3. A sync-aware, Git-first workflow
 The tooling pulls from and pushes to your Git remote automatically (if connected), so collaborators stay in sync by default.
 
 ---
 
 ## 🧱 How It Works
 
-### 1. The smallFactory Core Repository (this one)
+#### 1. The smallFactory Core Repository (this one)
 - Provides the data spec and conventions
 - Contains the CLI (`sf`) and programmatic API
 - Offers documentation and reference implementations
 
-### 2. Your PLM Data Repository
+#### 2. Your PLM Data Repository
 - A normal Git repo (public or private)
 - Initialized with `python3 sf.py init`
 - Stores PLM data in a **clearly organized directory structure**, where each major concept (e.g. parts, boms, releases, inventory) lives in its own folder (e.g. `parts`, `boms`, `releases`, `inventory`).
