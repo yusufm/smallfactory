@@ -168,3 +168,132 @@ curl -s -X POST http://localhost:8080/api/vision/extract/part \
 ```
 
 If you see an error, ensure Ollama is running and the model is pulled. You can also open the web Vision page at `/vision` for a camera/upload UI.
+
+## Troubleshooting: Vision (Ollama)
+
+- **Missing prompt (400)**
+  - Error: `Missing prompt`
+  - Fix: Include `-F "prompt=..."` in the form when calling `/api/vision/ask`.
+
+- **No image or wrong field (400)**
+  - Error: `No image file uploaded under field 'file'.`
+  - Fix: Send the image as `-F "file=@/path/to/image.jpg"`.
+
+- **Unsupported file type (400)**
+  - Error: `Unsupported file type; expected an image.`
+  - Fix: Upload a valid image (jpg/png). The server re-encodes to PNG.
+
+- **Image too large (400)**
+  - Error: `Image too large (max 10MB).`
+  - Fix: Reduce the image size below 10MB.
+
+- **Ollama not running or model missing (500)**
+  - Symptom: 500 with hint to start/pull model.
+  - Fix:
+    - Start Ollama: `ollama serve`
+    - Pull model: `ollama pull qwen2.5vl:3b`
+    - Verify: `curl http://localhost:11434/api/tags`
+    - Remote host: `export SF_OLLAMA_BASE_URL=http://<host>:11434`
+    - Model name: set/confirm `SF_VISION_MODEL` (default `qwen2.5vl:3b`).
+
+## Usage Examples (CLI ↔ Web parity)
+
+### Entity Build Flow
+
+1) Ensure the product has a released revision (required for builds):
+
+```bash
+python3 sf.py entities revision bump p_widget --notes "Initial release"
+```
+
+2) Build via Web UI:
+
+- Open `/entities/p_widget/build`
+- Select revision (defaults to released/latest), quantity, and location
+- Preview and create the build (consumes components via backflush)
+- Resulting build SFID looks like `b_2024_0001`
+
+3) Set build metadata via CLI (optional):
+
+```bash
+# Serial number
+python3 sf.py entities build serial b_2024_0001 SN12345
+
+# Built-at datetime (ISO 8601)
+python3 sf.py entities build datetime b_2024_0001 2024-06-01T12:00:00Z
+
+# Alternatively:
+python3 sf.py entities set b_2024_0001 serialnumber=SN12345 datetime=2024-06-01T12:00:00Z
+```
+
+### Stickers: Batch PDF
+
+Web UI:
+
+- Open `/stickers/batch`
+- Provide SFIDs (paste list or upload file), choose fields/size/DPI/text size
+- Generate and download the PDF
+
+CLI (same options available):
+
+```bash
+# Direct list
+python3 sf.py stickers --sfids p_widget,p_case -o labels.pdf --fields=name,rev --size=2x1 --dpi=300 --text-size=24
+
+# From file (one-per-line or comma-separated)
+python3 sf.py stickers --file sfids.txt --out labels.pdf
+
+# From stdin
+cat sfids.txt | python3 sf.py stickers --sfids - --out labels.pdf
+```
+
+Notes:
+
+- The `stickers` command and `stickers batch` subcommand are equivalent.
+- Default output is `stickers.pdf` if `--out` is not provided.
+
+## Routes and API Reference
+
+- **UI Routes**
+  - `/` — Dashboard
+  - `/vision` — Vision camera/upload page
+  - `/inventory` — Inventory list
+  - `/inventory/<item_id>` — Inventory item view
+  - `/inventory/add` — Add Stock (GET, POST)
+  - `/inventory/<item_id>/edit` — Edit inventory item (GET, POST)
+  - `/inventory/<item_id>/adjust` — Adjust quantity (POST)
+  - `/entities` — Entities list
+  - `/entities/<sfid>` — Entity view (inline editing)
+  - `/entities/add` — Create entity (GET, POST)
+  - `/entities/<sfid>/edit` — Deprecated; use inline editing
+  - `/entities/<sfid>/retire` — Retire entity (POST)
+  - `/entities/<sfid>/build` — Build flow (GET, POST)
+  - `/entities/<sfid>/build/create-revision` — Create next draft revision (POST)
+  - `/stickers` — Redirect to batch stickers UI
+  - `/stickers/batch` — Batch stickers UI (GET, POST)
+
+- **API Endpoints**
+  - `/api/inventory` — Inventory API (GET)
+  - `/api/inventory/<item_id>` — Inventory item (GET)
+  - `/api/entities` — Entities API (GET)
+  - `/api/entities/<sfid>` — Entity (GET)
+  - `/api/entities/<sfid>/update` — Update entity fields (POST)
+  - `/api/entities/<sfid>/revisions` — Get revisions and released pointer (GET)
+  - `/api/entities/<sfid>/revisions/bump` — Cut and release next revision (POST)
+  - `/api/entities/<sfid>/revisions/<rev>/release` — Release a specific revision (POST)
+  - `/api/entities/<sfid>/bom` — BOM list (GET)
+  - `/api/entities/<sfid>/bom/deep` — Resolved BOM tree (GET)
+  - `/api/entities/<sfid>/bom/add` — Add BOM line (POST)
+  - `/api/entities/<sfid>/bom/remove` — Remove BOM line(s) (POST)
+  - `/api/entities/<sfid>/bom/set` — Update BOM line (POST)
+  - `/api/entities/<sfid>/bom/alt-add` — Add alternate part (POST)
+  - `/api/entities/<sfid>/bom/alt-remove` — Remove alternate part (POST)
+  - `/api/entities/<sfid>/files` — List working files (GET)
+  - `/api/entities/<sfid>/files/mkdir` — Create folder (POST)
+  - `/api/entities/<sfid>/files/rmdir` — Remove folder (POST)
+  - `/api/entities/<sfid>/files/upload` — Upload file (POST)
+  - `/api/entities/<sfid>/files/delete` — Delete file (POST)
+  - `/api/entities/<sfid>/files/move` — Move file/folder (POST)
+  - `/api/entities/specs/<sfid>` — Entity specs (GET)
+  - `/api/vision/ask` — Vision ask (POST)
+  - `/api/vision/extract/part` — Extract part fields (POST)
