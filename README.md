@@ -46,7 +46,7 @@ $ python3 sf.py init --github-url git@github.com:yusufm/smallfactory_test_datare
 $ python3 sf.py web
 
 # Access the web UI
-[http://127.0.0.1:8080](http://127.0.0.1:8080)
+http://127.0.0.1:8080
 
 # Note: All mutating CLI operations automatically create a Git commit (and push if an origin exists).
 # Commit messages include machine-readable tokens like ::sfid::<SFID>.
@@ -55,7 +55,9 @@ $ python3 sf.py web
 ---
 
 ### What to read next
+- Web UI docs: `smallfactory/web/README.md`
 - Core spec: `smallfactory/core/v1/SPECIFICATION.md`
+- CLI docs: `smallfactory/README.md`
 
 ---
 
