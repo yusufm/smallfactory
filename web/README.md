@@ -4,38 +4,42 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 
 ## Features
 
-- **Dashboard**: Overview of inventory with quick stats and recent items
-- **Inventory Management**: 
-  - List all items with search and filtering
-  - View detailed item information
-  - Add new inventory items with custom fields
-  - Edit item metadata
+- **Dashboard**: Inventory overview with quick stats and recent items
+- **Inventory**:
+  - List and view items with per-location breakdown
+  - Add Stock (journal entry) with required Location SFID (`l_sfid`)
   - Adjust quantities by location
-  - Delete items with confirmation
-- **Modern UI**: Clean, responsive design using Tailwind CSS
-- **Extensible**: Built to accommodate future PLM modules beyond inventory
+  - Note: Deleting inventory items is not supported in the journal model. Use negative adjustments instead.
+- **Entities (PLM)**:
+  - Create, list, and view canonical entities (SFIDs)
+  - Inline editing on the entity view page (separate Edit page is deprecated)
+  - Revisions: bump and release; released pointer at `entities/<sfid>/refs/released`
+  - BOM: add, remove, set lines, and manage alternates; `rev: released` resolves via pointer
+  - Files working area: manage under `entities/<sfid>/files/` (list, mkdir, upload, move, delete)
+- **Stickers**: Batch PDF generation of QR code labels for multiple SFIDs
+- **Vision (Ollama)**: Generic image Q&A and invoice part extraction
+- **Modern UI**: Clean, responsive Tailwind CSS design
+- **Git-native**: Optional auto-commit on writes (configurable)
 
 ## Quick Start
 
 1. **Install dependencies**:
    ```bash
-   cd web
-   pip install -r requirements.txt
+   pip3 install -r web/requirements.txt
    ```
 
 2. **Ensure smallFactory is configured**:
    ```bash
    # Make sure you have a data repository set up
-   cd ..
-   python sf.py init
+   python3 sf.py init
    ```
 
 3. **Start the web server**:
    ```bash
    # from project root
-   python sf.py web --port 8080
+   python3 sf.py web --port 8080
    # development mode with auto-reload
-   FLASK_ENV=development python sf.py web --port 8080 --debug
+   FLASK_ENV=development python3 sf.py web --port 8080 --debug
    ```
 
 4. **Access the interface**:
@@ -46,8 +50,18 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 To run in development mode with auto-reload:
 
 ```bash
-FLASK_ENV=development python sf.py web --port 8080 --debug
+FLASK_ENV=development python3 sf.py web --port 8080 --debug
 ```
+
+## Configuration
+
+- **SF_WEB_SECRET**: Flask secret key. Defaults to an insecure dev value.
+- **SF_WEB_AUTOCOMMIT**: Enable/disable Git auto-commit on writes. Default ON. Disable with `SF_WEB_AUTOCOMMIT=0`.
+- **PORT** / `--port`: Port for the web server (default 8080).
+- **FLASK_ENV** / `--debug`: Set `development` or pass `--debug` for auto-reload.
+- **SF_OLLAMA_BASE_URL**: Base URL for the Ollama server (default `http://localhost:11434`).
+- **SF_VISION_MODEL**: Vision model name (default `qwen2.5vl:3b`).
+- Optional: **SF_REPO** to point to a specific data repository path (follows the same resolution as the CLI).
 
 ## Architecture
 
@@ -57,37 +71,45 @@ The web UI is built as a Flask application that uses the smallFactory core v1 AP
 - `templates/`: Jinja2 HTML templates
   - `base.html`: Base template with navigation and common elements
   - `index.html`: Dashboard page
-  - `inventory/`: Inventory-specific templates
-- `sf.py web`: CLI entrypoint for the development server
+  - `inventory/`: Inventory pages
+  - `entities/`: Entity list/view/build and related pages
+  - `stickers/`: Batch stickers UI
+  - `vision.html`: Mobile-friendly camera/upload page for Vision
+- `static/`: Static assets (CSS, images, JS)
+- `sf.py web`: CLI entrypoint to run the development server
 
 ## API Integration
 
-The web UI directly imports and uses the smallFactory core API:
+The web UI directly imports the smallFactory core v1 API for consistency with the CLI, e.g.:
 
 ```python
-from smallfactory.core.v1.inventory import (
-    list_items, view_item, add_item, 
-    update_item, delete_item, adjust_quantity
+from smallfactory.core.v1.inventory import inventory_onhand, inventory_post
+from smallfactory.core.v1.entities import (
+    get_entity, create_entity, update_entity_fields,
+    get_revisions, bump_revision, release_revision,
+    bom_list, bom_add_line, bom_remove_line, bom_set_line, bom_alt_add, bom_alt_remove,
 )
+from smallfactory.core.v1.files import list_files, mkdir, rmdir, upload_file, delete_file, move_file, move_dir
+from smallfactory.core.v1.stickers import generate_sticker_for_entity
+from smallfactory.core.v1.vision import ask_image, extract_invoice_part
 ```
 
-This ensures consistency with the CLI interface and leverages all the Git-native features.
+This ensures feature parity with the CLI while keeping storage Git-native and YAML-based. The working area root for entity files is `files/`.
 
 ## Future Extensions
 
 The UI is designed to be extensible for additional PLM modules:
 
-- Parts/BOM management
 - Project tracking
-- Document management
 - Supplier management
+- Approval/change control workflows
 - Reporting and analytics
 
 Each new module can follow the same pattern with its own template directory and routes.
 
-## Vision (Qwen2‑VL via Ollama)
+## Vision (Ollama)
 
-The web UI can call a local or remote Visual LLM (VLM) hosted by Ollama. We recommend Qwen2‑VL 2B Instruct for a lightweight, high‑quality model.
+The web UI can call a local or remote Visual LLM (VLM) hosted by Ollama. We recommend `qwen2.5vl:3b` for a lightweight, high-quality model.
 
 ### 1) Start Ollama and pull the model
 
@@ -124,10 +146,8 @@ export SF_VISION_MODEL=qwen2.5vl:3b
 ### 3) Install web deps and run
 
 ```bash
-cd web
-pip install -r requirements.txt
-cd ..
-python sf.py web --port 8080
+pip3 install -r requirements.txt
+python3 sf.py web --port 8080
 ```
 
 ### 4) Use the Vision API
@@ -147,4 +167,4 @@ curl -s -X POST http://localhost:8080/api/vision/extract/part \
   -F "file=@/path/to/invoice.jpg" | jq
 ```
 
-If you see an error, ensure Ollama is running and the model is pulled.
+If you see an error, ensure Ollama is running and the model is pulled. You can also open the web Vision page at `/vision` for a camera/upload UI.
