@@ -203,14 +203,14 @@ python3 sf.py entities build datetime b_2024_0001 2024-06-01T12:00:00Z
 
 ### revision
 
-Manage part revisions (PLM SPEC-compliant). `bump` cuts next draft and immediately releases it; `release` releases a specific label and flips the `released` pointer.
+Manage part revisions (PLM SPEC-compliant). Revisions use numeric labels (1, 2, 3, ...). `bump` cuts next draft and immediately releases it; `release` releases a specific label and flips the `released` pointer.
 
 ```bash
 # Create and release next revision with optional notes
 python3 sf.py entities revision bump p_widget --notes "Initial release"
 
 # Release a specific revision label
-python3 sf.py entities revision release p_widget A --notes "Hotfix"
+python3 sf.py entities revision release p_widget 1 --notes "Hotfix"
 ```
 Additional timing examples:
 
@@ -218,8 +218,8 @@ Additional timing examples:
 # Bump and set a specific released-at timestamp
 python3 sf.py entities revision bump p_widget --released-at 2024-06-01T09:00:00Z --notes "Production cutover"
 
-# Release label B with an explicit timestamp
-python3 sf.py entities revision release p_widget B --released-at 2024-06-15T17:30:00Z --notes "ECN-42"
+# Release label 2 with an explicit timestamp
+python3 sf.py entities revision release p_widget 2 --released-at 2024-06-15T17:30:00Z --notes "ECN-42"
 ```
 
 ### files
