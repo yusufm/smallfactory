@@ -455,22 +455,32 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
             })
 
 
-def validate_repo(repo_path: Path) -> Dict:
+def validate_repo(
+    repo_path: Path,
+    *,
+    include_entities: bool = True,
+    include_inventory: bool = True,
+    include_git: bool = True,
+    git_commit_limit: int = 200,
+) -> Dict:
     """Validate repository structure and content against PLM_SPEC.
 
     Returns a dict: { errors: int, warnings: int, issues: [ {severity, code, path, message} ] }
     """
     issues: List[Dict] = []
-    _scan_entities(repo_path, issues)
-    _scan_inventory(repo_path, issues)
-    _scan_git_commits(repo_path, issues)
+    if include_entities:
+        _scan_entities(repo_path, issues)
+    if include_inventory:
+        _scan_inventory(repo_path, issues)
+    if include_git:
+        _scan_git_commits(repo_path, issues, commit_limit=git_commit_limit)
 
     errors = sum(1 for i in issues if i.get("severity") == "error")
     warnings = sum(1 for i in issues if i.get("severity") == "warning")
     return {"errors": errors, "warnings": warnings, "issues": issues}
 
 
-def _scan_git_commits(repo: Path, issues: List[Dict]) -> None:
+def _scan_git_commits(repo: Path, issues: List[Dict], *, commit_limit: int = 200) -> None:
     """Scan recent commits for required commit metadata tokens when mutating PLM data.
 
     Rule: Any commit that changes files under entities/ or inventory/ must include
@@ -482,8 +492,10 @@ def _scan_git_commits(repo: Path, issues: List[Dict]) -> None:
     try:
         # Verify repo
         _git(["rev-parse", "--is-inside-work-tree"])  # raises if not a git repo
-        # Get recent hashes
-        hashes = [h.strip() for h in _git(["log", "-n", "200", "--pretty=format:%H"]).splitlines() if h.strip()]
+        # Get recent hashes (bounded by commit_limit)
+        limit = max(0, int(commit_limit)) or 0
+        log_args = ["log"] + (["-n", str(limit)] if limit > 0 else []) + ["--pretty=format:%H"]
+        hashes = [h.strip() for h in _git(log_args).splitlines() if h.strip()]
         for h in hashes:
             try:
                 show = _git(["show", "--name-only", "--pretty=%B", h])

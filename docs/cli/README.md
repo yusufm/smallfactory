@@ -93,9 +93,20 @@ Validate the datarepo against the PLM SPEC.
 ```bash
 python3 sf.py validate
 python3 sf.py validate --strict  # non-zero exit on warnings too
+python3 sf.py validate --no-git  # skip commit metadata checks
+python3 sf.py validate --no-entities --no-inventory  # only run git checks
+python3 sf.py validate --git-commits 50  # scan only the last 50 commits
 ```
 
 Outputs human/json/yaml based on `-F/--format`. With `--strict`, warnings trigger non-zero exit.
+
+Flags:
+
+- `--strict` — exit non-zero on warnings as well as errors.
+- `--no-entities` — skip validation of `entities/`.
+- `--no-inventory` — skip validation of `inventory/`.
+- `--no-git` — skip Git commit metadata checks.
+- `--git-commits <N>` — limit number of recent commits scanned for required `::sfid::<SFID>` tokens (`0` = scan all).
 
 ## inventory
 
