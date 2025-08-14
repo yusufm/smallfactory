@@ -405,8 +405,8 @@ Algorithm (conceptual):
 
 ## Commands (minimal surface)
 ```
-sf part revision cut <sfid> <revision> --include exports docs --note "..."
-sf part revision release <sfid> <revision>
+sf entities revision bump <sfid> [--notes "..."]
+sf entities revision release <sfid> <revision> [--released-at <ISO8601>]
 sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
 sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
@@ -426,6 +426,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
   - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `b_`). The prefix determines the kind.
   - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
   - Only parts (explicit or inferred) may define `bom`, `files/`, `revisions/`, and `refs/`.
+  - The `files/` workspace is free-form; no default subfolders are created. Users may create folders as needed via the Files APIs/CLI/UI.
   - No legacy aliases: the `children` key MUST NOT appear.
   - For `policy: buy` parts, `revisions/` and `refs/` may be omitted; such parts are treated as having an implicit released snapshot.
 - Revision directories under `revisions/` are **immutable** once released.

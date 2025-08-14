@@ -133,18 +133,8 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     try:
         if sfid.startswith("p_"):
             root_dir = fp.parent
-            # files subtree
-            files_root = root_dir / "files"
-            for sub in (files_root / "src", files_root / "exports", files_root / "docs"):
-                sub.mkdir(parents=True, exist_ok=True)
-                keep = sub / ".gitkeep"
-                if not keep.exists():
-                    keep.write_text("")
-            paths_to_commit.extend([
-                files_root / "src" / ".gitkeep",
-                files_root / "exports" / ".gitkeep",
-                files_root / "docs" / ".gitkeep",
-            ])
+            # files subtree: do not pre-create any subdirectories under files/
+            # The files/ root will be lazily created by file APIs when used.
             # revisions dir (no snapshots yet)
             revisions = root_dir / "revisions"
             revisions.mkdir(parents=True, exist_ok=True)

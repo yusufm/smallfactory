@@ -213,7 +213,7 @@ python3 sf.py entities revision release p_widget B --released-at 2024-06-15T17:3
 
 ### files
 
-Manage working files under an entity's `files/` (or legacy `design/`) folder.
+Manage working files under an entity's `files/` folder.
 
 ```bash
 # List
