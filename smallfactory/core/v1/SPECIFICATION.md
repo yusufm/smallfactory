@@ -105,7 +105,7 @@ Top‑level directories (recap):
 - Inventory (in `smallfactory/core/v1/inventory.py`):
   - On-hand and journal operations MUST use the inventory core APIs.
 - Files (in `smallfactory/core/v1/files.py`):
-  - Design-area file operations MUST use the files core APIs.
+  - Files working area operations MUST use the files core APIs.
 
 ### Resolved BOM Tree (normative)
 

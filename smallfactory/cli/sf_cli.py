@@ -37,8 +37,7 @@ from smallfactory.core.v1.entities import (
     bom_alt_remove as ent_bom_alt_remove,
     resolved_bom_tree as ent_resolved_bom_tree,
 )
-
-# Files core API (design area only)
+# Files core API
 from smallfactory.core.v1.files import (
     list_files as f_list_files,
     mkdir as f_mkdir,
@@ -857,13 +856,7 @@ def main():
             print(human_line)
 
     def _files_root_name(datarepo_path: pathlib.Path, sfid: str) -> str:
-        ent_dir = pathlib.Path(datarepo_path) / "entities" / sfid
-        files_dir = ent_dir / "files"
-        design_dir = ent_dir / "design"
-        if files_dir.exists():
-            return "files"
-        if design_dir.exists():
-            return "design"
+        # Backward-compat for legacy 'design/' folder removed; always use 'files/'.
         return "files"
 
 
