@@ -8,7 +8,7 @@ import random
 from typing import Optional, List, Dict, Tuple
 from collections import defaultdict
 
-from .gitutils import git_commit_and_push, git_commit_paths
+from .gitutils import git_commit_paths
 from .config import validate_sfid, load_datarepo_config
 
 

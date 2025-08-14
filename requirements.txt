@@ -1,3 +1,4 @@
 pyyaml
 pillow
 qrcode[pil]
+pytest
