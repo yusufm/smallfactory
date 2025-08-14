@@ -122,6 +122,7 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 if is_part:
                     # Collect child part references for cycle detection
                     children: set = set()
+                    seen_uses: Dict[str, int] = {}
                     for idx, line in enumerate(bom, start=1):
                         if not isinstance(line, dict):
                             issues.append({
@@ -160,6 +161,18 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                                 # For cycle detection, add only existing child parts
                                 if isinstance(use, str) and use.startswith("p_"):
                                     children.add(use)
+                                # Enforce uniqueness of BOM 'use' SFIDs within this part
+                                if isinstance(use, str) and use.strip():
+                                    first_idx = seen_uses.get(use)
+                                    if first_idx is None:
+                                        seen_uses[use] = idx
+                                    else:
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_USE_DUPLICATE",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx}: duplicate 'use' SFID '{use}' (first at item {first_idx}); multiplicity must be via 'qty' on one line"
+                                        })
                         # Alternates validation (if present)
                         if "alternates" in line:
                             alts = line.get("alternates")

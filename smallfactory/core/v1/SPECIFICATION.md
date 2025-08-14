@@ -184,7 +184,11 @@ Note on kind inference and validation:
 - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/`.
 - No legacy aliases: `children` is invalid; only `bom` is accepted.
 
-BOM defaults (to minimize boilerplate):
+### BOM invariants
+
+- Within a part's `bom`, each `use` SFID MUST be unique. Do not include duplicate lines for the same child; express multiples via a higher `qty` on a single line.
+
+### BOM defaults (to minimize boilerplate)
 
 - On each `bom` line:
   - `qty` should not be omitted; default is `1`.
