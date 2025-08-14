@@ -22,7 +22,7 @@ The smallFactory ID (`sfid`) is the canonical identifier for every entity.
   ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$
   ```
 - Prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build.
-- Identity is the directory path `entities/<sfid>/`; do not include an `sfid` key in `entity.yml`.
+- Identity is the directory path `entities/<sfid>/`; do not include an `sfid` key in `entity.yml` (Validated: ENT_NO_SFID_FIELD).
 - Do not include a `kind` field; kind is inferred from the `sfid` prefix.
 - See Appendix: SFID naming conventions (recommended) for human-friendly patterns.
 
@@ -34,6 +34,10 @@ entities/                 # canonical source of truth for all entities
 inventory/                # per-part journals and generated on-hand caches
 workorders/               # work orders (optional, but recommended)
 ```
+
+Validation coverage:
+- ENT_ROOT_MISSING — errors if `entities/` directory is missing.
+- ENT_LAYOUT_SINGLE_FILE — errors on single-file layout under `entities/*.yml`.
 
 ---
 
@@ -50,6 +54,11 @@ entities/<sfid>/
   refs/
     released              # text file containing the current rev label (e.g., "2")
 ```
+
+Validation coverage:
+- ENT_SFID_INVALID — invalid `entities/<sfid>/` directory names.
+- ENT_ENTITY_YML_MISSING — missing `entity.yml`.
+- ENT_ENTITY_YML_INVALID — `entity.yml` not valid YAML or not a mapping.
 
 ### Directory intentions (what goes where)
 
@@ -96,7 +105,7 @@ Top‑level directories (recap):
 - Inventory (in `smallfactory/core/v1/inventory.py`):
   - On-hand and journal operations MUST use the inventory core APIs.
 - Files (in `smallfactory/core/v1/files.py`):
-  - Design-area file operations MUST use the files core APIs.
+  - Files working area operations MUST use the files core APIs.
 
 ### Resolved BOM Tree (normative)
 
@@ -181,12 +190,25 @@ Note on kind inference and validation:
 - Do not include a `kind` field; tooling infers kind from the `sfid` prefix.
 - Recognized prefixes (v0.1): `p_` → part, `l_` → location, `b_` → build. More may be added later.
 - If a `kind` field appears, the linter errors; kinds are prefix-inferred only.
-- For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/`.
-- No legacy aliases: `children` is invalid; only `bom` is accepted.
+- For parts (explicit or inferred), `uom` is optional and defaults to 'ea'. Only parts may define `bom`, `files/`, `revisions/`, and `refs/` (Validated for `bom`: ENT_BOM_NON_PART).
+- No legacy aliases: `children` is invalid; only `bom` is accepted (Validated: ENT_NO_CHILDREN).
 
 ### BOM invariants
 
-- Within a part's `bom`, each `use` SFID MUST be unique. Do not include duplicate lines for the same child; express multiples via a higher `qty` on a single line.
+- Within a part's `bom`, each `use` SFID MUST be unique. Do not include duplicate lines for the same child; express multiples via a higher `qty` on a single line. (Validated: ENT_BOM_USE_DUPLICATE)
+- The overall part graph must not contain cycles. Alternates (`alternates`, `alternates_group`) participate in cycle detection; errors surface on the first part in the cycle with a human-readable cycle path. (Validated: ENT_BOM_CYCLE)
+
+BOM structure (validated):
+- ENT_BOM_NOT_LIST — `bom` must be a list.
+- ENT_BOM_LINE_NOT_MAP — each `bom` item must be a mapping/object.
+- ENT_BOM_USE_REQUIRED — each `bom` item requires a `use`.
+- ENT_BOM_USE_SFID_INVALID — `use` must be a valid SFID format.
+- ENT_BOM_USE_ENTITY_MISSING — `use` must exist under `entities/`.
+- ENT_BOM_ALT_NOT_LIST — `alternates` must be a list.
+- ENT_BOM_ALT_ITEM_NOT_MAP — each `alternates` item must be a mapping/object.
+- ENT_BOM_ALT_USE_REQUIRED — `alternates[*].use` required when present.
+- ENT_BOM_ALT_SFID_INVALID — `alternates[*].use` must be a valid SFID format.
+- ENT_BOM_ALT_ENTITY_MISSING — `alternates[*].use` must exist under `entities/`.
 
 ### BOM defaults (to minimize boilerplate)
 
@@ -316,10 +338,18 @@ Notes:
    default_location: l_inbox
  ```
 
+Validation coverage:
+- INV_DEFAULT_LOCATION_INVALID — `inventory.default_location` must be an `l_*` SFID and pass `validate_sfid()`.
+- INV_DEFAULT_LOCATION_MISSING_ENTITY — the configured default location must exist under `entities/`.
+
 Git merge hint (reduce conflicts on append-only logs):
 ```
 inventory/p_*/journal.ndjson merge=union
 ```
+
+Validation coverage:
+- INV_UNION_MERGE_MISSING — `.gitattributes` present but missing the recommended union merge rule.
+- INV_GITATTRIBUTES_MISSING — `.gitattributes` file missing (warning).
 
 CLI (full names):
 ```
@@ -330,8 +360,12 @@ sf inventory rebuild
 
 Linter rules:
 
-- Validate that `part` (derived from path) and `location` SFIDs exist in `entities/`.
-- Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom`.
+- Each `inventory/<part>/` directory must correspond to an entity under `entities/<part>/` (INV_PART_ENTITY_MISSING).
+- Each journal file `inventory/<part>/journal.ndjson` must exist (INV_JOURNAL_MISSING); read errors are reported (INV_JOURNAL_READ).
+- Each journal line must be valid JSON and an object (INV_JOURNAL_JSON, INV_JOURNAL_OBJ).
+- Required keys: `txn` (ULID) and `qty_delta` (INV_JOURNAL_TXN_REQUIRED, INV_JOURNAL_TXN_FORMAT, INV_JOURNAL_QTY_REQUIRED).
+- Optional `location` must be an `l_*` SFID and valid per `validate_sfid()` (INV_LOCATION_INVALID, INV_LOCATION_SFID_INVALID) and must exist (INV_LOCATION_ENTITY_MISSING).
+- Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom` (INV_JOURNAL_FORBIDDEN_FIELD).
 - For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
 - Generated files (`onhand.generated.yml`) must not be hand-edited.
  Optional per-location on-hand cache (reverse index):
@@ -355,8 +389,8 @@ Linter rules:
     - `sf inventory rebuild` regenerates per-part caches from journals, then per-location caches from per-part caches.
     - The per-location cache includes only parts with nonzero on-hand at that location (omit zeros).
     - Both caches are updated in the same commit as the journal append; commit messages include `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
-    - `as_of` timestamps reflect the authoritative time derived from the journal entry’s ULID for posts; for rebuilds, `as_of` is the rebuild time.
-    - Do not hand-edit generated files.
+  - `as_of` timestamps reflect the authoritative time derived from the journal entry’s ULID for posts; for rebuilds, `as_of` is the rebuild time.
+  - Do not hand-edit generated files.
 
 Appendix: .gitattributes (recommended)
 ```
@@ -405,8 +439,8 @@ Algorithm (conceptual):
 
 ## Commands (minimal surface)
 ```
-sf part revision cut <sfid> <revision> --include exports docs --note "..."
-sf part revision release <sfid> <revision>
+sf entities revision bump <sfid> [--notes "..."]
+sf entities revision release <sfid> <revision> [--released-at <ISO8601>]
 sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
 sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
@@ -426,6 +460,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
   - Do not include `sfid`. Identity is derived from the directory name, which MUST be a valid SFID and use a recognized prefix (e.g., `p_`, `l_`, `b_`). The prefix determines the kind.
   - For parts (explicit or inferred), `uom` is optional and defaults to 'ea'.
   - Only parts (explicit or inferred) may define `bom`, `files/`, `revisions/`, and `refs/`.
+  - The `files/` workspace is free-form; no default subfolders are created. Users may create folders as needed via the Files APIs/CLI/UI.
   - No legacy aliases: the `children` key MUST NOT appear.
   - For `policy: buy` parts, `revisions/` and `refs/` may be omitted; such parts are treated as having an implicit released snapshot.
 - Revision directories under `revisions/` are **immutable** once released.
@@ -440,15 +475,15 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
   - Each `entities/<sfid>/` directory persists forever (even if retired). Prefer marking `status: retired` over deletion.
 - Human-readable data formats:
   - YAML is the primary storage format; JSON is supported for machine I/O.
-- Git-native and file-based:
-  - The Git repository is the source of truth; history serves as the audit trail.
-
-- Commit metadata tokens:
-  - Commits that affect an entity MUST include `::sfid::<SFID>` in the message.
-  - For inventory posts, include both tokens: `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`.
-  - For builds, include `::sfid::<BUILD_SFID>` (e.g., `::sfid::b_2025_0001`).
-- Output modes: CLI and API support `human`, `json`, and `yaml` outputs; field shapes are stable within a major version.
-- Determinism: Given the same repo state and inputs, operations produce the same results.
+ - Git-native and file-based:
+   - The Git repository is the source of truth; history serves as the audit trail.
+ 
+ - Commit metadata tokens:
+   - Commits that affect an entity MUST include `::sfid::<SFID>` in the message. (Validated: GIT_TOKEN_REQUIRED)
+   - For inventory posts, include both tokens: `::sfid::<PART_SFID>` and `::sfid::<LOCATION_SFID>`. (Validated: GIT_TOKEN_REQUIRED)
+   - For builds, include `::sfid::<BUILD_SFID>` (e.g., `::sfid::b_2025_0001`). (Validated: GIT_TOKEN_REQUIRED)
+ - Output modes: CLI and API support `human`, `json`, and `yaml` outputs; field shapes are stable within a major version.
+ - Determinism: Given the same repo state and inputs, operations produce the same results.
 - Branding: User-facing name is "smallFactory" (lowercase s, uppercase F).
 - Predictable layout: Top-level directories (e.g., `entities/`, `inventory/`, `workorders/`) are stable; new capabilities add new top-level dirs.
 

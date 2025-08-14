@@ -37,8 +37,7 @@ from smallfactory.core.v1.entities import (
     bom_alt_remove as ent_bom_alt_remove,
     resolved_bom_tree as ent_resolved_bom_tree,
 )
-
-# Files core API (design area only)
+# Files core API
 from smallfactory.core.v1.files import (
     list_files as f_list_files,
     mkdir as f_mkdir,
@@ -275,6 +274,10 @@ def main():
     # validate command (repo linter)
     validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
     validate_parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
+    validate_parser.add_argument("--no-entities", dest="no_entities", action="store_true", help="Skip entities/ validation")
+    validate_parser.add_argument("--no-inventory", dest="no_inventory", action="store_true", help="Skip inventory/ validation")
+    validate_parser.add_argument("--no-git", dest="no_git", action="store_true", help="Skip Git commit metadata checks")
+    validate_parser.add_argument("--git-commits", dest="git_commits", type=int, default=200, help="Limit number of recent commits to scan for required ::sfid:: tokens (0 = all)")
 
     # stickers group (generate codes for entities)
     stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
@@ -472,7 +475,17 @@ def main():
     def cmd_validate(args):
         datarepo_path = _repo_path()
         try:
-            result = validate_repo(datarepo_path)
+            include_entities = not getattr(args, "no_entities", False)
+            include_inventory = not getattr(args, "no_inventory", False)
+            include_git = not getattr(args, "no_git", False)
+            git_commit_limit = int(getattr(args, "git_commits", 200) or 0)
+            result = validate_repo(
+                datarepo_path,
+                include_entities=include_entities,
+                include_inventory=include_inventory,
+                include_git=include_git,
+                git_commit_limit=git_commit_limit,
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -843,13 +856,7 @@ def main():
             print(human_line)
 
     def _files_root_name(datarepo_path: pathlib.Path, sfid: str) -> str:
-        ent_dir = pathlib.Path(datarepo_path) / "entities" / sfid
-        files_dir = ent_dir / "files"
-        design_dir = ent_dir / "design"
-        if files_dir.exists():
-            return "files"
-        if design_dir.exists():
-            return "design"
+        # Backward-compat for legacy 'design/' folder removed; always use 'files/'.
         return "files"
 
 
