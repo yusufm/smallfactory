@@ -8,7 +8,7 @@ import hashlib
 import yaml
 import re
 
-from .gitutils import git_commit_and_push, git_commit_paths
+from .gitutils import git_commit_paths
 from .config import get_entity_field_specs_for_sfid, validate_sfid
 
 
@@ -656,7 +656,7 @@ def bom_add_line(
     msg = (
         f"[smallFactory] BOM add line to {parent_sfid} at index {ix}\n::sfid::{parent_sfid}\n::sf-op::bom-add\n::sf-child::{use}"
     )
-    git_commit_and_push(datarepo_path, fp_parent, msg)
+    git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "index": ix, "bom": bom}
 
 
@@ -709,7 +709,7 @@ def bom_remove_line(
     msg = (
         f"[smallFactory] BOM remove line(s) from {parent_sfid} at {removed_indexes}\n::sfid::{parent_sfid}\n::sf-op::bom-remove"
     )
-    git_commit_and_push(datarepo_path, fp_parent, msg)
+    git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "removed": removed_indexes, "bom": bom}
 
 
@@ -752,7 +752,7 @@ def bom_set_line(
     msg = (
         f"[smallFactory] BOM edit line {index} on {parent_sfid}\n::sfid::{parent_sfid}\n::sf-op::bom-set"
     )
-    git_commit_and_push(datarepo_path, fp_parent, msg)
+    git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "index": index, "line": line, "bom": bom}
 
 
@@ -788,7 +788,7 @@ def bom_alt_add(
     msg = (
         f"[smallFactory] BOM alt add on {parent_sfid} line {index}\n::sfid::{parent_sfid}\n::sf-op::bom-alt-add\n::sf-child::{alt_use}"
     )
-    git_commit_and_push(datarepo_path, fp_parent, msg)
+    git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "index": index, "line": line, "bom": bom}
 
 
@@ -838,7 +838,7 @@ def bom_alt_remove(
     msg = (
         f"[smallFactory] BOM alt remove on {parent_sfid} line {index}\n::sfid::{parent_sfid}\n::sf-op::bom-alt-remove"
     )
-    git_commit_and_push(datarepo_path, fp_parent, msg)
+    git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "index": index, "removed": removed, "line": line, "bom": bom}
 
 
@@ -862,7 +862,7 @@ def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> di
         f"[smallFactory] Updated entity {sfid} field {field}\n"
         f"::sfid::{sfid}\n::sf-field::{field}\n::sf-value::{value}"
     )
-    git_commit_and_push(datarepo_path, fp, commit_msg)
+    git_commit_paths(datarepo_path, [fp], commit_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
     return data_ret
@@ -889,7 +889,7 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
     # Summarize updated keys
     keys = ", ".join(sorted(updates.keys()))
     commit_msg = f"[smallFactory] Updated entity {sfid} fields: {keys}\n::sfid::{sfid}"
-    git_commit_and_push(datarepo_path, fp, commit_msg)
+    git_commit_paths(datarepo_path, [fp], commit_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
     return data_ret
@@ -938,7 +938,7 @@ def retire_entity(
     base_msg = f"[smallFactory] Retired entity {sfid}\n::sfid::{sfid}\n::sf-retired::true"
     if reason:
         base_msg += f"\n::sf-reason::{reason}"
-    git_commit_and_push(datarepo_path, fp, base_msg)
+    git_commit_paths(datarepo_path, [fp], base_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
     return data_ret

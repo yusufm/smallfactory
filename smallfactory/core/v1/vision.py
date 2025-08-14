@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional, Type
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from .config import get_ollama_base_url, get_vision_model
 
@@ -33,8 +33,7 @@ class InvoicePart(BaseModel):
     notes: Optional[str] = None
     tags: Optional[list[str]] = None
 
-    class Config:
-        extra = "ignore"
+    model_config = ConfigDict(extra="ignore")
 
 
 def _build_schema_instruction() -> str:

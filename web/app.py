@@ -14,6 +14,7 @@ import base64
 import io
 from PIL import Image
 import subprocess
+import threading
 from datetime import datetime
 from typing import List
 
@@ -52,6 +53,7 @@ from smallfactory.core.v1.vision import (
     ask_image as vlm_ask_image,
     extract_invoice_part as vlm_extract_invoice_part,
 )
+from smallfactory.core.v1.gitutils import git_push
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
@@ -92,6 +94,93 @@ def _maybe_git_autocommit(datarepo_path: Path, message: str, paths: List[str]) -
         return True
     except Exception:
         return False
+
+
+# -----------------------
+# Git orchestration helpers (safe pull + txn + autopush)
+# -----------------------
+def _autopush_enabled() -> bool:
+    val = os.environ.get('SF_WEB_AUTOPUSH')
+    if val is None:
+        return True
+    return val.lower() in ('1', 'true', 'yes', 'on')
+
+
+def _pull_allow_untracked() -> bool:
+    val = os.environ.get('SF_GIT_PULL_ALLOW_UNTRACKED')
+    if val is None:
+        return True
+    return val.lower() in ('1', 'true', 'yes', 'on')
+
+
+def _git_disabled() -> bool:
+    val = os.environ.get('SF_GIT_DISABLED')
+    if val is None:
+        return False
+    return val.lower() in ('1', 'true', 'yes', 'on')
+
+
+def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
+    """Perform a safe git pull with fast-forward only.
+
+    - Allows untracked files by default (controlled by SF_GIT_PULL_ALLOW_UNTRACKED).
+    - If there are local modified/staged changes (excluding untracked), abort before pull.
+    """
+    try:
+        # Ensure repo
+        ck = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--is-inside-work-tree'], capture_output=True)
+        if ck.returncode != 0:
+            return False, 'Not a git repository'
+        # No remote -> nothing to pull
+        remotes = subprocess.run(['git', '-C', str(datarepo_path), 'remote'], capture_output=True, text=True)
+        if remotes.returncode != 0 or 'origin' not in (remotes.stdout or '').split():
+            return True, None
+        # Check working tree status
+        st = subprocess.run(['git', '-C', str(datarepo_path), 'status', '--porcelain'], capture_output=True, text=True)
+        if st.returncode != 0:
+            return False, 'Failed to get git status'
+        lines = [ln.rstrip('\n') for ln in (st.stdout or '').splitlines()]
+        if not _pull_allow_untracked():
+            # Any change at all blocks pull
+            if any(lines):
+                return False, 'Working tree not clean for pull'
+        else:
+            # Ignore untracked (??), block on any other changes
+            for ln in lines:
+                if not ln.startswith('?? '):
+                    return False, 'Local changes present; commit or stash before pull'
+        # Fast-forward only pull
+        pl = subprocess.run(['git', '-C', str(datarepo_path), 'pull', '--ff-only'], capture_output=True, text=True)
+        if pl.returncode != 0:
+            msg = (pl.stderr or pl.stdout or '').strip() or 'git pull failed'
+            return False, msg
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+_REPO_TXN_LOCK = threading.Lock()
+
+
+def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None = None, autocommit_paths: List[str] | None = None):
+    """Serialize repo mutations with: safe pull -> mutate -> autocommit -> conditional push."""
+    if _git_disabled():
+        return mutate_fn()
+    with _REPO_TXN_LOCK:
+        ok, err = _safe_git_pull(datarepo_path)
+        if not ok:
+            raise RuntimeError(f"Pre-mutation git pull failed: {err}")
+        result = mutate_fn()
+        # Ensure a commit exists if web autocommit is enabled
+        _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
+        # Conditional push
+        if _autopush_enabled():
+            try:
+                git_push(datarepo_path)
+            except Exception:
+                # Non-fatal; leave a warning via stderr for logs
+                print('[smallFactory] Warning: autopush failed')
+        return result
 
 @app.route('/')
 def index():
@@ -230,8 +319,14 @@ def inventory_add():
                 raise ValueError("delta must be an integer (can be negative)")
 
             datarepo_path = get_datarepo_path()
-            # Use default location from sfdatarepo.yml if location omitted
-            inventory_post(datarepo_path, sfid, delta, location)
+            def _mutate():
+                return inventory_post(datarepo_path, sfid, delta, location)
+            _ = _run_repo_txn(
+                datarepo_path,
+                _mutate,
+                autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
+                autocommit_paths=[f"inventory/{sfid}"]
+            )
             loc_msg = location or 'default location'
             flash(f"Successfully adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
             return redirect(url_for('inventory_view', item_id=sfid))
@@ -265,7 +360,14 @@ def inventory_adjust(item_id):
         delta = int(request.form.get('delta', 0))
         # Canonical field name is l_sfid; support legacy 'location' as fallback
         location = request.form.get('l_sfid', '').strip() or request.form.get('location', '').strip() or None
-        inventory_post(datarepo_path, item_id, delta, location)
+        def _mutate():
+            return inventory_post(datarepo_path, item_id, delta, location)
+        _ = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Inventory post {item_id} @ {location or 'default'} Δ{delta}",
+            autocommit_paths=[f"inventory/{item_id}"]
+        )
         flash(f'Successfully adjusted quantity by {delta}', 'success')
     except Exception as e:
         flash(f'Error adjusting quantity: {e}', 'error')
@@ -437,7 +539,14 @@ def entities_build(sfid):
                 fields['notes'] = notes
 
             try:
-                create_entity(datarepo_path, build_sfid, fields)
+                def _mutate():
+                    return create_entity(datarepo_path, build_sfid, fields)
+                _ = _run_repo_txn(
+                    datarepo_path,
+                    _mutate,
+                    autocommit_message=f"[smallFactory][web] Create build record {build_sfid} for {sfid}",
+                    autocommit_paths=[f"entities/{build_sfid}"]
+                )
                 flash(f"Created build record '{build_sfid}' for {sfid}", 'success')
                 return redirect(url_for('entities_view', sfid=build_sfid))
             except Exception as e:
@@ -492,7 +601,14 @@ def entities_build_create_revision(sfid):
         except Exception:
             flash(f"Product '{target}' not found.", 'error')
             return redirect(url_for('entities_build', sfid=sfid))
-        info = bump_revision(datarepo_path, target)
+        def _mutate():
+            return bump_revision(datarepo_path, target)
+        info = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Create draft revision for {target}",
+            autocommit_paths=[f"entities/{target}"]
+        )
         new_rev = info.get('new_rev') or ''
         if new_rev:
             flash(f"Created draft revision {new_rev} for {target}", 'success')
@@ -556,7 +672,14 @@ def entities_add():
                 return render_template('entities/add.html', form_data=form_data, next_url=next_url, update_param=update_param)
             except FileNotFoundError:
                 pass
-            entity = create_entity(datarepo_path, sfid, fields)
+            def _mutate():
+                return create_entity(datarepo_path, sfid, fields)
+            entity = _run_repo_txn(
+                datarepo_path,
+                _mutate,
+                autocommit_message=f"[smallFactory][web] Create entity {sfid}",
+                autocommit_paths=[f"entities/{sfid}"]
+            )
             flash(f"Successfully created entity: {sfid}", 'success')
             if next_url and _is_safe_next(next_url):
                 # If caller indicated which param to update, rewrite the next URL
@@ -596,7 +719,14 @@ def entities_retire(sfid):
     try:
         datarepo_path = get_datarepo_path()
         reason = request.form.get('reason', '').strip() or None
-        retire_entity(datarepo_path, sfid, reason=reason)
+        def _mutate():
+            return retire_entity(datarepo_path, sfid, reason=reason)
+        _ = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Retire entity {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         flash('Entity retired successfully', 'success')
     except Exception as e:
         flash(f'Error retiring entity: {e}', 'error')
@@ -663,7 +793,14 @@ def api_entities_update(sfid):
         if 'tags' in updates and isinstance(updates['tags'], str):
             parts = [s.strip() for s in updates['tags'].split(',') if s.strip()]
             updates['tags'] = parts
-        updated = update_entity_fields(datarepo_path, sfid, updates)
+        def _mutate():
+            return update_entity_fields(datarepo_path, sfid, updates)
+        updated = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Update entity {sfid} fields",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         return jsonify({'success': True, 'entity': updated})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -684,12 +821,19 @@ def api_revisions_bump(sfid):
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
         notes = payload.get('notes') if isinstance(payload, dict) else None
         released_at = payload.get('released_at') if isinstance(payload, dict) else None
-        # Cut next snapshot, then immediately release it
-        bumped = bump_revision(datarepo_path, sfid, notes=notes)
-        new_rev = bumped.get('new_rev')
-        if not new_rev:
-            raise RuntimeError('Failed to determine new revision label after bump')
-        ent = release_revision(datarepo_path, sfid, new_rev, released_at=released_at, notes=notes)
+        # Cut next snapshot, then immediately release it (transaction-guarded)
+        def _mutate():
+            bumped = bump_revision(datarepo_path, sfid, notes=notes)
+            new_rev = bumped.get('new_rev')
+            if not new_rev:
+                raise RuntimeError('Failed to determine new revision label after bump')
+            return release_revision(datarepo_path, sfid, new_rev, released_at=released_at, notes=notes)
+        ent = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Bump+release revision for {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -701,7 +845,14 @@ def api_revisions_release(sfid, rev):
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
         notes = payload.get('notes') if isinstance(payload, dict) else None
         released_at = payload.get('released_at') if isinstance(payload, dict) else None
-        ent = release_revision(datarepo_path, sfid, rev, released_at=released_at, notes=notes)
+        def _mutate():
+            return release_revision(datarepo_path, sfid, rev, released_at=released_at, notes=notes)
+        ent = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Release revision {rev} for {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -871,16 +1022,23 @@ def api_bom_add(sfid):
         # index may come as string
         if isinstance(index, str) and index.isdigit():
             index = int(index)
-        res = bom_add_line(
+        def _mutate():
+            return bom_add_line(
+                datarepo_path,
+                sfid,
+                use=use,
+                qty=qty,
+                rev=rev,
+                alternates=alts,
+                alternates_group=alternates_group,
+                index=index,
+                check_exists=bool(check_exists),
+            )
+        res = _run_repo_txn(
             datarepo_path,
-            sfid,
-            use=use,
-            qty=qty,
-            rev=rev,
-            alternates=alts,
-            alternates_group=alternates_group,
-            index=index,
-            check_exists=bool(check_exists),
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM add {use} x{qty} rev {rev} -> {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -900,12 +1058,19 @@ def api_bom_remove(sfid):
             index = int(index)
         if isinstance(remove_all, str):
             remove_all = remove_all.lower() in ('1', 'true', 'yes')
-        res = bom_remove_line(
+        def _mutate():
+            return bom_remove_line(
+                datarepo_path,
+                sfid,
+                index=index,
+                use=use,
+                remove_all=bool(remove_all),
+            )
+        res = _run_repo_txn(
             datarepo_path,
-            sfid,
-            index=index,
-            use=use,
-            remove_all=bool(remove_all),
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM remove index={index} use={use or ''} from {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -925,7 +1090,14 @@ def api_bom_set(sfid):
         for k in ('use', 'qty', 'rev', 'alternates_group'):
             if k in payload:
                 updates[k] = payload.get(k)
-        res = bom_set_line(datarepo_path, sfid, index=index, updates=updates, check_exists=bool(payload.get('check_exists', True)))
+        def _mutate():
+            return bom_set_line(datarepo_path, sfid, index=index, updates=updates, check_exists=bool(payload.get('check_exists', True)))
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM set index={index} for {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
@@ -970,12 +1142,17 @@ def api_files_mkdir(sfid):
         path = (payload.get('path') or '').strip()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'}), 400
-        res = files_mkdir(datarepo_path, sfid, path=path)
-        # Git autocommit
         root_name = _files_root_name(datarepo_path, sfid)
         rel = f"entities/{sfid}/{root_name}/{path}".rstrip('/')
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: mkdir {sfid} {root_name}/{path}", [rel])
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+        def _mutate():
+            return files_mkdir(datarepo_path, sfid, path=path)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"web: mkdir {sfid} {root_name}/{path}",
+            autocommit_paths=[rel]
+        )
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -988,12 +1165,17 @@ def api_files_rmdir(sfid):
         path = (payload.get('path') or '').strip()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'}), 400
-        res = files_rmdir(datarepo_path, sfid, path=path)
-        # Stage only the removed directory path to capture deletions beneath it
         root_name = _files_root_name(datarepo_path, sfid)
         stage_target = f"entities/{sfid}/{root_name}/{path}".rstrip('/')
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: rmdir {sfid} {root_name}/{path}", [stage_target])
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+        def _mutate():
+            return files_rmdir(datarepo_path, sfid, path=path)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"web: rmdir {sfid} {root_name}/{path}",
+            autocommit_paths=[stage_target]
+        )
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -1008,11 +1190,17 @@ def api_files_upload(sfid):
         if not path or not f or not getattr(f, 'filename', None):
             return jsonify({'success': False, 'error': 'Missing path or file'}), 400
         b = f.read()
-        res = files_upload(datarepo_path, sfid, path=path, file_bytes=b, overwrite=overwrite)
         root_name = _files_root_name(datarepo_path, sfid)
         rel = f"entities/{sfid}/{root_name}/{path}"
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: upload {sfid} {root_name}/{path}", [rel])
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+        def _mutate():
+            return files_upload(datarepo_path, sfid, path=path, file_bytes=b, overwrite=overwrite)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"web: upload {sfid} {root_name}/{path}",
+            autocommit_paths=[rel]
+        )
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -1025,11 +1213,17 @@ def api_files_delete(sfid):
         path = (payload.get('path') or '').strip()
         if not path:
             return jsonify({'success': False, 'error': 'Missing path'}), 400
-        res = files_delete(datarepo_path, sfid, path=path)
         root_name = _files_root_name(datarepo_path, sfid)
         rel = f"entities/{sfid}/{root_name}/{path}"
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: delete {sfid} {root_name}/{path}", [rel])
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+        def _mutate():
+            return files_delete(datarepo_path, sfid, path=path)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"web: delete {sfid} {root_name}/{path}",
+            autocommit_paths=[rel]
+        )
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -1045,13 +1239,7 @@ def api_files_move(sfid):
         overwrite = (payload.get('overwrite') or '').__str__().lower() in ('1','true','yes','on')
         if not src or not dst:
             return jsonify({'success': False, 'error': 'Missing src or dst'}), 400
-        if is_dir:
-            res = files_move_dir(datarepo_path, sfid, src=src, dst=dst, overwrite=overwrite)
-        else:
-            res = files_move_file(datarepo_path, sfid, src=src, dst=dst, overwrite=overwrite)
-        # Stage both src and dst paths only to capture renames/deletions
         root_name = _files_root_name(datarepo_path, sfid)
-        stage_paths = []
         if is_dir:
             stage_paths = [
                 f"entities/{sfid}/{root_name}/{src}".rstrip('/'),
@@ -1059,8 +1247,18 @@ def api_files_move(sfid):
             ]
         else:
             stage_paths = [f"entities/{sfid}/{root_name}/{src}", f"entities/{sfid}/{root_name}/{dst}"]
-        did_commit = _maybe_git_autocommit(datarepo_path, f"web: move {sfid} {root_name}: {src} -> {dst}", stage_paths)
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(did_commit)})
+        def _mutate():
+            if is_dir:
+                return files_move_dir(datarepo_path, sfid, src=src, dst=dst, overwrite=overwrite)
+            else:
+                return files_move_file(datarepo_path, sfid, src=src, dst=dst, overwrite=overwrite)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"web: move {sfid} {root_name}: {src} -> {dst}",
+            autocommit_paths=stage_paths
+        )
+        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -1074,7 +1272,14 @@ def api_bom_alt_add(sfid):
         check_exists = payload.get('check_exists', True)
         if isinstance(index, str) and index.isdigit():
             index = int(index)
-        res = bom_alt_add(datarepo_path, sfid, index=index, alt_use=alt_use, check_exists=bool(check_exists))
+        def _mutate():
+            return bom_alt_add(datarepo_path, sfid, index=index, alt_use=alt_use, check_exists=bool(check_exists))
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM alt-add {alt_use} at index={index} for {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
@@ -1093,7 +1298,14 @@ def api_bom_alt_remove(sfid):
             index = int(index)
         if isinstance(alt_index, str) and alt_index.isdigit():
             alt_index = int(alt_index)
-        res = bom_alt_remove(datarepo_path, sfid, index=index, alt_index=alt_index, alt_use=alt_use)
+        def _mutate():
+            return bom_alt_remove(datarepo_path, sfid, index=index, alt_index=alt_index, alt_use=alt_use)
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM alt-remove index={index} alt_index={alt_index} for {sfid}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
