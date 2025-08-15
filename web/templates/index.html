@@ -141,7 +141,7 @@
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ item.total }}</span>
                             </div>
                             <div class="w-full h-1.5 bg-gray-200 rounded">
-                                <div class="h-1.5 bg-blue-500 rounded" style="width: {{ (item.total * 100) // ((metrics.inventory.top_stock[0].total) if metrics.inventory.top_stock else 1) }}%"></div>
+                                <div class="h-1.5 bg-blue-500 rounded" data-width="{{ item.bar_pct }}"></div>
                             </div>
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-500">{{ item.uom }}</td>
@@ -201,10 +201,10 @@
             <div class="mt-6">
                 <div class="flex items-center justify-between text-sm mb-2">
                     <span class="text-gray-600">Stock Coverage</span>
-                    <span class="font-medium text-gray-900">{{ (metrics.inventory.parts_with_stock * 100) // (metrics.parts.total or 1) }}%</span>
+                    <span class="font-medium text-gray-900">{{ metrics.inventory.stock_coverage_pct }}%</span>
                 </div>
                 <div class="w-full h-2 bg-gray-200 rounded">
-                    <div class="h-2 bg-indigo-500 rounded" style="width: {{ (metrics.inventory.parts_with_stock * 100) // (metrics.parts.total or 1) }}%"></div>
+                    <div class="h-2 bg-indigo-500 rounded" data-width="{{ metrics.inventory.stock_coverage_pct }}"></div>
                 </div>
             </div>
 
@@ -304,4 +304,19 @@
 
     
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    document.querySelectorAll('[data-width]').forEach(function (el) {
+      var pct = parseInt(el.getAttribute('data-width'), 10);
+      if (isNaN(pct)) pct = 0;
+      pct = Math.max(0, Math.min(100, pct));
+      el.style.width = pct + '%';
+    });
+  } catch (e) { console && console.error && console.error(e); }
+});
+</script>
 {% endblock %}

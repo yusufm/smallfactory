@@ -619,6 +619,11 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             parts_in_stock += 1
         else:
             parts_zero_stock += 1
+    # Precompute stock coverage percent for UI (avoid heavy inline template math)
+    try:
+        stock_coverage_pct = int(parts_in_stock * 100 // (parts_total or 1))
+    except Exception:
+        stock_coverage_pct = 0
 
     # Top stock items (by quantity desc) with names
     top_stock = sorted(inv_parts, key=lambda x: int(x.get('total', 0) or 0), reverse=True)[:top_n]
@@ -637,6 +642,16 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             'total': int(item.get('total', 0) or 0),
             'uom': item.get('uom', 'ea') or 'ea',
         })
+    # Compute per-item bar width percent relative to the max for UI bars
+    try:
+        top_max = inv_top[0]['total'] if inv_top else 1
+        if top_max <= 0:
+            top_max = 1
+        for it in inv_top:
+            it['bar_pct'] = int((it.get('total', 0) or 0) * 100 // top_max)
+    except Exception:
+        for it in inv_top:
+            it['bar_pct'] = 0
 
     # Revisions metrics
     rev_total = 0
@@ -725,6 +740,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             'parts_with_stock': parts_in_stock,
             'parts_zero_stock': parts_zero_stock,
             'top_stock': inv_top,
+            'stock_coverage_pct': stock_coverage_pct,
         },
         'parts': {
             'total': parts_total,
