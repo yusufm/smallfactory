@@ -10,31 +10,47 @@
     </div>
 
     <!-- Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Parts Total -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-blue-100">
-                    <i class="fas fa-boxes text-blue-600 text-xl"></i>
+                    <i class="fas fa-cube text-blue-600 text-xl"></i>
                 </div>
                 <div class="ml-4">
-                    <p class="text-sm font-medium text-gray-600">Total Items</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ total_items }}</p>
+                    <p class="text-sm font-medium text-gray-600">Parts</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ metrics.parts.total }}</p>
                 </div>
             </div>
         </div>
 
+        <!-- Inventory Quantity -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-green-100">
                     <i class="fas fa-cubes text-green-600 text-xl"></i>
                 </div>
                 <div class="ml-4">
-                    <p class="text-sm font-medium text-gray-600">Total Quantity</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ total_quantity }}</p>
+                    <p class="text-sm font-medium text-gray-600">Inventory Quantity</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ metrics.inventory.total_quantity }}</p>
                 </div>
             </div>
         </div>
 
+        <!-- Builds Total -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center">
+                <div class="p-3 rounded-full bg-yellow-100">
+                    <i class="fas fa-industry text-yellow-600 text-xl"></i>
+                </div>
+                <div class="ml-4">
+                    <p class="text-sm font-medium text-gray-600">Builds</p>
+                    <p class="text-2xl font-bold text-gray-900">{{ metrics.builds.total }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Repository -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-purple-100">
@@ -96,11 +112,14 @@
         </div>
     </div>
 
-    <!-- Recent Items -->
-    {% if recent_items %}
-    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div class="px-6 py-4 border-b border-gray-200">
-            <h2 class="text-lg font-semibold text-gray-900">Recent Items</h2>
+    <!-- Inventory Top Stock -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900">Top Stocked Parts</h2>
+            <div class="text-sm text-gray-500">
+                In stock: <span class="font-medium text-gray-900">{{ metrics.inventory.parts_with_stock }}</span>
+                · Zero stock: <span class="font-medium text-gray-900">{{ metrics.inventory.parts_zero_stock }}</span>
+            </div>
         </div>
         <div class="overflow-x-auto w-full">
             <div class="inline-block min-w-full align-middle">
@@ -110,51 +129,27 @@
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SFID</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Locations</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UoM</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                    {% for item in recent_items %}
+                    {% for item in metrics.inventory.top_stock %}
                     <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {{ item.sfid }}
-                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.sfid }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ item.name }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {{ item.name }}
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{{ item.total }}</span>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {{ item.quantity }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {% if item.locations %}
-                                {% if item.locations is mapping %}
-                                    {% for location, qty in item.locations.items() %}
-                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 mr-1">
-                                            {{ location }}: {{ qty }}
-                                        </span>
-                                    {% endfor %}
-                                {% else %}
-                                    {% for location in item.locations %}
-                                        <span class="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-700 mr-1">
-                                            {{ location }}
-                                        </span>
-                                    {% endfor %}
-                                {% endif %}
-                            {% else %}
-                                <span class="text-gray-400">No locations</span>
-                            {% endif %}
-                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ item.uom }}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <a href="{{ url_for('inventory_view', item_id=item.sfid) }}" class="text-blue-600 hover:text-blue-900 mr-3">
-                                <i class="fas fa-eye"></i>
-                            </a>
-                            <a href="{{ url_for('inventory_edit', item_id=item.sfid) }}" class="text-yellow-600 hover:text-yellow-900">
-                                <i class="fas fa-edit"></i>
-                            </a>
+                            <a href="{{ url_for('inventory_view', item_id=item.sfid) }}" class="text-blue-600 hover:text-blue-900 mr-3" title="View Inventory"><i class="fas fa-eye"></i></a>
+                            <a href="{{ url_for('entities_view', sfid=item.sfid) }}" class="text-gray-600 hover:text-gray-900" title="View Entity"><i class="fas fa-id-card"></i></a>
                         </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="px-6 py-6 text-center text-sm text-gray-500">No inventory yet. <a class="text-blue-600 hover:text-blue-800" href="{{ url_for('inventory_add') }}">Adjust stock</a> to get started.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -162,23 +157,141 @@
             </div>
         </div>
         <div class="px-6 py-3 bg-gray-50 text-right">
-            <a href="{{ url_for('inventory_list') }}" class="text-sm text-blue-600 hover:text-blue-900 font-medium">
-                View all items <i class="fas fa-arrow-right ml-1"></i>
-            </a>
+            <a href="{{ url_for('inventory_list') }}" class="text-sm text-blue-600 hover:text-blue-900 font-medium">View all inventory <i class="fas fa-arrow-right ml-1"></i></a>
         </div>
     </div>
-    {% else %}
-    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-        <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-            <i class="fas fa-boxes text-gray-400 text-3xl"></i>
+
+    <!-- Parts & Revisions -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <!-- Parts Summary -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">Parts Summary</h2>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-gray-50 rounded-lg text-center">
+                        <div class="text-sm text-gray-500">With Released Rev</div>
+                        <div class="text-2xl font-bold text-gray-900">{{ metrics.parts.with_released }}</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-lg text-center">
+                        <div class="text-sm text-gray-500">Without Released Rev</div>
+                        <div class="text-2xl font-bold text-gray-900">{{ metrics.parts.without_released }}</div>
+                    </div>
+                </div>
+                <div class="mt-4 text-right">
+                    <a href="{{ url_for('entities_list') }}" class="text-sm text-blue-600 hover:text-blue-900 font-medium">Browse parts <i class="fas fa-arrow-right ml-1"></i></a>
+                </div>
+            </div>
         </div>
-        <h3 class="text-lg font-medium text-gray-900 mb-2">No inventory items yet</h3>
-        <p class="text-gray-500 mb-6">Get started by adjusting an item's quantity.</p>
-        <a href="{{ url_for('inventory_add') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-            <i class="fas fa-right-left mr-2"></i>
-            Adjust First Item
-        </a>
+
+        <!-- Recent Revisions -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-gray-900">Recent Revisions</h2>
+                <div class="text-sm text-gray-500">Total: <span class="font-medium text-gray-900">{{ metrics.revisions.total }}</span> · Released: <span class="font-medium text-gray-900">{{ metrics.revisions.released }}</span> · Drafts: <span class="font-medium text-gray-900">{{ metrics.revisions.drafts }}</span></div>
+            </div>
+            <div class="overflow-x-auto w-full">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Part</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rev</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for r in metrics.revisions.recent %}
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ r.sfid }} · {{ r.name }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ r.rev }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-green-100 text-green-800' if r.status == 'released' else 'bg-yellow-100 text-yellow-800' }}">{{ r.status or '—' }}</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ r.created_at }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <a href="{{ url_for('entities_view', sfid=r.sfid) }}" class="text-blue-600 hover:text-blue-900"><i class="fas fa-eye"></i></a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="px-6 py-6 text-center text-sm text-gray-500">No revisions yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    {% endif %}
+
+    <!-- Builds -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-gray-900">Recent Builds</h2>
+            <div class="space-x-2 text-sm">
+                {% for st, cnt in metrics.builds.by_status.items() %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{{ st }}: {{ cnt }}</span>
+                {% endfor %}
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">Total Units: {{ metrics.builds.units_built }}</span>
+            </div>
+        </div>
+        <div class="overflow-x-auto w-full">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Build</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opened</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Closed</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                    {% for b in metrics.builds.recent %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ b.sfid }} · {{ b.name }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-green-100 text-green-800' if b.status == 'closed' else 'bg-yellow-100 text-yellow-800' }}">{{ b.status }}</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ b.units_count }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ b.opened_at or '—' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ b.closed_at or '—' }}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <a href="{{ url_for('entities_view', sfid=b.sfid) }}" class="text-blue-600 hover:text-blue-900"><i class="fas fa-eye"></i></a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-6 text-center text-sm text-gray-500">No builds yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pipeline Summary -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200">
+            <h2 class="text-lg font-semibold text-gray-900">Pipeline Summary</h2>
+        </div>
+        <div class="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="p-4 bg-gray-50 rounded-lg text-center">
+                <div class="text-sm text-gray-500">Parts</div>
+                <div class="text-2xl font-bold text-gray-900">{{ metrics.pipeline.parts_total }}</div>
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg text-center">
+                <div class="text-sm text-gray-500">Revisions</div>
+                <div class="text-2xl font-bold text-gray-900">{{ metrics.pipeline.revisions_total }}</div>
+            </div>
+            <div class="p-4 bg-gray-50 rounded-lg text-center">
+                <div class="text-sm text-gray-500">Builds</div>
+                <div class="text-2xl font-bold text-gray-900">{{ metrics.pipeline.builds_total }}</div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
