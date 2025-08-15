@@ -111,7 +111,7 @@ def _autopush_enabled() -> bool:
 def _autopush_async_enabled() -> bool:
     val = os.environ.get('SF_WEB_AUTOPUSH_ASYNC')
     if val is None:
-        return False
+        return True
     return val.lower() in ('1', 'true', 'yes', 'on')
 
 
@@ -131,8 +131,8 @@ def _git_disabled() -> bool:
 
 def _debug_git_enabled() -> bool:
     val = os.environ.get('SF_DEBUG_GIT')
-    if not val:
-        return False
+    if val is None:
+        return True
     return val.lower() in ('1', 'true', 'yes', 'on')
 
 
@@ -147,8 +147,8 @@ def _fetch_mode_lazy() -> bool:
 def _fetch_mode_background() -> bool:
     """Return True if SF_GIT_FETCH_MODE requests background fetch behavior."""
     val = os.environ.get('SF_GIT_FETCH_MODE')
-    if not val:
-        return False
+    if val is None:
+        return True
     return val.lower() in ('bg', 'background', 'async')
 
 
@@ -249,6 +249,7 @@ def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
     - Remote/upstream checks are cached briefly to avoid repeated subprocess calls.
     - Network fetch is rate-limited via SF_GIT_PULL_TTL_SEC (default: 10s).
     - We only run `git pull --ff-only` when HEAD is actually behind upstream.
+    - In background fetch mode, we skip behind-check and pull entirely on the request path and only schedule a background fetch.
 
     Safety:
     - Honors SF_GIT_PULL_ALLOW_UNTRACKED as before when a pull is needed.
