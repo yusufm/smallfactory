@@ -642,16 +642,6 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             'total': int(item.get('total', 0) or 0),
             'uom': item.get('uom', 'ea') or 'ea',
         })
-    # Compute per-item bar width percent relative to the max for UI bars
-    try:
-        top_max = inv_top[0]['total'] if inv_top else 1
-        if top_max <= 0:
-            top_max = 1
-        for it in inv_top:
-            it['bar_pct'] = int((it.get('total', 0) or 0) * 100 // top_max)
-    except Exception:
-        for it in inv_top:
-            it['bar_pct'] = 0
 
     # Revisions metrics
     rev_total = 0
