@@ -386,7 +386,7 @@
           <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
             <div>
               <label class="block text-xs font-medium text-gray-700">Child SFID (use)</label>
-              <input id="bom-add-use" type="text" placeholder="p_child" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-mono">
+              <input id="bom-add-use" type="text" placeholder="p_child" data-autocomplete="entity" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 font-mono">
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-700">Qty</label>
@@ -402,7 +402,7 @@
             </div>
             <div class="md:col-span-2">
               <label class="block text-xs font-medium text-gray-700">Alternates (comma-separated)</label>
-              <input id="bom-add-alts" type="text" placeholder="p_alt1, p_alt2" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
+              <input id="bom-add-alts" type="text" placeholder="p_alt1, p_alt2" data-autocomplete="entity" data-ac-tokenized="comma" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
             </div>
             <div class="md:col-span-6 flex justify-end">
               <button type="button" onclick="bomAddLine()" class="px-3 py-2 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"><i class="fas fa-plus mr-1"></i>Add Line</button>
@@ -707,7 +707,7 @@ function renderBomEditorRows(rows){
         <td class="px-3 py-1.5">
           <div class="flex flex-wrap">${altsHtml||'<span class=\"text-gray-400\">—</span>'}</div>
           <div class="mt-1 flex gap-1">
-            <input id="bom-alt-add-${idx}" type="text" placeholder="p_alt" class="flex-1 min-w-[8rem] border border-gray-300 rounded px-2 py-1 font-mono">
+            <input id="bom-alt-add-${idx}" type="text" placeholder="p_alt" data-autocomplete="entity" class="flex-1 min-w-[8rem] border border-gray-300 rounded px-2 py-1 font-mono">
             <button type="button" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onclick="bomAltAdd(${idx})">Add Alt</button>
           </div>
         </td>
