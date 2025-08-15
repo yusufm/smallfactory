@@ -17,6 +17,7 @@ import subprocess
 import threading
 from datetime import datetime
 from typing import List
+import time
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -120,45 +121,96 @@ def _git_disabled() -> bool:
     return val.lower() in ('1', 'true', 'yes', 'on')
 
 
-def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
-    """Perform a safe git pull with fast-forward only.
+_GIT_REMOTE_CACHE: dict[str, tuple[float, bool]] = {}
+_GIT_UPSTREAM_CACHE: dict[str, tuple[float, bool]] = {}
+_GIT_LAST_FETCH: dict[str, float] = {}
 
-    - Allows untracked files by default (controlled by SF_GIT_PULL_ALLOW_UNTRACKED).
-    - If there are local modified/staged changes (excluding untracked), abort before pull.
+
+def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
+    """Rate-limited, behind-aware fast-forward pull.
+
+    Optimizations:
+    - Remote/upstream checks are cached briefly to avoid repeated subprocess calls.
+    - Network fetch is rate-limited via SF_GIT_PULL_TTL_SEC (default: 10s).
+    - We only run `git pull --ff-only` when HEAD is actually behind upstream.
+
+    Safety:
+    - Honors SF_GIT_PULL_ALLOW_UNTRACKED as before when a pull is needed.
+    - If no remote or no upstream: skip pull (fetch is rate-limited when checking upstream).
     """
     try:
+        repo = str(datarepo_path)
+        now = time.time()
+        ttl = int(os.environ.get('SF_GIT_PULL_TTL_SEC', '10') or '10')
+
         # Ensure repo
-        ck = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--is-inside-work-tree'], capture_output=True)
+        ck = subprocess.run(['git', '-C', repo, 'rev-parse', '--is-inside-work-tree'], capture_output=True)
         if ck.returncode != 0:
             return False, 'Not a git repository'
-        # No remote -> nothing to pull
-        remotes = subprocess.run(['git', '-C', str(datarepo_path), 'remote'], capture_output=True, text=True)
-        if remotes.returncode != 0 or 'origin' not in (remotes.stdout or '').split():
+
+        # Remote existence (cached ~60s)
+        rc_ts, rc_has = _GIT_REMOTE_CACHE.get(repo, (0.0, False))
+        if now - rc_ts > 60:
+            remotes = subprocess.run(['git', '-C', repo, 'remote'], capture_output=True, text=True)
+            rc_has = (remotes.returncode == 0) and ('origin' in (remotes.stdout or '').split())
+            _GIT_REMOTE_CACHE[repo] = (now, rc_has)
+        if not rc_has:
+            return True, None  # No remote -> nothing to pull
+
+        # Upstream existence (cached ~60s)
+        uc_ts, uc_has = _GIT_UPSTREAM_CACHE.get(repo, (0.0, False))
+        if now - uc_ts > 60:
+            up = subprocess.run(['git', '-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
+            uc_has = (up.returncode == 0)
+            _GIT_UPSTREAM_CACHE[repo] = (now, uc_has)
+
+        # If no upstream configured, optionally refresh remote info (rate-limited), then skip
+        if not uc_has:
+            last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+            if now - last_fetch > ttl:
+                ft = subprocess.run(['git', '-C', repo, 'fetch', '--quiet', 'origin'], capture_output=True, text=True)
+                if ft.returncode != 0:
+                    msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+                    return False, msg
+                _GIT_LAST_FETCH[repo] = now
             return True, None
-        # Check working tree status
-        st = subprocess.run(['git', '-C', str(datarepo_path), 'status', '--porcelain'], capture_output=True, text=True)
+
+        # Ensure remote tracking refs are reasonably fresh (rate-limited fetch)
+        last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+        if now - last_fetch > ttl:
+            ft = subprocess.run(['git', '-C', repo, 'fetch', '--quiet', 'origin'], capture_output=True, text=True)
+            if ft.returncode != 0:
+                msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+                return False, msg
+            _GIT_LAST_FETCH[repo] = now
+
+        # Compute if we are behind upstream (requires up-to-date remote refs)
+        behind = subprocess.run(['git', '-C', repo, 'rev-list', '--count', 'HEAD..@{u}'], capture_output=True, text=True)
+        if behind.returncode != 0:
+            return False, 'Failed to compare with upstream'
+        try:
+            n_behind = int((behind.stdout or '0').strip() or '0')
+        except Exception:
+            n_behind = 0
+
+        if n_behind <= 0:
+            return True, None  # Up-to-date or ahead; no pull needed
+
+        # We need to pull; ensure working tree cleanliness per policy
+        st = subprocess.run(['git', '-C', repo, 'status', '--porcelain'], capture_output=True, text=True)
         if st.returncode != 0:
             return False, 'Failed to get git status'
         lines = [ln.rstrip('\n') for ln in (st.stdout or '').splitlines()]
         if not _pull_allow_untracked():
-            # Any change at all blocks pull
             if any(lines):
                 return False, 'Working tree not clean for pull'
         else:
-            # Ignore untracked (??), block on any other changes
             for ln in lines:
                 if not ln.startswith('?? '):
                     return False, 'Local changes present; commit or stash before pull'
-        # If current branch has no upstream configured, perform a fetch and skip pulling
-        up = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
-        if up.returncode != 0:
-            ft = subprocess.run(['git', '-C', str(datarepo_path), 'fetch', 'origin'], capture_output=True, text=True)
-            if ft.returncode != 0:
-                msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
-                return False, msg
-            return True, None
-        # Fast-forward only pull
-        pl = subprocess.run(['git', '-C', str(datarepo_path), 'pull', '--ff-only'], capture_output=True, text=True)
+
+        # Fast-forward only pull (only when actually behind)
+        pl = subprocess.run(['git', '-C', repo, 'pull', '--ff-only'], capture_output=True, text=True)
         if pl.returncode != 0:
             msg = (pl.stderr or pl.stdout or '').strip() or 'git pull failed'
             return False, msg

@@ -6,7 +6,7 @@ This document describes the concurrency-safe git workflow used by the web app an
 
 All mutation endpoints in the web app must use the transaction guard `_run_repo_txn` defined in `web/app.py`. This wrapper ensures:
 
-- Safe git pull (fast-forward only)
+- Safe git pull (fast-forward only, behind-aware and rate-limited)
 - Serialized mutations via a process-wide lock
 - Optional autocommit against the mutated paths
 - Conditional push to the remote (if configured)
@@ -26,7 +26,10 @@ _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None 
 
 Behavior:
 1. If `SF_GIT_DISABLED=1`, `mutate_fn()` is executed directly with no git operations.
-2. Otherwise, perform a safe pull (`--ff-only`). If there are local changes, behavior depends on `SF_GIT_PULL_ALLOW_UNTRACKED`:
+2. Otherwise, perform a safe pull sequence:
+   - Refresh remote refs with a rate-limited `git fetch` using `SF_GIT_PULL_TTL_SEC`.
+   - Only attempt `git pull --ff-only` if `HEAD` is actually behind `@{u}`.
+   - If there are local changes, behavior depends on `SF_GIT_PULL_ALLOW_UNTRACKED`:
    - Default ON: untracked files are allowed; any other local changes abort the pull.
    - If `SF_GIT_PULL_ALLOW_UNTRACKED=0`: any changes (including untracked) abort the pull.
 3. Run `mutate_fn()`.
@@ -44,6 +47,9 @@ Behavior:
 - `SF_GIT_PULL_ALLOW_UNTRACKED` (default ON)
   - If ON, safe pull ignores untracked files but aborts on any other local changes.
   - If OFF (`0`), any local changes (including untracked) abort the pull.
+- `SF_GIT_PULL_TTL_SEC` (default 10)
+  - Rate-limits `git fetch` calls when checking if the repo is behind upstream.
+  - Larger values reduce network usage at the cost of slightly staler remote state.
 - `SF_GIT_DISABLED` (default OFF)
   - If ON, disables git orchestration entirely; mutations run without pull/commit/push.
 
