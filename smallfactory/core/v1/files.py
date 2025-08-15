@@ -182,8 +182,15 @@ def rmdir(
             f"[smallFactory] files-rmdir {sfid}\n::sfid::{sfid}\n::sf-op::files-rmdir\npath=files/{rel}"
         )
         git_commit_paths(datarepo_path, [keep], msg, delete=True)
-    # Remove the now-empty directory from working tree
-    target.rmdir()
+    # Remove the now-empty directory from working tree.
+    # Be tolerant if the directory disappeared after committing .gitkeep deletion
+    # (e.g., due to concurrent operations or tooling behavior):
+    if target.exists():
+        try:
+            target.rmdir()
+        except FileNotFoundError:
+            # Already removed; treat as success
+            pass
     return {"sfid": sfid, "removed": str(target.relative_to(root)).replace("\\", "/")}
 
 
