@@ -17,6 +17,8 @@ import subprocess
 import threading
 from datetime import datetime
 from typing import List
+import time
+import atexit
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -106,6 +108,13 @@ def _autopush_enabled() -> bool:
     return val.lower() in ('1', 'true', 'yes', 'on')
 
 
+def _autopush_async_enabled() -> bool:
+    val = os.environ.get('SF_WEB_AUTOPUSH_ASYNC')
+    if val is None:
+        return True
+    return val.lower() in ('1', 'true', 'yes', 'on')
+
+
 def _pull_allow_untracked() -> bool:
     val = os.environ.get('SF_GIT_PULL_ALLOW_UNTRACKED')
     if val is None:
@@ -120,60 +129,409 @@ def _git_disabled() -> bool:
     return val.lower() in ('1', 'true', 'yes', 'on')
 
 
-def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
-    """Perform a safe git pull with fast-forward only.
+def _debug_git_enabled() -> bool:
+    val = os.environ.get('SF_DEBUG_GIT')
+    if val is None:
+        return True
+    return val.lower() in ('1', 'true', 'yes', 'on')
 
-    - Allows untracked files by default (controlled by SF_GIT_PULL_ALLOW_UNTRACKED).
-    - If there are local modified/staged changes (excluding untracked), abort before pull.
+
+def _fetch_mode_lazy() -> bool:
+    """Return True if SF_GIT_FETCH_MODE requests lazy/off behavior."""
+    val = os.environ.get('SF_GIT_FETCH_MODE')
+    if not val:
+        return False
+    return val.lower() in ('lazy', 'off', 'none', 'skip')
+
+
+def _fetch_mode_background() -> bool:
+    """Return True if SF_GIT_FETCH_MODE requests background fetch behavior."""
+    val = os.environ.get('SF_GIT_FETCH_MODE')
+    if val is None:
+        return True
+    return val.lower() in ('bg', 'background', 'async')
+
+
+def _dgit(msg: str) -> None:
+    if _debug_git_enabled():
+        ts = datetime.now().isoformat(timespec='seconds')
+        line = f'[smallFactory][git] {ts} {msg}'
+        try:
+            # Prefer Flask's logger so logs appear in the Flask console
+            app.logger.info(line)
+        except Exception:
+            # Fallback to stdout, unbuffered
+            print(line, flush=True)
+
+
+_GIT_REMOTE_CACHE: dict[str, tuple[float, bool]] = {}
+_GIT_UPSTREAM_CACHE: dict[str, tuple[float, bool]] = {}
+_GIT_LAST_FETCH: dict[str, float] = {}
+
+# Background fetch scheduling for non-blocking ref refresh
+_BG_FETCH_SCHED_LOCK = threading.Lock()
+_BG_FETCH_TIMERS: dict[str, threading.Timer] = {}
+
+def _bg_fetch_worker(datarepo_path: Path) -> None:
+    """Background worker to run `git fetch origin` without blocking requests."""
+    t0 = time.time()
+    repo = str(datarepo_path)
+    _dgit('bg fetch: start')
+    try:
+        ft = subprocess.run(['git', '-C', repo, 'fetch', '--quiet', 'origin'], capture_output=True, text=True)
+        if ft.returncode != 0:
+            msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+            low = msg.lower()
+            soft_fail = (
+                ('no such remote' in low) or
+                ('does not appear to be a git repository' in low) or
+                ('could not read from remote repository' in low) or
+                ('repository not found' in low) or
+                ('permission denied' in low)
+            )
+            if soft_fail:
+                _dgit(f"bg fetch: remote error; proceeding with cached refs ({msg})")
+                if ('no such remote' in low) or ('does not appear to be a git repository' in low):
+                    # Update remote cache to avoid repeated attempts until cache expiry
+                    try:
+                        _GIT_REMOTE_CACHE[repo] = (time.time(), False)
+                    except Exception:
+                        pass
+            else:
+                _dgit(f"bg fetch: failed ({msg})")
+        else:
+            try:
+                _GIT_LAST_FETCH[repo] = time.time()
+            except Exception:
+                pass
+            _dgit(f"bg fetch: done {int((time.time()-t0)*1000)}ms")
+    except Exception:
+        # Silent background error
+        pass
+    finally:
+        try:
+            with _BG_FETCH_SCHED_LOCK:
+                _BG_FETCH_TIMERS.pop(repo, None)
+        except Exception:
+            pass
+
+def _schedule_background_fetch(datarepo_path: Path, delay: float = 0.0) -> None:
+    """Schedule a background fetch soon to refresh remote refs.
+
+    Coalesces multiple requests; respects SF_GIT_PULL_TTL_SEC via _GIT_LAST_FETCH.
+    """
+    repo = str(datarepo_path)
+    try:
+        with _BG_FETCH_SCHED_LOCK:
+            existing = _BG_FETCH_TIMERS.get(repo)
+            if existing and existing.is_alive():
+                _dgit('bg fetch: coalesced; existing timer pending')
+                return
+            # Mark a recent attempt to avoid rescheduling within TTL while waiting
+            _GIT_LAST_FETCH[repo] = time.time()
+            t = threading.Timer(max(0.0, delay), _bg_fetch_worker, args=(datarepo_path,))
+            try:
+                t.daemon = True  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            _BG_FETCH_TIMERS[repo] = t
+            t.start()
+        _dgit(f"bg fetch: scheduled in {int(max(0.0, delay)*1000)}ms")
+    except Exception:
+        # Non-fatal
+        pass
+
+
+def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
+    """Rate-limited, behind-aware fast-forward pull.
+
+    Optimizations:
+    - Remote/upstream checks are cached briefly to avoid repeated subprocess calls.
+    - Network fetch is rate-limited via SF_GIT_PULL_TTL_SEC (default: 10s).
+    - We only run `git pull --ff-only` when HEAD is actually behind upstream.
+    - In background fetch mode, we skip behind-check and pull entirely on the request path and only schedule a background fetch.
+
+    Safety:
+    - Honors SF_GIT_PULL_ALLOW_UNTRACKED as before when a pull is needed.
+    - If no remote or no upstream: skip pull (fetch is rate-limited when checking upstream).
     """
     try:
+        repo = str(datarepo_path)
+        now = time.time()
+        ttl = int(os.environ.get('SF_GIT_PULL_TTL_SEC', '10') or '10')
+        _dgit(f'pull: begin ttl={ttl}s')
+
         # Ensure repo
-        ck = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--is-inside-work-tree'], capture_output=True)
+        ck = subprocess.run(['git', '-C', repo, 'rev-parse', '--is-inside-work-tree'], capture_output=True)
         if ck.returncode != 0:
             return False, 'Not a git repository'
-        # No remote -> nothing to pull
-        remotes = subprocess.run(['git', '-C', str(datarepo_path), 'remote'], capture_output=True, text=True)
-        if remotes.returncode != 0 or 'origin' not in (remotes.stdout or '').split():
+
+        # Remote existence (cached ~60s)
+        rc_ts, rc_has = _GIT_REMOTE_CACHE.get(repo, (0.0, False))
+        if now - rc_ts > 60:
+            remotes = subprocess.run(['git', '-C', repo, 'remote'], capture_output=True, text=True)
+            rc_has = (remotes.returncode == 0) and ('origin' in (remotes.stdout or '').split())
+            _GIT_REMOTE_CACHE[repo] = (now, rc_has)
+        if not rc_has:
+            return True, None  # No remote -> nothing to pull
+
+        # Upstream existence (cached ~60s)
+        uc_ts, uc_has = _GIT_UPSTREAM_CACHE.get(repo, (0.0, False))
+        if now - uc_ts > 60:
+            up = subprocess.run(['git', '-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
+            uc_has = (up.returncode == 0)
+            _GIT_UPSTREAM_CACHE[repo] = (now, uc_has)
+
+        # If no upstream configured, optionally refresh remote info (rate-limited), then skip
+        if not uc_has:
+            if _fetch_mode_lazy():
+                _dgit('pull: no upstream; lazy mode -> skip fetch')
+            elif _fetch_mode_background():
+                last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+                if (now - last_fetch > ttl) and rc_has:
+                    _dgit('pull: no upstream; scheduling background fetch')
+                    _schedule_background_fetch(datarepo_path)
+            else:
+                last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+                if (now - last_fetch > ttl) and rc_has:
+                    t0f = time.time()
+                    ft = subprocess.run(['git', '-C', repo, 'fetch', '--quiet', 'origin'], capture_output=True, text=True)
+                    if ft.returncode != 0:
+                        msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+                        low = msg.lower()
+                        # Gracefully degrade if remote 'origin' is missing
+                        if ('no such remote' in low) or ('does not appear to be a git repository' in low):
+                            _GIT_REMOTE_CACHE[repo] = (now, False)
+                            _dgit(f"pull: no upstream; origin missing; skip fetch ({msg})")
+                            return True, None
+                        return False, msg
+                    _GIT_LAST_FETCH[repo] = now
+                    _dgit(f'pull: fetch (no upstream) {int((time.time()-t0f)*1000)}ms')
             return True, None
-        # Check working tree status
-        st = subprocess.run(['git', '-C', str(datarepo_path), 'status', '--porcelain'], capture_output=True, text=True)
+
+        # Ensure remote tracking refs are reasonably fresh (rate-limited fetch)
+        if _fetch_mode_lazy():
+            _dgit('pull: lazy mode -> skip fetch')
+        elif _fetch_mode_background():
+            last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+            if now - last_fetch > ttl:
+                _dgit('pull: scheduling background fetch')
+                _schedule_background_fetch(datarepo_path)
+            # In background mode, avoid any synchronous network operations on request path
+            _dgit('pull: background mode -> skip behind-check and pull')
+            return True, None
+        else:
+            last_fetch = _GIT_LAST_FETCH.get(repo, 0.0)
+            if now - last_fetch > ttl:
+                t0f = time.time()
+                ft = subprocess.run(['git', '-C', repo, 'fetch', '--quiet', 'origin'], capture_output=True, text=True)
+                if ft.returncode != 0:
+                    msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+                    low = msg.lower()
+                    # Gracefully degrade on common remote misconfig/errors even if upstream exists
+                    soft_fail = (
+                        ('no such remote' in low) or
+                        ('does not appear to be a git repository' in low) or
+                        ('could not read from remote repository' in low) or
+                        ('repository not found' in low) or
+                        ('permission denied' in low)
+                    )
+                    if soft_fail:
+                        _dgit(f"pull: fetch skipped due to remote error; proceeding with cached refs ({msg})")
+                    else:
+                        return False, msg
+                else:
+                    _GIT_LAST_FETCH[repo] = now
+                    _dgit(f'pull: fetch {int((time.time()-t0f)*1000)}ms')
+
+        # Compute if we are behind upstream (requires up-to-date remote refs)
+        behind = subprocess.run(['git', '-C', repo, 'rev-list', '--count', 'HEAD..@{u}'], capture_output=True, text=True)
+        if behind.returncode != 0:
+            # Gracefully handle missing/invalid upstream or remote issues by proceeding as not-behind
+            emsg = (behind.stderr or behind.stdout or '').strip()
+            low = emsg.lower()
+            soft = (
+                ('no upstream' in low) or
+                ('bad revision' in low and '@{u}' in low) or
+                ('unknown revision or path not in the working tree' in low) or
+                ('no such ref' in low) or
+                ("ambiguous argument '@{u}'" in low) or
+                ('not something we can merge' in low)
+            )
+            if soft:
+                _dgit(f"pull: behind-check skipped due to upstream/ref error; proceeding as up-to-date ({emsg})")
+                n_behind = 0
+            else:
+                return False, 'Failed to compare with upstream'
+        else:
+            try:
+                n_behind = int((behind.stdout or '0').strip() or '0')
+            except Exception:
+                n_behind = 0
+
+        _dgit(f'pull: behind={n_behind}')
+        if n_behind <= 0:
+            _dgit('pull: up-to-date; skip')
+            return True, None  # Up-to-date or ahead; no pull needed
+
+        # We need to pull; ensure working tree cleanliness per policy
+        st = subprocess.run(['git', '-C', repo, 'status', '--porcelain'], capture_output=True, text=True)
         if st.returncode != 0:
             return False, 'Failed to get git status'
         lines = [ln.rstrip('\n') for ln in (st.stdout or '').splitlines()]
         if not _pull_allow_untracked():
-            # Any change at all blocks pull
             if any(lines):
                 return False, 'Working tree not clean for pull'
         else:
-            # Ignore untracked (??), block on any other changes
             for ln in lines:
                 if not ln.startswith('?? '):
                     return False, 'Local changes present; commit or stash before pull'
-        # If current branch has no upstream configured, perform a fetch and skip pulling
-        up = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
-        if up.returncode != 0:
-            ft = subprocess.run(['git', '-C', str(datarepo_path), 'fetch', 'origin'], capture_output=True, text=True)
-            if ft.returncode != 0:
-                msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
-                return False, msg
-            return True, None
-        # Fast-forward only pull
-        pl = subprocess.run(['git', '-C', str(datarepo_path), 'pull', '--ff-only'], capture_output=True, text=True)
+
+        # Fast-forward only pull (only when actually behind)
+        t0p = time.time()
+        pl = subprocess.run(['git', '-C', repo, 'pull', '--ff-only'], capture_output=True, text=True)
         if pl.returncode != 0:
             msg = (pl.stderr or pl.stdout or '').strip() or 'git pull failed'
             return False, msg
+        _dgit(f'pull: pulled ff-only in {int((time.time()-t0p)*1000)}ms')
         return True, None
     except Exception as e:
         return False, str(e)
 
 
 _REPO_TXN_LOCK = threading.Lock()
+_PUSH_LOCK = threading.Lock()
+
+# Push scheduling/coalescing helpers
+_PUSH_SCHED_LOCK = threading.Lock()
+_GIT_LAST_PUSH: dict[str, float] = {}
+_PUSH_TIMERS: dict[str, threading.Timer] = {}
+
+
+def _push_worker(datarepo_path: Path) -> None:
+    t0 = time.time()
+    _dgit('async push: start')
+    try:
+        with _PUSH_LOCK:
+            ok = git_push(datarepo_path)
+    except Exception:
+        ok = False
+    finally:
+        dt = int((time.time() - t0) * 1000)
+        # Update last-push time on success and clear any scheduled timer for this repo
+        try:
+            repo = str(datarepo_path)
+            if ok:
+                _GIT_LAST_PUSH[repo] = time.time()
+            with _PUSH_SCHED_LOCK:
+                _PUSH_TIMERS.pop(repo, None)
+        except Exception:
+            pass
+        _dgit(f'async push: done {dt}ms ok={ok}')
+
+
+def _spawn_async_push(datarepo_path: Path) -> None:
+    try:
+        th = threading.Thread(target=_push_worker, args=(datarepo_path,), daemon=True)
+        th.start()
+    except Exception:
+        print('[smallFactory] Warning: failed to spawn async push')
+
+
+def _get_push_ttl_sec() -> int:
+    try:
+        return int(os.environ.get('SF_GIT_PUSH_TTL_SEC', '0') or '0')
+    except Exception:
+        return 0
+
+
+def _schedule_delayed_push(datarepo_path: Path) -> None:
+    """Schedule a delayed background push to coalesce frequent mutations.
+
+    Respects SF_GIT_PUSH_TTL_SEC. If enough time has already elapsed since the
+    last successful push, this will spawn an immediate async push; otherwise it
+    schedules a timer to fire after the remaining delay. Multiple calls within
+    the TTL window will coalesce into a single pending timer.
+    """
+    ttl = _get_push_ttl_sec()
+    if ttl <= 0:
+        _spawn_async_push(datarepo_path)
+        return
+    repo = str(datarepo_path)
+    now = time.time()
+    last = _GIT_LAST_PUSH.get(repo, 0.0)
+    delay = max(0.0, (last + ttl) - now)
+    with _PUSH_SCHED_LOCK:
+        existing = _PUSH_TIMERS.get(repo)
+        if existing and existing.is_alive():
+            # A push is already scheduled; let it run
+            _dgit(f'push: coalesced; existing timer pending (~{int(delay*1000)}ms left)')
+            return
+        if delay <= 0:
+            _dgit('push: TTL elapsed; pushing now (async)')
+            # Spawn immediate async push
+            _spawn_async_push(datarepo_path)
+            return
+        # Schedule a new timer to push after remaining TTL
+        _dgit(f'push: scheduled in {int(delay*1000)}ms')
+        t = threading.Timer(delay, _push_worker, args=(datarepo_path,))
+        try:
+            t.daemon = True  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        _PUSH_TIMERS[repo] = t
+        t.start()
+
+
+def _flush_pending_pushes_on_exit() -> None:
+    """Flush any scheduled delayed pushes on process exit.
+
+    Cancels timers and performs a final synchronous push per pending repo to
+    avoid losing pushes when using SF_GIT_PUSH_TTL_SEC.
+    """
+    try:
+        if not _autopush_enabled():
+            return
+        with _PUSH_SCHED_LOCK:
+            items = list(_PUSH_TIMERS.items())
+            _PUSH_TIMERS.clear()
+        if not items:
+            _dgit('shutdown: no pending push timers')
+            return
+        for repo, timer in items:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+            try:
+                path = Path(repo)
+                _dgit('shutdown: flushing pending push')
+                t0 = time.time()
+                with _PUSH_LOCK:
+                    ok = git_push(path)
+                _dgit(f'shutdown: push done {int((time.time()-t0)*1000)}ms ok={ok}')
+                if ok:
+                    _GIT_LAST_PUSH[repo] = time.time()
+            except Exception:
+                try:
+                    print('[smallFactory] Warning: shutdown push failed', file=sys.stderr)
+                except Exception:
+                    pass
+    except Exception:
+        # Be silent during interpreter teardown
+        pass
+
+
+# Register process-exit hook
+atexit.register(_flush_pending_pushes_on_exit)
 
 
 def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None = None, autocommit_paths: List[str] | None = None):
     """Serialize repo mutations with: safe pull -> mutate -> autocommit -> conditional push."""
     if _git_disabled():
         return mutate_fn()
+    need_async_push = False
+    schedule_delayed = False
     with _REPO_TXN_LOCK:
         ok, err = _safe_git_pull(datarepo_path)
         if not ok:
@@ -183,12 +541,30 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
         _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
         # Conditional push
         if _autopush_enabled():
-            try:
-                git_push(datarepo_path)
-            except Exception:
-                # Non-fatal; leave a warning via stderr for logs
-                print('[smallFactory] Warning: autopush failed')
-        return result
+            ttl = _get_push_ttl_sec()
+            if ttl and ttl > 0:
+                # Defer push to batch within TTL window (always async)
+                schedule_delayed = True
+            else:
+                if _autopush_async_enabled():
+                    need_async_push = True
+                else:
+                    try:
+                        t0 = time.time()
+                        with _PUSH_LOCK:
+                            okp = git_push(datarepo_path)
+                        _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
+                        if okp:
+                            _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
+                    except Exception:
+                        # Non-fatal; leave a warning via stderr for logs
+                        print('[smallFactory] Warning: autopush failed')
+    # If async push is enabled, run it after releasing the txn lock
+    if need_async_push:
+        _spawn_async_push(datarepo_path)
+    if schedule_delayed:
+        _schedule_delayed_push(datarepo_path)
+    return result
 
 @app.route('/')
 def index():
