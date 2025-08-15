@@ -149,6 +149,14 @@ def _safe_git_pull(datarepo_path: Path) -> tuple[bool, str | None]:
             for ln in lines:
                 if not ln.startswith('?? '):
                     return False, 'Local changes present; commit or stash before pull'
+        # If current branch has no upstream configured, perform a fetch and skip pulling
+        up = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
+        if up.returncode != 0:
+            ft = subprocess.run(['git', '-C', str(datarepo_path), 'fetch', 'origin'], capture_output=True, text=True)
+            if ft.returncode != 0:
+                msg = (ft.stderr or ft.stdout or '').strip() or 'git fetch failed'
+                return False, msg
+            return True, None
         # Fast-forward only pull
         pl = subprocess.run(['git', '-C', str(datarepo_path), 'pull', '--ff-only'], capture_output=True, text=True)
         if pl.returncode != 0:
