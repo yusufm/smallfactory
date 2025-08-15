@@ -808,8 +808,14 @@ def inventory_list():
                 'by_location': cache.get('by_location', {}) or {},
                 'as_of': cache.get('as_of'),
             })
+        # Optional pre-filtering from dashboard drill-downs
+        status = (request.args.get('status') or '').strip().lower()
+        if status == 'in_stock':
+            items = [it for it in items if int(it.get('total') or 0) > 0]
+        elif status in ('zero_stock', 'out_of_stock'):
+            items = [it for it in items if int(it.get('total') or 0) <= 0]
         field_specs = get_inventory_field_specs()
-        return render_template('inventory/list.html', items=items, field_specs=field_specs)
+        return render_template('inventory/list.html', items=items, field_specs=field_specs, filter_status=status)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -954,8 +960,13 @@ def entities_list():
     """Display all canonical entities."""
     try:
         datarepo_path = get_datarepo_path()
-        entities = list_entities(datarepo_path)
-        return render_template('entities/list.html', entities=entities)
+        entities = list_entities(datarepo_path) or []
+        # Optional type pre-filter (?type=p to show only parts, etc.)
+        ftype = (request.args.get('type') or '').strip().lower()
+        if ftype and len(ftype) == 1 and ftype.isalpha():
+            prefix = f"{ftype}_"
+            entities = [e for e in entities if str(e.get('sfid', '')).startswith(prefix)]
+        return render_template('entities/list.html', entities=entities, filter_type=ftype)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
