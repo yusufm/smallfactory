@@ -63,6 +63,10 @@
     if (!input || input.dataset.acEnhanced === '1') return;
     input.dataset.acEnhanced = '1';
 
+    // Tokenization mode: support comma-separated multi-values when requested
+    const tokenMode = (input.dataset.acTokenized || '').toLowerCase();
+    const isCommaTokenized = tokenMode === 'comma';
+
     const wrapper = wrapInput(input);
     const list = createEl('div', 'absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-64 overflow-auto hidden', {
       role: 'listbox',
@@ -125,7 +129,22 @@
       else if (eBot > cBot) container.scrollTop = eBot - container.clientHeight;
     }
     function commit(data){
-      input.value = data.sfid || '';
+      const sfid = data.sfid || '';
+      if (isCommaTokenized){
+        const raw = String(input.value || '');
+        let parts = raw.split(',');
+        if (parts.length === 0) parts = [''];
+        // Replace the last token (after last comma) with selected sfid
+        parts[parts.length - 1] = sfid;
+        // Normalize: trim tokens, drop empties, join with ", "
+        const normalized = parts
+          .map(s => String(s || '').trim())
+          .filter(Boolean)
+          .join(', ');
+        input.value = normalized;
+      } else {
+        input.value = sfid;
+      }
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       hide();
@@ -134,12 +153,16 @@
 
     const doSearch = debounce(async function(){
       try {
-        const q = (input.value || '').trim();
+        const raw = String(input.value || '');
+        const q = (isCommaTokenized ? raw.split(',').pop() : raw).trim();
         if (q.length < MIN_CHARS){ clear(); hide(); return; }
         // Cancel prior request
         if (lastController) lastController.abort();
         lastController = new AbortController();
-        const type = getEntityTypeFor(input, options);
+        let type = getEntityTypeFor(input, options);
+        // If current token looks like "p_"/"l_" etc, prefer that as type hint
+        const m = q.match(/^([a-z])_/i);
+        if (m) type = m[1].toLowerCase();
         const params = new URLSearchParams();
         params.set('q', q);
         params.set('limit', String((options && options.limit) || DEFAULT_LIMIT));
