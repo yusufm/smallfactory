@@ -1147,6 +1147,65 @@ def api_entities_list():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/entities/search')
+def api_entities_search():
+    """Search entities by query across sfid and name (case-insensitive).
+
+    Query params:
+    - q: search string (required; empty returns empty results)
+    - type: optional type prefix (e.g., 'p' or 'l'); matches SFIDs starting with '<type>_'
+    - limit: optional max results (default 10, max 50)
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        q = (request.args.get('q') or '').strip()
+        # If no query provided, return empty result set (not an error for UX)
+        if not q:
+            return jsonify({'success': True, 'results': []})
+        ql = q.lower()
+
+        # Optional type filter based on SFID prefix before '_'
+        type_raw = request.args.get('type')
+        type_prefix = None
+        if type_raw is not None:
+            t = str(type_raw).strip().lower()
+            if t.endswith('_'):
+                t = t[:-1]
+            if t:
+                type_prefix = f"{t}_"
+
+        # Optional limit with sane defaults and bounds
+        limit_raw = request.args.get('limit')
+        limit = 10
+        if limit_raw is not None and str(limit_raw).strip() != '':
+            try:
+                limit = int(limit_raw)
+            except Exception:
+                limit = 10
+        if limit < 1:
+            limit = 1
+        if limit > 50:
+            limit = 50
+
+        ents = list_entities(datarepo_path) or []
+        results = []
+        for e in ents:
+            if not isinstance(e, dict):
+                continue
+            sfid = str(e.get('sfid', '')).strip()
+            if not sfid:
+                continue
+            if type_prefix and not sfid.startswith(type_prefix):
+                continue
+            name = str(e.get('name', '')).strip()
+            name_l = name.lower() if name else ''
+            if (ql in sfid.lower()) or (name_l and (ql in name_l)):
+                results.append({'sfid': sfid, 'name': name or sfid})
+
+        results.sort(key=lambda x: x.get('sfid', ''))
+        return jsonify({'success': True, 'results': results[:limit]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/entities/<sfid>')
 def api_entities_view(sfid):
