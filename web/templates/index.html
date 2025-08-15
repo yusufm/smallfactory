@@ -12,7 +12,7 @@
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <!-- Parts Total -->
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <a href="{{ url_for('entities_list', type='p') }}" class="block bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:bg-gray-50 transition-colors">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-blue-100">
                     <i class="fas fa-cube text-blue-600 text-xl"></i>
@@ -22,10 +22,10 @@
                     <p class="text-2xl font-bold text-gray-900">{{ metrics.parts.total }}</p>
                 </div>
             </div>
-        </div>
+        </a>
 
         <!-- Inventory Quantity -->
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <a href="{{ url_for('inventory_list') }}" class="block bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:bg-gray-50 transition-colors">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-green-100">
                     <i class="fas fa-cubes text-green-600 text-xl"></i>
@@ -35,10 +35,10 @@
                     <p class="text-2xl font-bold text-gray-900">{{ metrics.inventory.total_quantity }}</p>
                 </div>
             </div>
-        </div>
+        </a>
 
         <!-- Builds Total -->
-        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <a href="{{ url_for('entities_list', type='b') }}" class="block bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:bg-gray-50 transition-colors">
             <div class="flex items-center">
                 <div class="p-3 rounded-full bg-yellow-100">
                     <i class="fas fa-industry text-yellow-600 text-xl"></i>
@@ -48,7 +48,7 @@
                     <p class="text-2xl font-bold text-gray-900">{{ metrics.builds.total }}</p>
                 </div>
             </div>
-        </div>
+        </a>
 
         <!-- Data Repository -->
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -67,9 +67,11 @@
     </div>
 
     <!-- Quick Actions -->
-    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-white">
+            <h2 class="text-lg font-semibold text-gray-900">Quick Actions</h2>
+        </div>
+        <div class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <a href="{{ url_for('inventory_add') }}" class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors group">
                 <div class="p-2 rounded-md bg-blue-100 group-hover:bg-blue-200 transition-colors">
                     <i class="fas fa-right-left text-blue-600"></i>
@@ -272,7 +274,6 @@
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Build</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Units</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Opened</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Closed</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -285,7 +286,6 @@
                         <td class="px-6 py-4 text-sm">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ 'bg-green-100 text-green-800' if b.status == 'closed' else 'bg-yellow-100 text-yellow-800' }}">{{ b.status }}</span>
                         </td>
-                        <td class="px-6 py-4 text-sm text-gray-900">{{ b.units_count }}</td>
                         <td class="px-6 py-4 text-sm text-gray-500">{{ b.opened_at or '—' }}</td>
                         <td class="px-6 py-4 text-sm text-gray-500">{{ b.closed_at or '—' }}</td>
                         <td class="px-6 py-4 text-sm font-medium">
@@ -294,7 +294,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="px-6 py-6 text-center text-sm text-gray-500">No builds yet.</td>
+                        <td colspan="5" class="px-6 py-6 text-center text-sm text-gray-500">No builds yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
