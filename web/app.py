@@ -566,24 +566,206 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
         _schedule_delayed_push(datarepo_path)
     return result
 
+
+# -----------------------
+# Dashboard metrics computation
+# -----------------------
+def _parse_iso_ts(*values) -> str:
+    """Return the first non-empty ISO-like timestamp string from values; fallback to ''.
+
+    We do not parse to datetime to avoid tz pitfalls in templates; lexical sort is ok for ISO.
+    """
+    for v in values:
+        try:
+            s = str(v).strip()
+        except Exception:
+            s = ""
+        if s:
+            return s
+    return ""
+
+
+def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
+    """Compute unified dashboard metrics using only public core APIs.
+
+    Returns a dict with keys: inventory, parts, revisions, builds, pipeline.
+    """
+    # Inventory summary (from caches; computes missing from journals as needed)
+    inv_summary = {}
+    try:
+        inv_summary = inventory_onhand(datarepo_path) or {}
+    except Exception:
+        inv_summary = {}
+    inv_parts = list(inv_summary.get('parts') or [])
+    inv_total_qty = int(inv_summary.get('total', 0) or 0)
+
+    # Entities
+    try:
+        ents = list_entities(datarepo_path) or []
+    except Exception:
+        ents = []
+    parts = [e for e in ents if str(e.get('sfid', '')).startswith('p_')]
+    builds = [e for e in ents if str(e.get('sfid', '')).startswith('b_')]
+
+    # Inventory metrics
+    inv_map = {p.get('sfid'): int(p.get('total', 0) or 0) for p in inv_parts if p.get('sfid')}
+    parts_total = len(parts)
+    parts_in_stock = 0
+    parts_zero_stock = 0
+    for p in parts:
+        sfid = p.get('sfid')
+        qty = int(inv_map.get(sfid, 0) or 0)
+        if qty > 0:
+            parts_in_stock += 1
+        else:
+            parts_zero_stock += 1
+    # Precompute stock coverage percent for UI (avoid heavy inline template math)
+    try:
+        stock_coverage_pct = int(parts_in_stock * 100 // (parts_total or 1))
+    except Exception:
+        stock_coverage_pct = 0
+
+    # Top stock items (by quantity desc) with names
+    top_stock = sorted(inv_parts, key=lambda x: int(x.get('total', 0) or 0), reverse=True)[:top_n]
+    inv_top = []
+    for item in top_stock:
+        sfid = item.get('sfid')
+        name = sfid
+        try:
+            ent = get_entity(datarepo_path, sfid)
+            name = ent.get('name', sfid)
+        except Exception:
+            pass
+        inv_top.append({
+            'sfid': sfid,
+            'name': name,
+            'total': int(item.get('total', 0) or 0),
+            'uom': item.get('uom', 'ea') or 'ea',
+        })
+
+    # Revisions metrics
+    rev_total = 0
+    rev_released = 0
+    rev_drafts = 0
+    parts_with_released = 0
+    recent_revs = []
+    for p in parts:
+        sfid = p.get('sfid')
+        try:
+            info = get_revisions(datarepo_path, sfid) or {}
+        except Exception:
+            info = {}
+        if info.get('rev'):
+            parts_with_released += 1
+        metas = list(info.get('revisions') or [])
+        rev_total += len(metas)
+        for m in metas:
+            status = str(m.get('status', '')).lower()
+            if status == 'released':
+                rev_released += 1
+            if status == 'draft':
+                rev_drafts += 1
+            created_at = _parse_iso_ts(m.get('created_at'), m.get('generated_at'))
+            # Capture for recent list
+            try:
+                name = p.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
+            except Exception:
+                name = sfid
+            recent_revs.append({
+                'sfid': sfid,
+                'name': name,
+                'rev': m.get('id') or m.get('rev'),
+                'status': status or None,
+                'created_at': created_at,
+            })
+
+    # Sort recent revisions by created_at desc (ISO timestamps sort lexicographically)
+    recent_revs = sorted(
+        [r for r in recent_revs if r.get('created_at')],
+        key=lambda r: r.get('created_at'),
+        reverse=True,
+    )[:top_n]
+
+    # Builds metrics
+    builds_total = len(builds)
+    by_status: dict[str, int] = {}
+    units_built = 0
+    recent_builds = []
+    for b in builds:
+        sfid = b.get('sfid')
+        status = str(b.get('status', 'unknown') or 'unknown').lower()
+        by_status[status] = by_status.get(status, 0) + 1
+        units = b.get('units')
+        try:
+            units_built += len(units) if isinstance(units, list) else 1
+        except Exception:
+            units_built += 1
+        # name (best-effort)
+        try:
+            name = b.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
+        except Exception:
+            name = sfid
+        opened_at = _parse_iso_ts(b.get('opened_at'))
+        closed_at = _parse_iso_ts(b.get('closed_at'))
+        sort_ts = _parse_iso_ts(closed_at, opened_at)
+        recent_builds.append({
+            'sfid': sfid,
+            'name': name,
+            'status': status,
+            'units_count': (len(units) if isinstance(units, list) else 1) if units is not None else 1,
+            'opened_at': opened_at or None,
+            'closed_at': closed_at or None,
+            'sort_ts': sort_ts,
+        })
+
+    recent_builds = sorted(
+        [x for x in recent_builds if x.get('sort_ts')],
+        key=lambda x: x.get('sort_ts'),
+        reverse=True,
+    )[:top_n]
+
+    metrics = {
+        'inventory': {
+            'total_quantity': inv_total_qty,
+            'parts_with_stock': parts_in_stock,
+            'parts_zero_stock': parts_zero_stock,
+            'top_stock': inv_top,
+            'stock_coverage_pct': stock_coverage_pct,
+        },
+        'parts': {
+            'total': parts_total,
+            'with_released': parts_with_released,
+            'without_released': max(0, parts_total - parts_with_released),
+        },
+        'revisions': {
+            'total': rev_total,
+            'released': rev_released,
+            'drafts': rev_drafts,
+            'recent': recent_revs,
+        },
+        'builds': {
+            'total': builds_total,
+            'by_status': by_status,
+            'units_built': units_built,
+            'recent': recent_builds,
+        },
+        'pipeline': {
+            'parts_total': parts_total,
+            'revisions_total': rev_total,
+            'builds_total': builds_total,
+        },
+    }
+    return metrics
+
 @app.route('/')
 def index():
     """Main dashboard showing overview of the system."""
     try:
         datarepo_path = get_datarepo_path()
-        summary = inventory_onhand(datarepo_path)
-        parts = summary.get('parts', []) if isinstance(summary, dict) else []
-        total_items = len(parts)
-        total_quantity = int(summary.get('total', 0)) if isinstance(summary, dict) else 0
-
-        # Recent heuristic: first 5 entries (sorted by sfid already)
-        recent_items = parts[:5]
-
+        metrics = compute_dashboard_metrics(datarepo_path, top_n=5)
         return render_template(
             'index.html',
-            total_items=total_items,
-            total_quantity=total_quantity,
-            recent_items=recent_items,
+            metrics=metrics,
             datarepo_path=str(datarepo_path)
         )
     except Exception as e:
@@ -632,8 +814,14 @@ def inventory_list():
                 'by_location': cache.get('by_location', {}) or {},
                 'as_of': cache.get('as_of'),
             })
+        # Optional pre-filtering from dashboard drill-downs
+        status = (request.args.get('status') or '').strip().lower()
+        if status == 'in_stock':
+            items = [it for it in items if int(it.get('total') or 0) > 0]
+        elif status in ('zero_stock', 'out_of_stock'):
+            items = [it for it in items if int(it.get('total') or 0) <= 0]
         field_specs = get_inventory_field_specs()
-        return render_template('inventory/list.html', items=items, field_specs=field_specs)
+        return render_template('inventory/list.html', items=items, field_specs=field_specs, filter_status=status)
     except Exception as e:
         return render_template('error.html', error=str(e))
 
@@ -778,8 +966,13 @@ def entities_list():
     """Display all canonical entities."""
     try:
         datarepo_path = get_datarepo_path()
-        entities = list_entities(datarepo_path)
-        return render_template('entities/list.html', entities=entities)
+        entities = list_entities(datarepo_path) or []
+        # Optional type pre-filter (?type=p to show only parts, etc.)
+        ftype = (request.args.get('type') or '').strip().lower()
+        if ftype and len(ftype) == 1 and ftype.isalpha():
+            prefix = f"{ftype}_"
+            entities = [e for e in entities if str(e.get('sfid', '')).startswith(prefix)]
+        return render_template('entities/list.html', entities=entities, filter_type=ftype)
     except Exception as e:
         return render_template('error.html', error=str(e))
 

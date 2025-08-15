@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background -->
+  <rect x="2" y="2" width="60" height="60" rx="12" ry="12" fill="#2563EB"/>
+  <!-- Cube top -->
+  <polygon points="32,14 46,22 32,30 18,22" fill="#93C5FD"/>
+  <!-- Cube left -->
+  <polygon points="18,22 32,30 32,46 18,38" fill="#BFDBFE"/>
+  <!-- Cube right -->
+  <polygon points="46,22 32,30 32,46 46,38" fill="#60A5FA"/>
+  <!-- Subtle highlight -->
+  <path d="M18 38 L32 46 L46 38" fill="none" stroke="#FFFFFF" stroke-opacity="0.15"/>
+</svg>

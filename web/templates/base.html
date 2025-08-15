@@ -6,6 +6,7 @@
     <title>{% block title %}smallFactory{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
     <style>
         .sidebar-transition {
             transition: transform 0.3s ease-in-out;
@@ -340,10 +341,10 @@
                 const selector = [
                     'input[name="sfid"]',
                     'input#sfid',
-                    'input[name="location"]',
-                    'input#location',
+                    'input[name="l_sfid"]',
+                    'input#l_sfid',
                     'input[data-scan="sfid"]',
-                    'input[data-scan="location"]'
+                    'input[data-scan="l_sfid"]'
                 ].join(',');
 
                 document.querySelectorAll(selector).forEach(enhanceInputWithScanner);

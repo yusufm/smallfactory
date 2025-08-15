@@ -174,24 +174,24 @@
                 <div class="space-y-4">
                     {% if item.by_location and item.by_location|length > 1 %}
                     <div>
-                        <label for="location" class="block text-sm font-medium text-gray-700">Location</label>
-                        <select name="location" id="location" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                        <label for="l_sfid" class="block text-sm font-medium text-gray-700">Location</label>
+                        <select name="l_sfid" id="l_sfid" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
                             {% for location in item.by_location.keys() %}
                             <option value="{{ location }}">{{ location }}</option>
                             {% endfor %}
                         </select>
                     </div>
                     {% elif item.by_location and item.by_location|length == 1 %}
-                    <input type="hidden" name="location" value="{{ item.by_location.keys()|first }}">
+                    <input type="hidden" name="l_sfid" value="{{ item.by_location.keys()|first }}">
                     <div class="text-sm text-gray-600">
                         Location: <span class="font-medium">{{ item.by_location.keys()|first }}</span>
                     </div>
                     {% else %}
                     <div>
-                        <label for="new-location" class="block text-sm font-medium text-gray-700">New Location SFID</label>
+                        <label for="new-l_sfid" class="block text-sm font-medium text-gray-700">New Location SFID</label>
                         <div class="mt-1 flex gap-2 items-start">
-                            <input type="text" name="location" id="new-location" pattern="l_.*" class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. l_a1, l_rack3" required>
-                            <button type="button" onclick="createLocationEntity('new-location', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                            <input type="text" name="l_sfid" id="new-l_sfid" pattern="l_.*" class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. l_a1, l_rack3" required>
+                            <button type="button" onclick="createLocationEntity('new-l_sfid', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
                                 <i class="fas fa-plus mr-1"></i>New
                             </button>
                         </div>
@@ -238,10 +238,10 @@
             <form id="add-location-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.sfid) }}">
                 <div class="space-y-4">
                     <div>
-                        <label for="add-location-name" class="block text-sm font-medium text-gray-700">Location SFID</label>
+                        <label for="add-location-l_sfid" class="block text-sm font-medium text-gray-700">Location SFID</label>
                         <div class="mt-1 flex gap-2 items-start">
-                            <input type="text" name="location" id="add-location-name" pattern="l_.*" class="flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" placeholder="e.g. l_a1, l_rack3" required>
-                            <button type="button" onclick="createLocationEntity('add-location-name', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
+                            <input type="text" name="l_sfid" id="add-location-l_sfid" pattern="l_.*" class="flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" placeholder="e.g. l_a1, l_rack3" required>
+                            <button type="button" onclick="createLocationEntity('add-location-l_sfid', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
                                 <i class="fas fa-plus mr-1"></i>New
                             </button>
                         </div>
@@ -281,7 +281,7 @@
 // Adjust quantity modal
 function showAdjustModal(location = null) {
     if (location) {
-        document.getElementById('location').value = location;
+        document.getElementById('l_sfid').value = location;
     }
     document.getElementById('adjust-modal').classList.remove('hidden');
     document.getElementById('delta').focus();
@@ -308,10 +308,10 @@ document.getElementById('adjust-modal').addEventListener('click', function(e) {
 // Add Location modal
 function showAddLocationModal() {
     const modal = document.getElementById('add-location-modal');
-    document.getElementById('add-location-name').value = '';
+    document.getElementById('add-location-l_sfid').value = '';
     document.getElementById('delta-add').value = 0;
     modal.classList.remove('hidden');
-    document.getElementById('add-location-name').focus();
+    document.getElementById('add-location-l_sfid').focus();
 }
 
 function hideAddLocationModal() {
@@ -359,14 +359,14 @@ function createLocationEntity(inputId, itemSfid){
         }
         const paramsNext = new URLSearchParams();
         paramsNext.set('sfid', itemSfid);
-        paramsNext.set('location', seed);
+        paramsNext.set('l_sfid', seed);
         if(d) paramsNext.set('delta', d);
         const nextUrl = '/inventory/add?' + paramsNext.toString();
 
         const paramsTarget = new URLSearchParams();
         paramsTarget.set('sfid', seed);
         paramsTarget.set('next', nextUrl);
-        paramsTarget.set('update_param', 'location');
+        paramsTarget.set('update_param', 'l_sfid');
         window.location.href = '/entities/add?' + paramsTarget.toString();
     } catch(e){ console.error(e); }
 }
