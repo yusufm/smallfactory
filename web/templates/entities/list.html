@@ -5,41 +5,34 @@
 {% block content %}
 <div class="content-container">
   <div class="mb-8">
-    <nav class="flex" aria-label="Breadcrumb">
-      <ol class="flex items-center space-x-4">
-        <li>
-          <a href="{{ url_for('index') }}" class="text-gray-400 hover:text-gray-500">
-            <i class="fas fa-home mr-1"></i>Dashboard
-          </a>
-        </li>
-        <li>
-          <div class="flex items-center">
-            <i class="fas fa-chevron-right text-gray-400 mr-4"></i>
-            <span class="text-gray-900 font-medium">Entities</span>
-          </div>
-        </li>
-      </ol>
-    </nav>
+    <!-- Breadcrumb removed -->
     <div class="flex items-center justify-between mt-2">
       <div>
-        <h1 class="text-3xl font-bold text-gray-900">Entities</h1>
-        <p class="mt-2 text-gray-600">Canonical metadata under <code>entities/&lt;SFID&gt;.yml</code></p>
+        <h1 class="text-3xl font-bold text-gray-900">
+          {% if filter_type == 'p' %}Parts{% elif filter_type == 'b' %}Builds{% elif filter_type == 'l' %}Locations{% else %}Entities{% endif %}
+        </h1>
       </div>
       <div class="flex items-center gap-2">
+        {% if filter_type != 'b' %}
         <a href="{{ url_for('entities_add') }}?sfid=p_&scan=1" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center md:hidden">
           <i class="fas fa-camera mr-2"></i>Scan a Part
         </a>
+        {% endif %}
         {% set add_prefix = '' %}
         {% if filter_type == 'p' %}
           {% set add_prefix = 'p_' %}
-        {% elif filter_type == 'b' %}
-          {% set add_prefix = 'b_' %}
         {% elif filter_type == 'l' %}
           {% set add_prefix = 'l_' %}
         {% endif %}
-        <a href="{{ url_for('entities_add', sfid=add_prefix) }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
-          <i class="fas fa-user-plus mr-2"></i>Add Entity
-        </a>
+        {% if filter_type == 'b' %}
+          <a href="{{ url_for('entities_list', type='p') }}" class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+            <i class="fas fa-industry mr-2"></i>Create Build (choose a part)
+          </a>
+        {% else %}
+          <a href="{{ url_for('entities_add', sfid=add_prefix) }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+            <i class="fas fa-user-plus mr-2"></i>+Add
+          </a>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -86,7 +79,11 @@
           </tr>
           {% endfor %}
           {% if not entities %}
+          {% if filter_type == 'b' %}
+          <tr><td colspan="5" class="px-6 py-6 text-center text-gray-500">No builds found. <a class="text-blue-600 hover:underline" href="{{ url_for('entities_list', type='p') }}">Choose a part to create a build</a>.</td></tr>
+          {% else %}
           <tr><td colspan="5" class="px-6 py-6 text-center text-gray-500">No entities found. <a class="text-blue-600 hover:underline" href="{{ url_for('entities_add', sfid=add_prefix) }}">Create one</a>.</td></tr>
+          {% endif %}
           {% endif %}
         </tbody>
       </table>
