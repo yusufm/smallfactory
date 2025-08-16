@@ -41,8 +41,11 @@
                         <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-boxes mr-2"></i>Inventory
                         </a>
-                        <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
-                            <i class="fas fa-id-card mr-2"></i>Entities
+                        <a href="{{ url_for('entities_list', type='p') }}" class="{% set sf = (request.view_args.get('sfid') if request.view_args else '') %}{% if (request.endpoint and request.endpoint.startswith('entities')) and ((request.args.get('type') == 'p') or (sf and sf.startswith('p_'))) %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-cubes mr-2"></i>Parts
+                        </a>
+                        <a href="{{ url_for('entities_list', type='b') }}" class="{% set sf = (request.view_args.get('sfid') if request.view_args else '') %}{% if (request.endpoint and request.endpoint.startswith('entities')) and ((request.args.get('type') == 'b') or (sf and sf.startswith('b_'))) %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
+                            <i class="fas fa-industry mr-2"></i>Builds
                         </a>
                         <a href="{{ url_for('vision_page') }}" class="{% if request.endpoint and request.endpoint.startswith('vision') %}border-blue-500 text-gray-900{% else %}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{% endif %} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors">
                             <i class="fas fa-wand-magic-sparkles mr-2"></i>Vision
@@ -65,8 +68,11 @@
                 <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-boxes mr-2"></i>Inventory
                 </a>
-                <a href="{{ url_for('entities_list') }}" class="{% if request.endpoint and request.endpoint.startswith('entities') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-id-card mr-2"></i>Entities
+                <a href="{{ url_for('entities_list', type='p') }}" class="{% set sf = (request.view_args.get('sfid') if request.view_args else '') %}{% if (request.endpoint and request.endpoint.startswith('entities')) and ((request.args.get('type') == 'p') or (sf and sf.startswith('p_'))) %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-cubes mr-2"></i>Parts
+                </a>
+                <a href="{{ url_for('entities_list', type='b') }}" class="{% set sf = (request.view_args.get('sfid') if request.view_args else '') %}{% if (request.endpoint and request.endpoint.startswith('entities')) and ((request.args.get('type') == 'b') or (sf and sf.startswith('b_'))) %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-industry mr-2"></i>Builds
                 </a>
                 <a href="{{ url_for('vision_page') }}" class="{% if request.endpoint and request.endpoint.startswith('vision') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-wand-magic-sparkles mr-2"></i>Vision
