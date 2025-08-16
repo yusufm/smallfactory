@@ -68,12 +68,9 @@
                 <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h2 class="text-lg font-semibold text-gray-900">Locations & Quantities</h2>
                     <div class="space-x-2">
-                        <button onclick="showAddLocationModal()" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors inline-flex items-center">
-                            <i class="fas fa-plus mr-1"></i>Add Location
-                        </button>
-                        <button onclick="showAdjustModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors inline-flex items-center">
+                        <a href="{{ url_for('inventory_adjust', sfid=item.sfid) }}" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors inline-flex items-center">
                             <i class="fas fa-right-left mr-1"></i>Adjust
-                        </button>
+                        </a>
                     </div>
                 </div>
                 <div class="px-6 py-4">
@@ -94,9 +91,9 @@
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
                                         {{ quantity }} units
                                     </span>
-                                    <button onclick="showAdjustModal('{{ location }}')" class="text-blue-600 hover:text-blue-900 text-sm">
+                                    <a href="{{ url_for('inventory_adjust', sfid=item.sfid, l_sfid=location) }}" class="text-blue-600 hover:text-blue-900 text-sm">
                                         <i class="fas fa-edit"></i>
-                                    </button>
+                                    </a>
                                 </div>
                             </div>
                             {% endfor %}
@@ -108,9 +105,6 @@
                             </div>
                             <h3 class="text-sm font-medium text-gray-900 mb-2">No locations assigned</h3>
                             <p class="text-xs text-gray-500 mb-4">Add a location to track quantities</p>
-                            <button onclick="showAddLocationModal()" class="text-blue-600 hover:text-blue-900 text-sm font-medium">
-                                <i class="fas fa-plus mr-1"></i>Add Location
-                            </button>
                         </div>
                     {% endif %}
                 </div>
@@ -150,9 +144,9 @@
             <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <h3 class="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
                 <div class="space-y-3">
-                    <button onclick="showAdjustModal()" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
+                    <a href="{{ url_for('inventory_adjust', sfid=item.sfid) }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                         <i class="fas fa-right-left mr-2"></i>Adjust Quantity
-                    </button>
+                    </a>
                     <a href="{{ url_for('inventory_list') }}" class="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors">
                         <i class="fas fa-list mr-2"></i>Back to List
                     </a>
@@ -162,213 +156,5 @@
     </div>
 </div>
 
-<!-- Adjust Quantity Modal -->
-<div id="adjust-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div class="mt-3">
-            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4">
-                <i class="fas fa-right-left text-blue-600"></i>
-            </div>
-            <h3 class="text-lg font-medium text-gray-900 text-center mb-4">Adjust Quantity</h3>
-            <form id="adjust-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.sfid) }}">
-                <div class="space-y-4">
-                    {% if item.by_location and item.by_location|length > 1 %}
-                    <div>
-                        <label for="l_sfid" class="block text-sm font-medium text-gray-700">Location</label>
-                        <select name="l_sfid" id="l_sfid" class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-                            {% for location in item.by_location.keys() %}
-                            <option value="{{ location }}">{{ location }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    {% elif item.by_location and item.by_location|length == 1 %}
-                    <input type="hidden" name="l_sfid" value="{{ item.by_location.keys()|first }}">
-                    <div class="text-sm text-gray-600">
-                        Location: <span class="font-medium">{{ item.by_location.keys()|first }}</span>
-                    </div>
-                    {% else %}
-                    <div>
-                        <label for="new-l_sfid" class="block text-sm font-medium text-gray-700">New Location SFID</label>
-                        <div class="mt-1 flex gap-2 items-start">
-                            <input type="text" name="l_sfid" id="new-l_sfid" pattern="l_.*" class="flex-1 block border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g. l_a1, l_rack3" required>
-                            <button type="button" onclick="createLocationEntity('new-l_sfid', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
-                                <i class="fas fa-plus mr-1"></i>New
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Must start with <code>l_</code>.</p>
-                    </div>
-                    {% endif %}
-                    
-                    <div>
-                        <label for="delta" class="block text-sm font-medium text-gray-700">Adjustment</label>
-                        <div class="mt-1 flex">
-                            <button type="button" onclick="adjustDelta(-1)" class="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md hover:bg-gray-100">
-                                <i class="fas fa-minus"></i>
-                            </button>
-                            <input type="number" name="delta" id="delta" step="1" class="block w-full border-t border-b border-gray-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-center" value="0" required>
-                            <button type="button" onclick="adjustDelta(1)" class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-r-md hover:bg-gray-100">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Use negative numbers to decrease quantity</p>
-                    </div>
-                </div>
-                
-                <div class="flex items-center justify-end space-x-3 mt-6">
-                    <button type="button" onclick="hideAdjustModal()" class="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300">
-                        Adjust
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Add Location Modal -->
-<div id="add-location-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-        <div class="mt-3">
-            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
-                <i class="fas fa-map-marker-alt text-green-600"></i>
-            </div>
-            <h3 class="text-lg font-medium text-gray-900 text-center mb-4">Add Location</h3>
-            <form id="add-location-form" method="POST" action="{{ url_for('inventory_adjust', item_id=item.sfid) }}">
-                <div class="space-y-4">
-                    <div>
-                        <label for="add-location-l_sfid" class="block text-sm font-medium text-gray-700">Location SFID</label>
-                        <div class="mt-1 flex gap-2 items-start">
-                            <input type="text" name="l_sfid" id="add-location-l_sfid" pattern="l_.*" class="flex-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" placeholder="e.g. l_a1, l_rack3" required>
-                            <button type="button" onclick="createLocationEntity('add-location-l_sfid', '{{ item.sfid }}')" title="Create new location entity" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50">
-                                <i class="fas fa-plus mr-1"></i>New
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Must start with <code>l_</code>.</p>
-                    </div>
-                    <div>
-                        <label for="delta-add" class="block text-sm font-medium text-gray-700">Starting Quantity</label>
-                        <div class="mt-1 flex">
-                            <button type="button" onclick="adjustAddDelta(-1)" class="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-l-md hover:bg-gray-100">
-                                <i class="fas fa-minus"></i>
-                            </button>
-                            <input type="number" name="delta" id="delta-add" step="1" class="block w-full border-t border-b border-gray-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500 text-center" value="0" required>
-                            <button type="button" onclick="adjustAddDelta(1)" class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm rounded-r-md hover:bg-gray-100">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                        <p class="mt-1 text-xs text-gray-500">Use negative numbers to decrease quantity</p>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-end space-x-3 mt-6">
-                    <button type="button" onclick="hideAddLocationModal()" class="px-4 py-2 bg-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300">
-                        Add Location
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-    </div>
 {% endblock %}
 
-{% block scripts %}
-<script>
-// Adjust quantity modal
-function showAdjustModal(location = null) {
-    if (location) {
-        document.getElementById('l_sfid').value = location;
-    }
-    document.getElementById('adjust-modal').classList.remove('hidden');
-    document.getElementById('delta').focus();
-}
-
-function hideAdjustModal() {
-    document.getElementById('adjust-modal').classList.add('hidden');
-    document.getElementById('delta').value = 0;
-}
-
-function adjustDelta(change) {
-    const deltaInput = document.getElementById('delta');
-    const currentValue = parseInt(deltaInput.value) || 0;
-    deltaInput.value = currentValue + change;
-}
-
-// Close modals when clicking outside
-document.getElementById('adjust-modal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        hideAdjustModal();
-    }
-});
-
-// Add Location modal
-function showAddLocationModal() {
-    const modal = document.getElementById('add-location-modal');
-    document.getElementById('add-location-l_sfid').value = '';
-    document.getElementById('delta-add').value = 0;
-    modal.classList.remove('hidden');
-    document.getElementById('add-location-l_sfid').focus();
-}
-
-function hideAddLocationModal() {
-    const modal = document.getElementById('add-location-modal');
-    modal.classList.add('hidden');
-}
-
-function adjustAddDelta(change) {
-    const deltaInput = document.getElementById('delta-add');
-    const currentValue = parseInt(deltaInput.value) || 0;
-    deltaInput.value = currentValue + change;
-}
-
-document.getElementById('add-location-modal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        hideAddLocationModal();
-    }
-});
-
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-        hideAdjustModal();
-        hideAddLocationModal();
-    }
-});
-
-// Create new location entity, then return to Adjust screen with prefilled fields
-function createLocationEntity(inputId, itemSfid){
-    try {
-        const inputEl = document.getElementById(inputId);
-        const seed = (inputEl && inputEl.value || '').trim();
-        if(!seed){
-            showToast('Enter a Location SFID first.', { type: 'error' });
-            return;
-        }
-        // Prefer the delta from the visible modal
-        let d = '0';
-        const deltaAdj = document.getElementById('delta');
-        const deltaAdd = document.getElementById('delta-add');
-        if(deltaAdj && String(deltaAdj.value||'').trim() !== ''){
-            d = String(deltaAdj.value).trim();
-        } else if(deltaAdd && String(deltaAdd.value||'').trim() !== ''){
-            d = String(deltaAdd.value).trim();
-        }
-        const paramsNext = new URLSearchParams();
-        paramsNext.set('sfid', itemSfid);
-        paramsNext.set('l_sfid', seed);
-        if(d) paramsNext.set('delta', d);
-        const nextUrl = '/mobile/adjust?' + paramsNext.toString();
-
-        const paramsTarget = new URLSearchParams();
-        paramsTarget.set('sfid', seed);
-        paramsTarget.set('next', nextUrl);
-        paramsTarget.set('update_param', 'l_sfid');
-        window.location.href = '/entities/add?' + paramsTarget.toString();
-    } catch(e){ console.error(e); }
-}
-</script>
-{% endblock %}

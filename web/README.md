@@ -7,7 +7,7 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 - **Dashboard**: Inventory overview with quick stats and recent items
 - **Inventory**:
   - List and view items with per-location breakdown
-  - Add Stock (journal entry) with required Location SFID (`l_sfid`)
+  - Quick Adjust page at `/inventory/adjust` (GET, POST) with QR-scanning
   - Adjust quantities by location
   - Note: Deleting inventory items is not supported in the journal model. Use negative adjustments instead.
 - **Entities (PLM)**:
@@ -216,9 +216,8 @@ If you see an error, ensure Ollama is running and the model is pulled. You can a
   - `/vision` — Vision camera/upload page
   - `/inventory` — Inventory list
   - `/inventory/<item_id>` — Inventory item view
-  - `/mobile/adjust` — Quick adjust (GET, POST)
+  - `/inventory/adjust` — Quick adjust (GET, POST)
   - `/inventory/<item_id>/edit` — Edit inventory item (GET, POST)
-  - `/inventory/<item_id>/adjust` — Adjust quantity (POST)
   - `/entities` — Entities list
   - `/entities/<sfid>` — Entity view (inline editing)
   - `/entities/add` — Create entity (GET, POST)
@@ -228,6 +227,8 @@ If you see an error, ensure Ollama is running and the model is pulled. You can a
   - `/entities/<sfid>/build/create-revision` — Create next draft revision (POST)
   - `/stickers` — Redirect to batch stickers UI
   - `/stickers/batch` — Batch stickers UI (GET, POST)
+
+Note: The legacy POST route `/inventory/<item_id>/adjust` has been removed in favor of the unified Quick Adjust flow at `/inventory/adjust`.
 
 - **API Endpoints**
   - `/api/inventory` — Inventory API (GET)

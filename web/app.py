@@ -941,15 +941,6 @@ def inventory_view(item_id):
         flash(f'Error viewing item: {e}', 'error')
         return redirect(url_for('inventory_list'))
 
-@app.route('/inventory/add', methods=['GET', 'POST'])
-def inventory_add():
-    """Legacy route: 307 redirect to mobile quick adjust.
-
-    Preserves method and body for POST requests.
-    """
-    target = url_for('mobile_adjust', **{k: v for k, v in request.args.items()})
-    return redirect(target, code=307)
-
 @app.route('/inventory/<item_id>/edit', methods=['GET', 'POST'])
 def inventory_edit(item_id):
     """Inventory no longer edits canonical entity metadata per SPEC.
@@ -966,28 +957,6 @@ def inventory_edit(item_id):
         flash(f'Error loading item: {e}', 'error')
         return redirect(url_for('inventory_list'))
 
-@app.route('/inventory/<item_id>/adjust', methods=['POST'])
-def inventory_adjust(item_id):
-    """Adjust quantity for an inventory item."""
-    try:
-        datarepo_path = get_datarepo_path()
-        delta = int(request.form.get('delta', 0))
-        # Canonical field name is l_sfid; support legacy 'location' as fallback
-        location = request.form.get('l_sfid', '').strip() or request.form.get('location', '').strip() or None
-        def _mutate():
-            return inventory_post(datarepo_path, item_id, delta, location)
-        _ = _run_repo_txn(
-            datarepo_path,
-            _mutate,
-            autocommit_message=f"[smallFactory][web] Inventory post {item_id} @ {location or 'default'} Δ{delta}",
-            autocommit_paths=[f"inventory/{item_id}"]
-        )
-        flash(f'Successfully adjusted quantity by {delta}', 'success')
-    except Exception as e:
-        flash(f'Error adjusting quantity: {e}', 'error')
-    
-    return redirect(url_for('inventory_view', item_id=item_id))
-
 @app.route('/inventory/<item_id>/delete', methods=['POST'])
 def inventory_delete(item_id):
     """Delete an inventory item."""
@@ -1000,8 +969,8 @@ def inventory_delete(item_id):
         return redirect(url_for('inventory_view', item_id=item_id))
 # -------------------------------
 # Mobile quick adjust (QR-friendly)
-@app.route('/mobile/adjust', methods=['GET', 'POST'])
-def mobile_adjust():
+@app.route('/inventory/adjust', methods=['GET', 'POST'])
+def inventory_adjust():
     """Mobile-friendly Quick Adjust page.
 
     Minimal form with sfid, l_sfid, and signed delta. On mobile, inputs get QR scan buttons automatically
