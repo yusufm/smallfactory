@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import List
 import time
 import atexit
+from contextlib import contextmanager
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -162,6 +163,88 @@ def _dgit(msg: str) -> None:
         except Exception:
             # Fallback to stdout, unbuffered
             print(line, flush=True)
+
+
+def _get_proxy_identity_header_names() -> tuple[list[str], list[str]]:
+    """Return candidate header names for user and email derived from environment.
+
+    Env vars (comma-separated, case-insensitive header names):
+    - SF_WEB_IDENTITY_HEADER_NAME (defaults: X-Forwarded-User,X-Auth-Request-User)
+    - SF_WEB_IDENTITY_HEADER_EMAIL (defaults: X-Forwarded-Email,X-Auth-Request-Email)
+    """
+    user_env = (os.environ.get('SF_WEB_IDENTITY_HEADER_NAME') or '').strip()
+    email_env = (os.environ.get('SF_WEB_IDENTITY_HEADER_EMAIL') or '').strip()
+    users = [h.strip() for h in user_env.split(',') if h.strip()] or [
+        'X-Forwarded-User',
+        'X-Auth-Request-User',
+    ]
+    emails = [h.strip() for h in email_env.split(',') if h.strip()] or [
+        'X-Forwarded-Email',
+        'X-Auth-Request-Email',
+    ]
+    return users, emails
+
+
+def _extract_identity_from_headers(req) -> tuple[str | None, str | None]:
+    """Best-effort extraction of (name, email) from proxy headers.
+
+    - If only a single header is present and looks like an email, derive name from local part.
+    - If user header present but email header missing and user looks like email, treat as email.
+    - Returns (None, None) if insufficient info.
+    """
+    try:
+        user_hdrs, email_hdrs = _get_proxy_identity_header_names()
+        user_val = None
+        email_val = None
+        # Look up headers case-insensitively via Flask's request.headers
+        for hn in user_hdrs:
+            v = req.headers.get(hn)
+            if v:
+                user_val = v.strip()
+                break
+        for hn in email_hdrs:
+            v = req.headers.get(hn)
+            if v:
+                email_val = v.strip()
+                break
+        # Heuristics
+        def _derive_name_from_email(em: str) -> str:
+            base = em.split('@', 1)[0]
+            # Simple prettify: replace dots/underscores with spaces and title-case
+            pretty = base.replace('.', ' ').replace('_', ' ').strip()
+            return pretty.title() if pretty else base
+
+        if not email_val and user_val and ('@' in user_val):
+            email_val = user_val
+        name_val = user_val
+        if (not name_val) and email_val:
+            name_val = _derive_name_from_email(email_val)
+
+        # Only use identity if we have both
+        if name_val and email_val:
+            return name_val, email_val
+        return None, None
+    except Exception:
+        return None, None
+
+
+@contextmanager
+def _with_git_identity(name: str, email: str):
+    """Temporarily set GIT_AUTHOR_* and GIT_COMMITTER_* for subprocess git commands."""
+    keys = ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']
+    prev = {k: os.environ.get(k) for k in keys}
+    try:
+        os.environ['GIT_AUTHOR_NAME'] = name
+        os.environ['GIT_COMMITTER_NAME'] = name
+        os.environ['GIT_AUTHOR_EMAIL'] = email
+        os.environ['GIT_COMMITTER_EMAIL'] = email
+        yield
+    finally:
+        for k, v in prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 _GIT_REMOTE_CACHE: dict[str, tuple[float, bool]] = {}
@@ -536,9 +619,18 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
         ok, err = _safe_git_pull(datarepo_path)
         if not ok:
             raise RuntimeError(f"Pre-mutation git pull failed: {err}")
-        result = mutate_fn()
-        # Ensure a commit exists if web autocommit is enabled
-        _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
+        # Extract per-request identity from proxy headers (if present)
+        name, email = _extract_identity_from_headers(request)
+        def _do_mutate_and_autocommit():
+            r = mutate_fn()
+            # Ensure a commit exists if web autocommit is enabled
+            _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
+            return r
+        if name and email:
+            with _with_git_identity(name, email):
+                result = _do_mutate_and_autocommit()
+        else:
+            result = _do_mutate_and_autocommit()
         # Conditional push
         if _autopush_enabled():
             ttl = _get_push_ttl_sec()
