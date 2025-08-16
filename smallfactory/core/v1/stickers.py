@@ -58,18 +58,69 @@ def _make_qr(data: str, box_size: int = 8, border: int = 2) -> Image.Image:
 
 
 def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, max_width: int) -> List[str]:
+    """Word-wrap text to fit within max_width (in pixels), with fallback
+    character-level splitting for long tokens that exceed the width.
+
+    This prevents horizontal overflow on stickers when fields or names contain
+    very long words (e.g., long part numbers or URLs).
+    """
     words = (text or "").split()
     lines: List[str] = []
     cur = ""
+
+    def text_width(s: str) -> int:
+        return draw.textbbox((0, 0), s, font=font)[2]
+
+    def split_long_word(word: str) -> List[str]:
+        """Split a single word into chunks that each fit within max_width.
+
+        Uses binary search to find the longest fitting prefix, then repeats for
+        the remainder until the whole word is split. Guarantees progress even
+        if the first character exceeds max_width (falls back to single-char).
+        """
+        parts: List[str] = []
+        s = word
+        while s:
+            lo, hi = 1, len(s)
+            best = 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                if text_width(s[:mid]) <= max_width:
+                    best = mid
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            if best <= 0:
+                # Nothing fits; force at least one character to avoid infinite loop
+                best = 1
+            parts.append(s[:best])
+            s = s[best:]
+        return parts
+
     for w in words:
-        tmp = (cur + (" " if cur else "") + w).strip()
-        w_, h_ = draw.textbbox((0, 0), tmp, font=font)[2:]
-        if w_ <= max_width:
-            cur = tmp
-        else:
-            if cur:
-                lines.append(cur)
-            cur = w
+        candidate = (cur + (" " if cur else "") + w).strip()
+        if text_width(candidate) <= max_width:
+            cur = candidate
+            continue
+
+        # Current line cannot accommodate the word; flush current line if any
+        if cur:
+            lines.append(cur)
+            cur = ""
+
+        # The word itself may be wider than max_width; split it into chunks
+        chunks = split_long_word(w)
+        for chunk in chunks:
+            if not cur:
+                cur = chunk
+            else:
+                candidate = (cur + " " + chunk).strip()
+                if text_width(candidate) <= max_width:
+                    cur = candidate
+                else:
+                    lines.append(cur)
+                    cur = chunk
+
     if cur:
         lines.append(cur)
     if not lines:
@@ -202,9 +253,13 @@ def compose_sticker_image(
     # SFID (monospace-ish, value only)
     y += max(4, line_gap)
     sfid_line = f"{sfid}"
-    draw.text((text_x, y), sfid_line, fill=(0, 0, 0), font=mono_font)
-    tb = draw.textbbox((0, 0), sfid_line, font=mono_font)
-    y += (tb[3] - tb[1]) + (8 + line_gap)
+    sfid_lines = _wrap_text(draw, sfid_line, mono_font, text_w)
+    for ln in sfid_lines:
+        draw.text((text_x, y), ln, fill=(0, 0, 0), font=mono_font)
+        tb = draw.textbbox((0, 0), ln, font=mono_font)
+        y += (tb[3] - tb[1]) + line_gap
+    # Extra breathing room after SFID block
+    y += 8
 
     # Additional fields (values only, no field names)
     if fields:
