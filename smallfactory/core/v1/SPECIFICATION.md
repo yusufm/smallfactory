@@ -342,7 +342,19 @@ Validation coverage:
 - INV_DEFAULT_LOCATION_INVALID — `inventory.default_location` must be an `l_*` SFID and pass `validate_sfid()`.
 - INV_DEFAULT_LOCATION_MISSING_ENTITY — the configured default location must exist under `entities/`.
 
-Git merge hint (reduce conflicts on append-only logs):
+### Non-negative on-hand (normative)
+
+- Core MUST reject any inventory operation that would result in negative on‑hand:
+  - Total on‑hand for the part < 0
+  - On‑hand at the specified location < 0
+- Error surface:
+  - Core APIs (e.g., `inventory_post`) MUST return an error (e.g., `ValueError`) with a human‑readable message.
+  - CLI MUST exit non‑zero and show the error; Web MUST surface the error to the user.
+- Generated caches (`onhand.generated.yml`) MUST NEVER contain negative values.
+- `sf inventory rebuild` MUST error if historical journal lines imply negative on‑hand at any point for a part or a location.
+- Callers MUST NOT bypass core or write journals directly; all writes go through core APIs.
+
+ Git merge hint (reduce conflicts on append-only logs):
 ```
 inventory/p_*/journal.ndjson merge=union
 ```
@@ -350,8 +362,9 @@ inventory/p_*/journal.ndjson merge=union
 Validation coverage:
 - INV_UNION_MERGE_MISSING — `.gitattributes` present but missing the recommended union merge rule.
 - INV_GITATTRIBUTES_MISSING — `.gitattributes` file missing (warning).
+- INV_NEGATIVE_ONHAND — negative on-hand is forbidden; operations MUST NOT result in total or per-location on-hand < 0; tooling MUST reject such writes and rebuild MUST error if historical lines imply negatives.
 
-CLI (full names):
+ CLI (full names):
 ```
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
@@ -362,12 +375,12 @@ Linter rules:
 
 - Each `inventory/<part>/` directory must correspond to an entity under `entities/<part>/` (INV_PART_ENTITY_MISSING).
 - Each journal file `inventory/<part>/journal.ndjson` must exist (INV_JOURNAL_MISSING); read errors are reported (INV_JOURNAL_READ).
-- Each journal line must be valid JSON and an object (INV_JOURNAL_JSON, INV_JOURNAL_OBJ).
-- Required keys: `txn` (ULID) and `qty_delta` (INV_JOURNAL_TXN_REQUIRED, INV_JOURNAL_TXN_FORMAT, INV_JOURNAL_QTY_REQUIRED).
-- Optional `location` must be an `l_*` SFID and valid per `validate_sfid()` (INV_LOCATION_INVALID, INV_LOCATION_SFID_INVALID) and must exist (INV_LOCATION_ENTITY_MISSING).
-- Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom` (INV_JOURNAL_FORBIDDEN_FIELD).
-- For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
-- Generated files (`onhand.generated.yml`) must not be hand-edited.
+ - Each journal line must be valid JSON and an object (INV_JOURNAL_JSON, INV_JOURNAL_OBJ).
+ - Required keys: `txn` (ULID) and `qty_delta` (INV_JOURNAL_TXN_REQUIRED, INV_JOURNAL_TXN_FORMAT, INV_JOURNAL_QTY_REQUIRED).
+ - Optional `location` must be an `l_*` SFID and valid per `validate_sfid()` (INV_LOCATION_INVALID, INV_LOCATION_SFID_INVALID) and must exist (INV_LOCATION_ENTITY_MISSING).
+ - Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom` (INV_JOURNAL_FORBIDDEN_FIELD).
+ - For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
+ - Generated files (`onhand.generated.yml`) must not be hand-edited.
  Optional per-location on-hand cache (reverse index):
  
  - Layout:
