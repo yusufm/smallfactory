@@ -362,6 +362,10 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
                 "message": "Missing journal.ndjson for part inventory"
             })
             continue
+        total_sum = 0
+        loc_sums: Dict[str, int] = {}
+        neg_total_reported = False
+        neg_loc_reported: set[str] = set()
         try:
             with open(j) as f:
                 for idx, line in enumerate(f, start=1):
@@ -446,6 +450,57 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
                                     "path": _rel(j, repo),
                                     "message": f"Line {idx}: location '{loc}' does not exist under entities/"
                                 })
+                    # Accumulate deltas for negative on-hand check
+                    if "qty_delta" in obj:
+                        try:
+                            q = int(obj.get("qty_delta"))
+                        except Exception:
+                            issues.append({
+                                "severity": "error",
+                                "code": "INV_JOURNAL_QTY_NOT_INT",
+                                "path": _rel(j, repo),
+                                "message": f"Line {idx}: 'qty_delta' must be an integer"
+                            })
+                            q = None
+                        if q is not None:
+                            # Total running sum
+                            total_sum += q
+                            if total_sum < 0 and not neg_total_reported:
+                                issues.append({
+                                    "severity": "error",
+                                    "code": "INV_NEGATIVE_ONHAND",
+                                    "path": _rel(j, repo),
+                                    "message": f"On-hand total went negative at line {idx}: running total {total_sum}"
+                                })
+                                neg_total_reported = True
+                            # Per-location running sum
+                            if isinstance(loc, str):
+                                new_loc_sum = loc_sums.get(loc, 0) + q
+                                loc_sums[loc] = new_loc_sum
+                                if new_loc_sum < 0 and loc not in neg_loc_reported:
+                                    issues.append({
+                                        "severity": "error",
+                                        "code": "INV_NEGATIVE_ONHAND",
+                                        "path": _rel(j, repo),
+                                        "message": f"On-hand at location '{loc}' went negative at line {idx}: running total {new_loc_sum}"
+                                    })
+                                    neg_loc_reported.add(loc)
+            # After processing all entries, check for negative on-hand totals
+            if total_sum < 0:
+                issues.append({
+                    "severity": "error",
+                    "code": "INV_NEGATIVE_ONHAND",
+                    "path": _rel(j, repo),
+                    "message": f"Final on-hand total negative for part '{part}': {total_sum}"
+                })
+            for l_sfid, s in sorted(loc_sums.items()):
+                if s < 0:
+                    issues.append({
+                        "severity": "error",
+                        "code": "INV_NEGATIVE_ONHAND",
+                        "path": _rel(j, repo),
+                        "message": f"Final on-hand negative at location '{l_sfid}': {s}"
+                    })
         except Exception:
             issues.append({
                 "severity": "error",
