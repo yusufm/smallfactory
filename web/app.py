@@ -1021,7 +1021,7 @@ def inventory_adjust():
             flash(f'Error adjusting quantity: {e}', 'error')
             # fall through to re-render form with previous values
 
-    return render_template('mobile/adjust.html', field_specs=field_specs, form_data=form_data)
+    return render_template('inventory/adjust.html', field_specs=field_specs, form_data=form_data)
 
 # -------------------------------
 # Entities module (canonical metadata)
@@ -1052,11 +1052,8 @@ def entities_view(sfid):
         # Released revision label (if any)
         released_rev = None
         try:
-            ent_dir = Path(datarepo_path) / "entities" / sfid
-            refs_dir = ent_dir / "refs"
-            rel_fp = refs_dir / "released"
-            if rel_fp.exists():
-                released_rev = (rel_fp.read_text() or '').strip() or None
+            info = get_revisions(datarepo_path, sfid)
+            released_rev = (info.get('rev') or '').strip() or None
         except Exception:
             pass
 
