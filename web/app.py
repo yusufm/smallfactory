@@ -1048,6 +1048,61 @@ def inventory_delete(item_id):
     except Exception as e:
         flash(f'Error deleting item: {e}', 'error')
         return redirect(url_for('inventory_view', item_id=item_id))
+# -------------------------------
+# Mobile quick adjust (QR-friendly)
+@app.route('/mobile/adjust', methods=['GET', 'POST'])
+def mobile_adjust():
+    """Mobile-friendly Quick Adjust page.
+
+    Minimal form with sfid, l_sfid, and signed delta. On mobile, inputs get QR scan buttons automatically
+    via base template scripts; entity autocomplete also applies.
+    """
+    field_specs = get_inventory_field_specs()
+    form_data = {}
+
+    if request.method == 'GET':
+        pre_sfid = (request.args.get('sfid') or '').strip()
+        pre_l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
+        pre_delta = (request.args.get('delta') or '').strip()
+        if pre_sfid:
+            form_data['sfid'] = pre_sfid
+        if pre_l_sfid:
+            form_data['l_sfid'] = pre_l_sfid
+        if pre_delta:
+            form_data['delta'] = pre_delta
+
+    if request.method == 'POST':
+        # Preserve form values on error for re-display
+        form_data = {k: v for k, v in request.form.items() if str(v).strip()}
+        try:
+            sfid = (request.form.get('sfid') or '').strip()
+            # Canonical field name is l_sfid; support legacy 'location' as fallback
+            location = (request.form.get('l_sfid') or '').strip() or (request.form.get('location') or '').strip() or None
+            delta_raw = (request.form.get('delta') or '0').strip()
+            if not sfid:
+                raise ValueError('Missing required field: sfid')
+            try:
+                delta = int(delta_raw)
+            except Exception:
+                raise ValueError('delta must be an integer (can be negative)')
+
+            datarepo_path = get_datarepo_path()
+            def _mutate():
+                return inventory_post(datarepo_path, sfid, delta, location)
+            _ = _run_repo_txn(
+                datarepo_path,
+                _mutate,
+                autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
+                autocommit_paths=[f"inventory/{sfid}"]
+            )
+            loc_msg = location or 'default location'
+            flash(f"Adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
+            return redirect(url_for('inventory_view', item_id=sfid))
+        except Exception as e:
+            flash(f'Error adjusting quantity: {e}', 'error')
+            # fall through to re-render form with previous values
+
+    return render_template('mobile/adjust.html', field_specs=field_specs, form_data=form_data)
 
 # -------------------------------
 # Entities module (canonical metadata)
