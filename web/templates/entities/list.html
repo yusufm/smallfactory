@@ -29,7 +29,15 @@
         <a href="{{ url_for('entities_add') }}?sfid=p_&scan=1" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center md:hidden">
           <i class="fas fa-camera mr-2"></i>Scan a Part
         </a>
-        <a href="{{ url_for('entities_add') }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+        {% set add_prefix = '' %}
+        {% if filter_type == 'p' %}
+          {% set add_prefix = 'p_' %}
+        {% elif filter_type == 'b' %}
+          {% set add_prefix = 'b_' %}
+        {% elif filter_type == 'l' %}
+          {% set add_prefix = 'l_' %}
+        {% endif %}
+        <a href="{{ url_for('entities_add', sfid=add_prefix) }}" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
           <i class="fas fa-user-plus mr-2"></i>Add Entity
         </a>
       </div>
@@ -78,7 +86,7 @@
           </tr>
           {% endfor %}
           {% if not entities %}
-          <tr><td colspan="5" class="px-6 py-6 text-center text-gray-500">No entities found. <a class="text-blue-600 hover:underline" href="{{ url_for('entities_add') }}">Create one</a>.</td></tr>
+          <tr><td colspan="5" class="px-6 py-6 text-center text-gray-500">No entities found. <a class="text-blue-600 hover:underline" href="{{ url_for('entities_add', sfid=add_prefix) }}">Create one</a>.</td></tr>
           {% endif %}
         </tbody>
       </table>
