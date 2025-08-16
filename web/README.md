@@ -63,6 +63,19 @@ FLASK_ENV=development python3 sf.py web --port 8080 --debug
 - **SF_VISION_MODEL**: Vision model name (default `qwen2.5vl:3b`).
 - Optional: **SF_REPO** to point to a specific data repository path (follows the same resolution as the CLI).
 
+### Proxy-auth user identity for Git commits (web only)
+
+When the web UI performs write operations, it will use proxy-provided headers to attribute Git commits to the active user. If headers are absent, behavior falls back to existing Git config/environment (no change for CLI).
+
+- Default header names checked (first match wins):
+  - User: `X-Forwarded-User`, `X-Auth-Request-User`
+  - Email: `X-Forwarded-Email`, `X-Auth-Request-Email`
+- Override header names via env (comma-separated list allowed):
+  - `SF_WEB_IDENTITY_HEADER_NAME` (e.g., `SF_WEB_IDENTITY_HEADER_NAME=X-Forwarded-Preferred-User`)
+  - `SF_WEB_IDENTITY_HEADER_EMAIL`
+- If only an email-like value is present, the display name is derived from the local part (e.g., `jane.doe` -> `Jane Doe`).
+- Applies only to web requests; the CLI continues to use the caller's local Git identity.
+
 ## Architecture
 
 The web UI is built as a Flask application that uses the smallFactory core v1 API:
