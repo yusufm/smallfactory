@@ -68,9 +68,7 @@
                 <a href="{{ url_for('inventory_list') }}" class="{% if request.endpoint and request.endpoint.startswith('inventory') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-boxes mr-2"></i>Inventory
                 </a>
-                <a href="{{ url_for('inventory_adjust') }}" class="{% if request.endpoint == 'inventory_adjust' %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
-                    <i class="fas fa-bolt mr-2"></i>Quick Adjust
-                </a>
+                
                 <a href="{{ url_for('entities_list', type='p') }}" class="{% set sf = (request.view_args.get('sfid') if request.view_args else '') %}{% if (request.endpoint and request.endpoint.startswith('entities')) and ((request.args.get('type') == 'p') or (sf and sf.startswith('p_'))) %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-cubes mr-2"></i>Parts
                 </a>
