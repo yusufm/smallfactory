@@ -11,7 +11,7 @@
             <p class="mt-2 text-gray-600">Manage your inventory items</p>
         </div>
         <div class="flex items-center gap-2">
-            <a href="{{ url_for('inventory_add') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
+            <a href="{{ url_for('mobile_adjust') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center">
                 <i class="fas fa-right-left mr-2"></i>Adjust Stock
             </a>
             <a href="{{ url_for('entities_list', type='l') }}" class="bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-md text-sm font-medium transition-colors inline-flex items-center border border-gray-300">
@@ -156,7 +156,7 @@
         </div>
         <h3 class="text-lg font-medium text-gray-900 mb-2">No inventory items found</h3>
         <p class="text-gray-500 mb-6">Get started by adjusting an item's quantity.</p>
-        <a href="{{ url_for('inventory_add') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
+        <a href="{{ url_for('mobile_adjust') }}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
             <i class="fas fa-right-left mr-2"></i>
             Adjust First Item
         </a>

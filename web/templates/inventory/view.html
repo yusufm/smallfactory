@@ -361,7 +361,7 @@ function createLocationEntity(inputId, itemSfid){
         paramsNext.set('sfid', itemSfid);
         paramsNext.set('l_sfid', seed);
         if(d) paramsNext.set('delta', d);
-        const nextUrl = '/inventory/add?' + paramsNext.toString();
+        const nextUrl = '/mobile/adjust?' + paramsNext.toString();
 
         const paramsTarget = new URLSearchParams();
         paramsTarget.set('sfid', seed);

@@ -216,7 +216,7 @@ If you see an error, ensure Ollama is running and the model is pulled. You can a
   - `/vision` — Vision camera/upload page
   - `/inventory` — Inventory list
   - `/inventory/<item_id>` — Inventory item view
-  - `/inventory/add` — Add Stock (GET, POST)
+  - `/mobile/adjust` — Quick adjust (GET, POST)
   - `/inventory/<item_id>/edit` — Edit inventory item (GET, POST)
   - `/inventory/<item_id>/adjust` — Adjust quantity (POST)
   - `/entities` — Entities list

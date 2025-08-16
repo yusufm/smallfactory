@@ -943,62 +943,12 @@ def inventory_view(item_id):
 
 @app.route('/inventory/add', methods=['GET', 'POST'])
 def inventory_add():
-    """Adjust inventory quantity (global form).
+    """Legacy route: 307 redirect to mobile quick adjust.
 
-    This page allows adjusting an item's quantity at a specific location
-    using a signed delta (positive to add, negative to subtract).
+    Preserves method and body for POST requests.
     """
-    field_specs = get_inventory_field_specs()
-    form_data = {}
-
-    # Prefill from query params on GET (e.g., after creating entity and returning)
-    if request.method == 'GET':
-        # Canonical field for location is l_sfid; accept legacy 'location' too
-        pre_sfid = request.args.get('sfid', '').strip()
-        pre_l_sfid = request.args.get('l_sfid', '').strip() or request.args.get('location', '').strip()
-        pre_delta = request.args.get('delta', '').strip()
-        if pre_sfid:
-            form_data['sfid'] = pre_sfid
-        if pre_l_sfid:
-            form_data['l_sfid'] = pre_l_sfid
-        if pre_delta:
-            form_data['delta'] = pre_delta
-    
-    if request.method == 'POST':
-        # Always preserve form data for potential re-display
-        form_data = {key: value for key, value in request.form.items() if str(value).strip()}
-
-        try:
-            # Extract required fields for adjustment
-            sfid = request.form.get('sfid', '').strip()
-            # Canonical field name is l_sfid; support legacy 'location' as fallback
-            location = request.form.get('l_sfid', '').strip() or request.form.get('location', '').strip() or None
-            delta_raw = request.form.get('delta', '0').strip()
-
-            if not sfid:
-                raise ValueError("Missing required field: sfid")
-            try:
-                delta = int(delta_raw)
-            except Exception:
-                raise ValueError("delta must be an integer (can be negative)")
-
-            datarepo_path = get_datarepo_path()
-            def _mutate():
-                return inventory_post(datarepo_path, sfid, delta, location)
-            _ = _run_repo_txn(
-                datarepo_path,
-                _mutate,
-                autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
-                autocommit_paths=[f"inventory/{sfid}"]
-            )
-            loc_msg = location or 'default location'
-            flash(f"Successfully adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
-            return redirect(url_for('inventory_view', item_id=sfid))
-        except Exception as e:
-            flash(f'Error adjusting quantity: {e}', 'error')
-            # fall through to re-render form
-    
-    return render_template('inventory/add.html', field_specs=field_specs, form_data=form_data)
+    target = url_for('mobile_adjust', **{k: v for k, v in request.args.items()})
+    return redirect(target, code=307)
 
 @app.route('/inventory/<item_id>/edit', methods=['GET', 'POST'])
 def inventory_edit(item_id):
