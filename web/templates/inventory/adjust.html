@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Quick Adjust - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <div class="max-w-md mx-auto">
+    <h1 class="text-2xl font-bold text-gray-900 mb-4">Quick Adjust</h1>
+    <p class="text-sm text-gray-600 mb-6">Scan or type an item and location, then enter a signed adjustment (use negatives to subtract).</p>
+
+    <form method="POST" class="space-y-5">
+      <div>
+        <label for="sfid" class="block text-sm font-medium text-gray-700">Item SFID <span class="text-red-500">*</span></label>
+        <input type="text" name="sfid" id="sfid"
+               class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-3 text-base focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+               placeholder="e.g. p_m3x10" value="{{ form_data.get('sfid', '') }}" required>
+        <p class="mt-1 text-xs text-gray-500">Autocomplete enabled. Tap the camera to scan a QR code.</p>
+      </div>
+
+      <div>
+        <label for="l_sfid" class="block text-sm font-medium text-gray-700">Location SFID</label>
+        <input type="text" name="l_sfid" id="l_sfid" pattern="l_.*"
+               class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-3 text-base focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+               placeholder="e.g. l_bin1" value="{{ form_data.get('l_sfid', '') }}">
+        <p class="mt-1 text-xs text-gray-500">Optional; defaults to configured <code>inventory.default_location</code>.</p>
+      </div>
+
+      <div>
+        <label for="delta" class="block text-sm font-medium text-gray-700">Adjustment (Δ) <span class="text-red-500">*</span></label>
+        <div class="flex items-center gap-2 mt-1">
+          <div class="flex-1">
+            <input type="number" name="delta" id="delta" step="1"
+                   class="block w-full border border-gray-300 rounded-md px-3 py-3 text-base focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="e.g. -5 or 10" value="{{ form_data.get('delta', '') or 0 }}" required>
+          </div>
+          <div class="flex gap-1">
+            <button type="button" data-delta="-5" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-5</button>
+            <button type="button" data-delta="-1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-1</button>
+            <button type="button" data-delta="+1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+1</button>
+            <button type="button" data-delta="+5" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+5</button>
+          </div>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">Use quick buttons to adjust the value.</p>
+      </div>
+
+      <div class="pt-2 flex gap-3">
+        <a href="{{ url_for('inventory_list') }}" class="flex-1 text-center px-4 py-3 border border-gray-300 rounded-md text-base font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</a>
+        <button type="submit" class="flex-1 px-4 py-3 border border-transparent rounded-md text-base font-medium text-white bg-blue-600 hover:bg-blue-700">Adjust</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Autofocus item field on load
+  document.addEventListener('DOMContentLoaded', function(){
+    try {
+      const sfid = document.getElementById('sfid');
+      if (sfid) sfid.focus();
+      // Quick delta buttons
+      document.querySelectorAll('button[data-delta]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dv = document.getElementById('delta');
+          const inc = parseInt(btn.getAttribute('data-delta'), 10);
+          let v = parseInt(dv.value || '0', 10);
+          if (isNaN(v)) v = 0;
+          dv.value = v + inc;
+          dv.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      });
+    } catch(e) { console.error(e); }
+  });
+</script>
+{% endblock %}

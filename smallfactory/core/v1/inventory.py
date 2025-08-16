@@ -257,6 +257,25 @@ def inventory_post(
     if delta == 0:
         raise ValueError("qty_delta must be non-zero")
 
+    # Guard: do not allow resulting on-hand to go below zero (per SPEC)
+    # Compute current totals from the journal to avoid stale caches
+    journal_path = _journal_file(datarepo_path, part)
+    by_loc, total = _compute_part_onhand_from_journal(journal_path)
+    try:
+        cur_total = int(total)
+    except Exception:
+        cur_total = 0
+    try:
+        cur_loc = int(by_loc.get(location, 0))
+    except Exception:
+        cur_loc = 0
+    new_total = cur_total + delta
+    new_loc = cur_loc + delta
+    if new_total < 0:
+        raise ValueError("qty_delta would cause total on-hand to go below zero")
+    if new_loc < 0:
+        raise ValueError(f"qty_delta would cause on-hand at {location} to go below zero")
+
     # Append NDJSON line
     entry = {
         "txn": _new_ulid(),

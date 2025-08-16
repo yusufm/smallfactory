@@ -175,7 +175,7 @@
                 if(locEl && locEl.value.trim()) paramsNext.set('l_sfid', locEl.value.trim());
                 const d = (deltaEl && String(deltaEl.value||'').trim()) || '0';
                 if(d) paramsNext.set('delta', d);
-                const nextUrl = '/inventory/add?' + paramsNext.toString();
+                const nextUrl = '/inventory/adjust?' + paramsNext.toString();
 
                 const paramsTarget = new URLSearchParams();
                 paramsTarget.set('sfid', seed);
