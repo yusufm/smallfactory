@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+
+{% block title %}Deep BOM Tree · {{ entity.sfid }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <div class="text-sm text-gray-500"><a class="text-blue-600 hover:underline" href="{{ url_for('entities_view', sfid=entity.sfid) }}">{{ entity.sfid }}</a></div>
+      <h1 class="text-2xl font-semibold text-gray-900">Deep BOM Tree</h1>
+      <div class="text-gray-700">{{ entity.name or entity.sfid }}</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"><i class="fas fa-arrow-left mr-2"></i>Back to Entity</a>
+      <a href="{{ url_for('api_bom_deep', sfid=entity.sfid, format='csv') }}" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700"><i class="fas fa-download mr-2"></i>Download CSV</a>
+    </div>
+  </div>
+
+  <div class="bg-white shadow rounded-lg">
+    <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div class="text-gray-900 font-medium">Tree</div>
+      <div class="text-sm text-gray-500">Total lines: {{ nodes|length }}</div>
+    </div>
+    <div class="p-5 text-sm leading-6">
+      {% if not nodes or nodes|length == 0 %}
+        <div class="text-sm text-gray-500">No BOM lines.</div>
+      {% else %}
+        {% set ns = namespace(cur=0) %}
+        {# Iterate flat nodes and build nested UL/LI by level #}
+        {% for n in nodes %}
+          {% set lvl = (n.level or 1)|int %}
+          {# Open deeper levels #}
+          {% if lvl > ns.cur %}
+            {% for i in range(ns.cur, lvl) %}
+<ul class="ml-4 pl-3 border-l border-gray-200"><li>
+            {% endfor %}
+          {% elif lvl == ns.cur and ns.cur > 0 %}
+</li><li>
+          {% elif lvl < ns.cur %}
+            {% for i in range(ns.cur, lvl, -1) %}
+</li></ul>
+            {% endfor %}
+</li><li>
+          {% endif %}
+
+          {# Row content #}
+          <span class="font-mono text-blue-700"><a class="hover:underline" href="{{ url_for('entities_view', sfid=n.use) }}">{{ n.use }}</a></span>
+          <span class="text-gray-900">{{ n.name or n.use }}</span>
+          <span class="text-gray-700">× {{ n.qty if n.qty is not none else 1 }}</span>
+          <span class="text-xs text-gray-500">{{ n.rev or 'released' }}{% if n.resolved_rev %} → {{ n.resolved_rev }}{% endif %}</span>
+          {% if n.onhand_total is not none %}
+            <span class="ml-2 text-[10px] uppercase tracking-wide text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">on-hand {{ n.onhand_total }}</span>
+          {% endif %}
+          {% if n.is_alt %}
+            <span class="ml-2 text-[10px] uppercase tracking-wide text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">ALT</span>
+          {% endif %}
+          {% if n.cycle %}
+            <span class="ml-2 text-[10px] uppercase tracking-wide text-red-700 bg-red-100 px-1.5 py-0.5 rounded">CYCLE</span>
+          {% endif %}
+          {% if n.cumulative_qty is not none %}
+            <span class="ml-1 text-xs text-gray-500">(cum {{ n.cumulative_qty }})</span>
+          {% endif %}
+
+          {% set ns.cur = lvl %}
+        {% endfor %}
+        {# Close remaining open levels #}
+        {% for i in range(ns.cur, 0, -1) %}
+</li></ul>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
