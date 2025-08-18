@@ -1100,6 +1100,22 @@ def entities_view(sfid):
         flash(f'Error viewing entity: {e}', 'error')
         return redirect(url_for('entities_list'))
 
+@app.route('/entities/<sfid>/bom-tree')
+def entities_bom_tree(sfid):
+    """Dedicated page to display the deep BOM tree for a product entity.
+
+    Server-side renders the hierarchical tree and provides a CSV download link.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        entity = get_entity(datarepo_path, sfid)
+        # Only meaningful for parts/products, but allow graceful render for others
+        nodes = _walk_bom_deep(datarepo_path, sfid, max_depth=None)
+        return render_template('entities/bom_tree.html', entity=entity, nodes=nodes)
+    except Exception as e:
+        flash(f'Error loading BOM tree: {e}', 'error')
+        return redirect(url_for('entities_view', sfid=sfid))
+
 
 @app.route('/entities/<sfid>/build', methods=['GET', 'POST'])
 def entities_build(sfid):
