@@ -84,6 +84,53 @@
   };
   const normalizeSfid = (s) => String(s||'').trim().toLowerCase();
 
+  // Suggestion helpers
+  const slugToken = (s) => {
+    let t = String(s||'').toLowerCase().trim();
+    if(!t) return '';
+    // replace non [a-z0-9_-] with '-'
+    t = t.replace(/[^a-z0-9_-]+/g, '-');
+    // collapse repeats
+    t = t.replace(/-{2,}/g, '-').replace(/_{2,}/g, '_');
+    // trim leading/trailing separators
+    t = t.replace(/^[-_]+/, '').replace(/[-_]+$/, '');
+    // ensure last char alnum
+    if(t && !/[a-z0-9]$/.test(t)) t = t.replace(/[-_]+$/, '');
+    if(t && !/[a-z0-9]$/.test(t)) t += '0';
+    return t;
+  };
+  const clampLen = (s, max) => (s.length <= max ? s : s.slice(0, max));
+  function suggestSfidForRow(row, taken){
+    // Build base from mpn (preferred), else manufacturer+mpn, else name
+    const mfr = (row.manufacturer||row.mfr||'').toString();
+    const mpn = (row.mpn||row.mfr_pn||'').toString();
+    const name = (row.name||'').toString();
+    let token = slugToken(mpn) || (slugToken(mfr) && slugToken(mpn) ? `${slugToken(mfr)}-${slugToken(mpn)}` : '') || slugToken(name);
+    if(!token) return '';
+    // Respect overall length <= 64; prefix 'p_'
+    token = clampLen(token, 62); // leaves space for 'p_'
+    let candidate = `p_${token}`;
+    // Ensure validity and uniqueness
+    if(!isValidSfid(candidate)){
+      // Fallback: ensure prefix and alnum end
+      candidate = candidate.replace(/[^a-z0-9_-]/g, '-');
+      candidate = candidate.replace(/-{2,}/g, '-');
+      candidate = candidate.replace(/[-_]+$/, '');
+      if(!/[a-z0-9]$/.test(candidate)) candidate += '0';
+      // Final clamp
+      if(candidate.length > 64) candidate = candidate.slice(0, 64);
+    }
+    let i = 1;
+    let sug = candidate;
+    while(taken.has(sug) || !isValidSfid(sug)){
+      const suffix = `-${++i}`;
+      const base = candidate.slice(0, Math.max(3, 64 - suffix.length));
+      sug = `${base}${suffix}`;
+    }
+    taken.add(sug);
+    return sug;
+  }
+
   function updateSummaryAndApplyButton(){
     if(!Array.isArray(previewRows)) previewRows = [];
     const csvUses = new Set(previewRows.filter(r => !r.ambiguous).map(r => normalizeSfid(r.use)).filter(Boolean));
@@ -169,6 +216,16 @@
   function renderPreview(rows){
     const tb = elTBody(); if(!tb) return;
     tb.innerHTML = '';
+    // Compute suggestions for rows missing use, ensuring no collisions with existing or within-preview
+    const taken = new Set(Array.from(existingUses || []));
+    rows.forEach((r) => {
+      const use = normalizeSfid(r.use);
+      if((!use || !isValidSfid(use)) && !r.ambiguous){
+        const sug = suggestSfidForRow(r, taken);
+        if(sug){ r.use = sug; r.auto_suggested = true; }
+      }
+      if(r.use) taken.add(normalizeSfid(r.use));
+    });
     // 1) Render CSV-derived rows
     rows.forEach((r, i) => {
       const use = normalizeSfid(r.use);
@@ -181,7 +238,7 @@
       let badge = '';
       let rowCls = '';
       let canApply = canApplyRow(r);
-      const showInput = (!use || !isValidSfid(use)) || r.ambiguous;
+      const showInput = r.ambiguous || (!use || !isValidSfid(use)) || (!!r.auto_suggested);
       if(r.ambiguous){
         status = 'Ambiguous';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800">ambiguous</span>';
@@ -198,6 +255,9 @@
         status = 'Already present';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">exists</span>';
         rowCls = 'opacity-70';
+      }else if(r.auto_suggested){
+        status = 'Suggested';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-700">suggested</span>';
       }else if(r.auto_filled){
         status = 'Auto-filled';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">auto</span>';
@@ -264,6 +324,8 @@
     // reflect normalization in the UI so user sees final value
     if(t.value !== val) t.value = val;
     previewRows[idx].use = val;
+    // If the user edits the suggested value, it's no longer auto-suggested
+    if(previewRows[idx].auto_suggested) previewRows[idx].auto_suggested = false;
     previewRows[idx].ambiguous = false;
     // Live validate and update row UI without re-rendering entire table
     // Input border style
