@@ -39,6 +39,9 @@
         <table class="min-w-full text-sm">
           <thead class="bg-gray-50 text-gray-700">
             <tr>
+              <th class="px-2 py-1 text-left w-8">
+                <input id="imp-select-all" type="checkbox" class="h-4 w-4" />
+              </th>
               <th class="px-2 py-1 text-left">Use</th>
               <th class="px-2 py-1 text-left">Name</th>
               <th class="px-2 py-1 text-right">Qty</th>
@@ -79,6 +82,7 @@
   const elSum = () => document.getElementById('imp-summary');
   const elTBody = () => document.getElementById('imp-preview-tbody');
   const elApply = () => document.getElementById('imp-apply');
+  const elSelectAll = () => document.getElementById('imp-select-all');
 
   // SFID helpers (matches SPECIFICATION.md authoritative regex)
   const SFID_REGEX = /^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$/;
@@ -131,12 +135,24 @@
 
   function updateSummaryAndApplyButton(){
     if(!Array.isArray(previewRows)) previewRows = [];
-    const csvUses = new Set(previewRows.filter(r => !r.ambiguous).map(r => normalizeSfid(r.use)).filter(Boolean));
-    const removalCandidates = (existingRows||[]).filter(r => !csvUses.has(normalizeSfid(r.use)));
     const n = previewRows.length;
-    if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview. ${removalCandidates.length} existing line${removalCandidates.length===1?'':'s'} will be removed.`;
-    const hasActions = (csvUses.size > 0) || (removalCandidates.length > 0);
+    const checkboxes = (elTBody() ? elTBody().querySelectorAll('input[data-row-select="1"]') : []);
+    let selected = 0; let enabled = 0;
+    if(checkboxes && checkboxes.forEach){ checkboxes.forEach(cb => { if(!cb.disabled) enabled++; if(cb.checked) selected++; }); }
+    // Count selected removals
+    const remBoxes = (elTBody() ? elTBody().querySelectorAll('input[data-remove-select="1"]') : []);
+    let selectedRem = 0; if(remBoxes && remBoxes.forEach){ remBoxes.forEach(cb => { if(cb.checked) selectedRem++; }); }
+    if(elSum()){
+      if(n === 0){
+        elSum().textContent = `Selected removals: ${selectedRem}.`;
+      }else{
+        elSum().textContent = `${n} row${n===1?'':'s'} in preview. Selected ${selected} addition/update${selected===1?'':'s'}. Selected removals: ${selectedRem}.`;
+      }
+    }
+    // Enable apply if there is any selected addition/update OR any selected removals
+    const hasActions = (selected > 0) || (selectedRem > 0);
     if(elApply()) elApply().disabled = !hasActions;
+    updateSelectAllState();
   }
 
   async function loadExistingUses(){
@@ -204,14 +220,7 @@
       previewRows = Array.isArray(data.rows) ? data.rows : [];
       window.previewRows = previewRows;
       renderPreview(previewRows);
-      const n = previewRows.length;
-      // Compute removals summary
-      const csvUses = new Set(previewRows.filter(r => !r.ambiguous).map(r => String(r.use||'').trim()).filter(Boolean));
-      const removalCandidates = (existingRows||[]).filter(r => !csvUses.has(String(r.use||'').trim()));
-      if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview. ${removalCandidates.length} existing line${removalCandidates.length===1?'':'s'} will be removed.`;
-      // Enable Apply if there will be any changes (adds/updates OR removals)
-      const hasActions = (csvUses.size > 0) || (removalCandidates.length > 0);
-      if(elApply()) elApply().disabled = !hasActions;
+      updateSummaryAndApplyButton();
     }catch(e){ if(elErr()) elErr().textContent = e.message || String(e); }
   }
 
@@ -220,7 +229,6 @@
     if(r.ambiguous) return false;
     if(!use) return false;
     if(!isValidSfid(use)) return false;
-    if(existingUses.has(use)) return false;
     return true;
   }
 
@@ -283,7 +291,10 @@
                  class="w-44 border ${isValidSfid(use)?'border-gray-300':'border-red-300'} rounded px-2 py-1 font-mono text-sm" />`
         : `<span class="font-mono text-blue-700">${use||'—'}</span>`;
       tb.insertAdjacentHTML('beforeend', `
-        <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}">
+        <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}" data-row-index="${i}">
+          <td class="px-2 py-1">
+            <input type="checkbox" data-row-select="1" data-row-index="${i}" class="h-4 w-4" ${canApply?'':'disabled'} ${canApply?'checked':''} />
+          </td>
           <td class="px-2 py-1">${useCell}</td>
           <td class="px-2 py-1">${name||'—'}</td>
           <td class="px-2 py-1 text-right">${qty}</td>
@@ -301,7 +312,7 @@
     if(toRemove.length){
       tb.insertAdjacentHTML('beforeend', `
         <tr class="bg-red-100">
-          <td class="px-2 py-1 text-xs text-red-800" colspan="7">Removals</td>
+          <td class="px-2 py-1 text-xs text-red-800" colspan="8">Removals</td>
         </tr>
       `);
     }
@@ -312,7 +323,10 @@
       const rev = (er.rev||'released');
       const badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">remove</span>';
       tb.insertAdjacentHTML('beforeend', `
-        <tr class="bg-red-50" data-remove="1">
+        <tr class="bg-red-50" data-remove="1" data-remove-use="${use}">
+          <td class="px-2 py-1">
+            <input type="checkbox" data-remove-select="1" data-remove-use="${use}" class="h-4 w-4" checked />
+          </td>
           <td class="px-2 py-1 font-mono text-red-700">${use||'—'}</td>
           <td class="px-2 py-1">${name||'—'}</td>
           <td class="px-2 py-1 text-right">${qty}</td>
@@ -323,6 +337,8 @@
         </tr>
       `);
     });
+    // Reset select-all state after rendering
+    updateSelectAllState();
   }
 
   function onTBodyInput(ev){
@@ -369,12 +385,46 @@
       }
       tr.className = rowCls;
       tr.setAttribute('data-can-apply', canApplyRow(previewRows[idx]) ? '1' : '0');
+      // Enable/disable and auto-check the row selection checkbox based on eligibility
+      const cb = tr.querySelector('input[data-row-select="1"]');
+      if(cb){
+        const eligible = canApplyRow(previewRows[idx]);
+        cb.disabled = !eligible;
+        if(!eligible) cb.checked = false;
+      }
       const tds = tr.querySelectorAll('td');
-      if(tds && tds.length >= 7){
-        const statusTd = tds[6];
+      if(tds && tds.length >= 8){
+        const statusTd = tds[7];
         statusTd.innerHTML = `${badge} <span class="text-gray-600">${status}</span>`;
       }
     }
+    updateSummaryAndApplyButton();
+  }
+
+  function onTBodyChange(ev){
+    const t = ev.target;
+    if(t && t.matches('input[data-row-select="1"], input[data-remove-select="1"]')){
+      updateSummaryAndApplyButton();
+    }
+  }
+
+  function updateSelectAllState(){
+    const sa = elSelectAll(); if(!sa) return;
+    const boxes = elTBody() ? elTBody().querySelectorAll('input[data-row-select="1"]') : [];
+    let total = 0, checked = 0;
+    if(boxes && boxes.forEach){ boxes.forEach(cb => { if(cb.disabled) return; total++; if(cb.checked) checked++; }); }
+    if(total === 0){ sa.checked = false; sa.indeterminate = false; sa.disabled = true; }
+    else{
+      sa.disabled = false;
+      sa.checked = (checked === total);
+      sa.indeterminate = (checked > 0 && checked < total);
+    }
+  }
+
+  function onSelectAllChange(){
+    const sa = elSelectAll(); if(!sa) return;
+    const boxes = elTBody() ? elTBody().querySelectorAll('input[data-row-select="1"]') : [];
+    if(boxes && boxes.forEach){ boxes.forEach(cb => { if(!cb.disabled) cb.checked = sa.checked; }); }
     updateSummaryAndApplyButton();
   }
 
@@ -385,10 +435,44 @@
     if(!Array.isArray(previewRows)) previewRows = [];
     const btn = elApply(); if(btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
     try{
-      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/import/apply`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ rows: previewRows, remove_missing: true, update_existing: true })
+      let payload = { rows: [], remove_missing: false, update_existing: true };
+      // Collect selected addition/update rows
+      const boxes = elTBody() ? elTBody().querySelectorAll('input[data-row-select="1"]') : [];
+      const selectedIdx = [];
+      if(boxes && boxes.forEach){ boxes.forEach(cb => { if(cb.checked){ const i = parseInt(cb.getAttribute('data-row-index')||'-1',10); if(!Number.isNaN(i) && i>=0 && i<previewRows.length) selectedIdx.push(i); } }); }
+      const selectedRows = selectedIdx.map(i => previewRows[i]);
+
+      // Collect selected removals
+      const remBoxes = elTBody() ? elTBody().querySelectorAll('input[data-remove-select="1"]') : [];
+      const selectedRemovals = new Set();
+      if(remBoxes && remBoxes.forEach){ remBoxes.forEach(cb => { if(cb.checked){ const u = (cb.getAttribute('data-remove-use')||'').trim(); if(u) selectedRemovals.add(u); } }); }
+
+      if(selectedRows.length === 0 && selectedRemovals.size === 0){
+        throw new Error('No changes selected.');
+      }
+
+      // Build keep set from existing rows excluding selected removals
+      const keepUses = new Set((existingRows||[]).map(r => String(r.use||'').trim()));
+      selectedRemovals.forEach(u => keepUses.delete(u));
+
+      // Start with selected CSV rows
+      const resultRows = [...selectedRows];
+      const selectedUses = new Set(selectedRows.map(r => String(r.use||'').trim()));
+
+      // Add keep rows for any existing uses not already represented to prevent their removal
+      (existingRows||[]).forEach(er => {
+        const u = String(er.use||'').trim();
+        if(!u) return;
+        if(!keepUses.has(u)) return; // skip those selected for removal
+        if(selectedUses.has(u)) return; // already included via CSV selection
+        // Include as-is to keep
+        resultRows.push({ use: u, qty: er.qty, rev: er.rev });
       });
+
+      payload.rows = resultRows;
+      payload.remove_missing = (selectedRemovals.size > 0);
+
+      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/import/apply`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
       const data = await res.json();
       if(!res.ok || !data.success) throw new Error(data.error||'Failed to apply');
       const summary = data.summary || { added:0, updated:0, removed:0 };
@@ -408,7 +492,9 @@
   document.getElementById('imp-file').addEventListener('change', onFileChange);
   document.getElementById('imp-text').addEventListener('input', onTextInput);
   document.getElementById('imp-apply').addEventListener('click', openImpApplyModal);
+  if(elSelectAll()) elSelectAll().addEventListener('change', onSelectAllChange);
   elTBody().addEventListener('input', onTBodyInput);
+  elTBody().addEventListener('change', onTBodyChange);
 
   // Init
   loadExistingUses();
@@ -430,8 +516,8 @@
         <div class="bg-gray-50 border border-gray-200 rounded p-3">
           <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Summary</div>
           <ul class="list-disc pl-5 text-gray-700">
-            <li><span id="imp-apply-count-rows">0</span> preview row(s)</li>
-            <li><span id="imp-apply-count-removals">0</span> existing line(s) will be removed</li>
+            <li><span id="imp-apply-count-rows">0</span> selected row(s) will be applied</li>
+            <li id="imp-apply-removals-note">No removals will be applied when applying a subset of rows.</li>
           </ul>
           <div class="text-xs text-gray-500 mt-2">Missing parts will be created for suggested SFIDs. Qty and Rev will be synced.</div>
         </div>
@@ -450,12 +536,16 @@
   window.openImpApplyModal = function(){
     try{
       const rows = Array.isArray(window.previewRows) ? window.previewRows : (typeof previewRows!=='undefined' ? previewRows : []);
-      const existRows = Array.isArray(window.existingRows) ? window.existingRows : (typeof existingRows!=='undefined' ? existingRows : []);
-      const csvUses = new Set(rows.filter(r => !r.ambiguous).map(r => (String(r.use||'').trim().toLowerCase())).filter(Boolean));
-      const removalCandidates = (existRows||[]).filter(r => !csvUses.has(String(r.use||'').trim().toLowerCase()));
-      const n = rows.length;
-      const rEl = document.getElementById('imp-apply-count-rows'); if(rEl) rEl.textContent = String(n);
-      const dEl = document.getElementById('imp-apply-count-removals'); if(dEl) dEl.textContent = String(removalCandidates.length);
+      const tb = document.getElementById('imp-preview-tbody');
+      const boxes = tb ? tb.querySelectorAll('input[data-row-select="1"]') : [];
+      let selected = 0; if(boxes && boxes.forEach){ boxes.forEach(cb => { if(cb.checked) selected++; }); }
+      const rEl = document.getElementById('imp-apply-count-rows'); if(rEl) rEl.textContent = String(selected);
+      const noteEl = document.getElementById('imp-apply-removals-note');
+      if(rows.length === 0){
+        if(noteEl) noteEl.textContent = 'All existing BOM lines will be removed.';
+      }else{
+        if(noteEl) noteEl.textContent = 'No removals will be applied when applying a subset of rows.';
+      }
     }catch(e){ /* non-fatal */ }
     const m = document.getElementById('imp-apply-modal'); if(m) m.classList.remove('hidden');
   };
