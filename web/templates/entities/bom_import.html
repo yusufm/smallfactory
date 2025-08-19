@@ -120,15 +120,9 @@
       // Final clamp
       if(candidate.length > 64) candidate = candidate.slice(0, 64);
     }
-    let i = 1;
-    let sug = candidate;
-    while(taken.has(sug) || !isValidSfid(sug)){
-      const suffix = `-${++i}`;
-      const base = candidate.slice(0, Math.max(3, 64 - suffix.length));
-      sug = `${base}${suffix}`;
-    }
-    taken.add(sug);
-    return sug;
+    // Do not add numeric suffixes for uniqueness; if it already exists, use it as-is
+    if(!isValidSfid(candidate)) return '';
+    return candidate;
   }
 
   function updateSummaryAndApplyButton(){
