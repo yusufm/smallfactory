@@ -10,6 +10,7 @@ import json
 import sys
 import os
 import csv
+import re
 import base64
 import io
 from PIL import Image
@@ -1117,6 +1118,18 @@ def entities_bom_tree(sfid):
         return redirect(url_for('entities_view', sfid=sfid))
 
 
+@app.route('/entities/<sfid>/bom/import')
+def entities_bom_import(sfid):
+    """Dedicated BOM CSV import page."""
+    try:
+        datarepo_path = get_datarepo_path()
+        entity = get_entity(datarepo_path, sfid)
+        return render_template('entities/bom_import.html', entity=entity)
+    except Exception as e:
+        flash(f'Error loading BOM import page: {e}', 'error')
+        return redirect(url_for('entities_view', sfid=sfid))
+
+
 @app.route('/entities/<sfid>/build', methods=['GET', 'POST'])
 def entities_build(sfid):
     """Quick Build flow for finished goods (p_* entities).
@@ -1620,6 +1633,217 @@ def api_bom_get(sfid):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
+@app.route('/api/entities/<sfid>/bom/import/apply', methods=['POST'])
+def api_bom_import_apply(sfid):
+    """Apply BOM CSV import: sync BOM to provided rows.
+
+    Expects JSON payload with:
+      - rows: list of dicts (keys: use, qty, rev, ambiguous, ...)
+      - remove_missing: bool (default True) -> remove existing uses not present in rows
+      - update_existing: bool (default True) -> update qty/rev for existing uses when changed
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or {}
+        in_rows = payload.get('rows') or []
+        remove_missing = bool(payload.get('remove_missing', True))
+        update_existing = bool(payload.get('update_existing', True))
+
+        # Normalize desired spec from rows (dedupe by 'use', keep last)
+        desired: dict[str, dict] = {}
+        # Track any provided names for referenced uses (last occurrence wins)
+        names_by_use: dict[str, str] = {}
+        # Track full field dictionaries per 'use' to create entities with all CSV attributes
+        fields_by_use: dict[str, dict] = {}
+        for r in (in_rows if isinstance(in_rows, list) else []):
+            try:
+                use = str((r or {}).get('use') or '').strip()
+                if not use:
+                    continue
+                # Skip ambiguous preview rows
+                if (r or {}).get('ambiguous'):
+                    continue
+                qty_raw = (r or {}).get('qty', 1)
+                try:
+                    qty = int(qty_raw)
+                except Exception:
+                    qty = 1
+                if qty <= 0:
+                    qty = 1
+                rev = str((r or {}).get('rev') or 'released').strip() or 'released'
+                desired[use] = {'qty': qty, 'rev': rev}
+                # Capture provided name if present for potential entity creation
+                nm = (r or {}).get('name')
+                if isinstance(nm, str) and nm.strip():
+                    names_by_use[use] = nm.strip()
+                # Build a field set for entity creation from all available CSV fields, excluding BOM/apply-only keys
+                # Keep normalized keys exactly as provided by preview for compatibility with specs
+                meta_keys = {'use', 'qty', 'rev', 'ambiguous', 'auto_filled', 'matches'}
+                fld: dict[str, str] = {}
+                for k, v in (r or {}).items():
+                    if k in meta_keys:
+                        continue
+                    if v is None:
+                        continue
+                    s = str(v).strip()
+                    if s == '':
+                        continue
+                    # Do not persist sfid field inside entity.yml; create_entity will strip it as well, but be explicit
+                    if k == 'sfid':
+                        continue
+                    fld[k] = s
+                # Ensure name captured via names_by_use is present in fields if available
+                if use in names_by_use and names_by_use[use]:
+                    fld.setdefault('name', names_by_use[use])
+                if fld:
+                    fields_by_use[use] = fld
+            except Exception:
+                continue
+
+        def _mutate():
+            result = {
+                'added': 0,
+                'updated': 0,
+                'removed': 0,
+                'created': 0,
+                'created_entities': [],
+            }
+            # Before syncing BOM lines, ensure all referenced 'use' entities exist.
+            # Create any missing ones (best-effort), including name if provided.
+            for use in list(desired.keys()):
+                try:
+                    # If entity exists, this will succeed; otherwise raises
+                    _ = get_entity(datarepo_path, use)
+                except FileNotFoundError:
+                    try:
+                        # Prefer full field set collected from CSV row; fall back to name-only if present
+                        fields = dict(fields_by_use.get(use, {}))
+                        # For new part entities (p_ prefix), split unknown CSV fields into attrs
+                        # and keep only known top-level keys on the entity root. This preserves all
+                        # CSV data while complying with the spec and UI expectations.
+                        if fields and isinstance(use, str) and use.startswith('p_'):
+                            known_top = {
+                                'name', 'uom', 'policy', 'category', 'description', 'tags'
+                            }
+                            top: dict = {}
+                            attrs: dict = {}
+                            for k, v in list(fields.items()):
+                                if k in known_top:
+                                    top[k] = v
+                                elif k == 'attrs' and isinstance(v, dict):
+                                    # Merge any provided attrs map
+                                    for ak, av in v.items():
+                                        attrs[ak] = av
+                                else:
+                                    attrs[k] = v
+                            # Filter out BOM-only fields from attrs (e.g., qty/quantity variants)
+                            def _is_qty_like(key: str) -> bool:
+                                try:
+                                    norm = re.sub(r'[\s_]+', '', str(key or '').strip().lower())
+                                except Exception:
+                                    return False
+                                return norm in ('qty', 'quantity')
+                            attrs = {k: v for k, v in attrs.items() if not _is_qty_like(k)}
+                            # Normalize tags if provided as a comma-separated string
+                            if 'tags' in top and isinstance(top['tags'], str):
+                                toks = [t.strip() for t in top['tags'].split(',') if t and t.strip()]
+                                if toks:
+                                    top['tags'] = toks
+                            # Always include attrs (empty dict if none)
+                            top['attrs'] = attrs or {}
+                            fields = top
+                        if not fields:
+                            nm = names_by_use.get(use)
+                            if nm:
+                                fields = {'name': nm}
+                        created = create_entity(datarepo_path, use, fields if fields else None)
+                        # Track created entity for summary
+                        result['created'] += 1
+                        result['created_entities'].append({
+                            'sfid': created.get('sfid', use),
+                            'name': created.get('name') or names_by_use.get(use) or use,
+                        })
+                    except Exception:
+                        # If creation fails, leave it to bom_* operations to surface errors when adding
+                        # We do not remove it from desired to preserve caller intent
+                        pass
+                except Exception:
+                    # On other errors while checking existence, skip creation attempt
+                    pass
+            # Current state
+            current = bom_list(datarepo_path, sfid) or []
+            cur_by_use: dict[str, dict] = {}
+            for i, line in enumerate(current):
+                try:
+                    u = str(line.get('use') or '').strip()
+                    if not u:
+                        continue
+                    cur_by_use[u] = {'index': i, 'line': line}
+                except Exception:
+                    continue
+
+            # Remove lines whose use is not in desired
+            if remove_missing:
+                to_remove = [u for u in cur_by_use.keys() if u not in desired]
+                for u in to_remove:
+                    bom_remove_line(datarepo_path, sfid, index=None, use=u, remove_all=True)
+                    result['removed'] += 1
+
+            # Recompute current after removals (indices may have shifted)
+            current = bom_list(datarepo_path, sfid) or []
+            cur_by_use = {}
+            for i, line in enumerate(current):
+                try:
+                    u = str(line.get('use') or '').strip()
+                    if not u:
+                        continue
+                    cur_by_use[u] = {'index': i, 'line': line}
+                except Exception:
+                    continue
+
+            # Add new or update existing
+            for use, spec in desired.items():
+                qty = spec.get('qty', 1)
+                rev = spec.get('rev', 'released')
+                if use not in cur_by_use:
+                    bom_add_line(datarepo_path, sfid, use=use, qty=qty, rev=rev, alternates=None, alternates_group=None, index=None, check_exists=True)
+                    result['added'] += 1
+                else:
+                    if update_existing:
+                        ent = cur_by_use[use]
+                        idx = ent['index']
+                        line = ent['line'] or {}
+                        updates = {}
+                        # Compare and update
+                        if int(line.get('qty', 1)) != int(qty):
+                            updates['qty'] = qty
+                        if (line.get('rev') or 'released') != (rev or 'released'):
+                            updates['rev'] = rev or 'released'
+                        if updates:
+                            bom_set_line(datarepo_path, sfid, index=idx, updates=updates, check_exists=True)
+                            result['updated'] += 1
+
+            # Return final bom
+            final = bom_list(datarepo_path, sfid) or []
+            result['bom'] = final
+            return result
+
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM import apply (sync) for {sfid} remove_missing={remove_missing} update_existing={update_existing}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
+
+        bom = res.get('bom')
+        # Build enriched rows for UI
+        rows = _enrich_bom_rows(datarepo_path, bom)
+        summary = {k: res.get(k, 0) for k in ('added', 'updated', 'removed', 'created')}
+        created_entities = res.get('created_entities', [])
+        return jsonify({'success': True, 'rows': rows, 'summary': summary, 'created_entities': created_entities})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 # Deep BOM traversal using core API
 def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
     """Return a flat list of deep BOM nodes with metadata via core traversal.
@@ -1663,6 +1887,361 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
             'onhand_total': _get_onhand_total(n.get('use')),
         })
     return nodes
+
+
+# -----------------------
+# BOM CSV import helpers
+# -----------------------
+def _norm_token(val: str | None) -> str:
+    try:
+        return str(val or '').strip().lower()
+    except Exception:
+        return ''
+
+def _decode_csv_bytes(b: bytes) -> str:
+    """Decode uploaded CSV bytes, handling common BOMs and UTF-16 files.
+
+    Strategy:
+    - If UTF-8 BOM, decode with 'utf-8-sig' (strips BOM)
+    - If UTF-16 BOM, decode with 'utf-16' (auto-detects endianness)
+    - If many NUL bytes present, try utf-16-le then utf-16-be
+    - Fallback to utf-8 with errors ignored
+    """
+    try:
+        if not b:
+            return ''
+        if b.startswith(b'\xef\xbb\xbf'):
+            return b.decode('utf-8-sig', errors='ignore')
+        if b.startswith(b'\xff\xfe') or b.startswith(b'\xfe\xff'):
+            return b.decode('utf-16', errors='ignore')
+        # Heuristic: lots of NUL bytes => likely UTF-16 without BOM
+        nul_ratio = (b.count(b'\x00') / max(1, len(b)))
+        if nul_ratio > 0.05:
+            try:
+                return b.decode('utf-16-le', errors='ignore')
+            except Exception:
+                try:
+                    return b.decode('utf-16-be', errors='ignore')
+                except Exception:
+                    pass
+        return b.decode('utf-8', errors='ignore')
+    except Exception:
+        try:
+            return b.decode('utf-8', errors='ignore')
+        except Exception:
+            return ''
+
+def _sanitize_csv_text(text: str) -> str:
+    """Sanitize CSV text: remove embedded NULs and stray BOM, normalize newlines."""
+    if not isinstance(text, str):
+        try:
+            text = str(text)
+        except Exception:
+            return ''
+    # Strip Unicode BOM if present and embedded NULs from UTF-16 mis-decode
+    text = text.replace('\ufeff', '').replace('\x00', '')
+    # Normalize CRLF/CR to LF
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return text
+
+
+def _index_parts_by_mfg_mpn(datarepo_path: Path) -> dict[tuple[str, str], list[str]]:
+    """Return a case-insensitive index mapping (manufacturer, mpn) -> [sfid,...].
+
+    Recognizes common attribute keys on entities: manufacturer/mfr and mpn/mfr_pn.
+    Only indexes part entities (sfid starts with 'p_').
+    """
+    idx: dict[tuple[str, str], list[str]] = {}
+    try:
+        ents = list_entities(datarepo_path) or []
+    except Exception:
+        ents = []
+    for e in ents:
+        try:
+            sfid = str(e.get('sfid', '')).strip()
+            if not (sfid and sfid.startswith('p_')):
+                continue
+            mfg = _norm_token(e.get('manufacturer') or e.get('mfr'))
+            mpn = _norm_token(e.get('mpn') or e.get('mfr_pn'))
+            if not (mfg and mpn):
+                continue
+            key = (mfg, mpn)
+            lst = idx.get(key)
+            if lst is None:
+                idx[key] = [sfid]
+            else:
+                lst.append(sfid)
+        except Exception:
+            continue
+    return idx
+
+
+def _parse_csv_text(text: str) -> list[dict]:
+    """Parse CSV/TSV text into list of dict rows (keys from header).
+
+    Auto-detects common delimiters: comma, tab, semicolon, pipe.
+    Normalizes header keys to lowercase and trims values.
+    """
+    # Pre-sanitize in case caller didn't
+    text = _sanitize_csv_text(text)
+    rows: list[dict] = []
+    sample = text[:8192]
+    # Detect delimiter
+    delim = ','
+    try:
+        sniffed = csv.Sniffer().sniff(sample, delimiters=[',', '\t', ';', '|'])
+        delim = sniffed.delimiter or delim
+    except Exception:
+        header = sample.splitlines()[0] if sample else ''
+        if '\t' in header:
+            delim = '\t'
+        elif header.count(';') >= header.count(',') and ';' in header:
+            delim = ';'
+        elif '|' in header and header.count('|') > header.count(','):
+            delim = '|'
+    def _make_reader(d):
+        return csv.DictReader(io.StringIO(text), delimiter=d, skipinitialspace=True)
+
+    reader = _make_reader(delim)
+    # If only one or zero headers detected, retry with alternative delimiters (no plain space to avoid corruption)
+    fns = reader.fieldnames or []
+    if len([fn for fn in fns if fn and fn.strip()]) <= 1:
+        for d in ['\t', ';', '|']:
+            if d == delim:
+                continue
+            reader = _make_reader(d)
+            fns = reader.fieldnames or []
+            if len([fn for fn in fns if fn and fn.strip()]) > 1:
+                break
+    for r in reader:
+        # Ensure plain dict with string keys and string values
+        # csv.DictReader can emit a (None, list) entry when there are extra columns beyond headers.
+        # We skip empty/None keys and normalize list values by joining their items.
+        clean: dict[str, str] = {}
+        for k, v in (r or {}).items():
+            # Collapse all whitespace (incl. NBSP) to single space, then lowercase
+            raw_key = (k or '')
+            # Strip control chars (incl. NUL) and stray BOM
+            raw_key = raw_key.replace('\ufeff', '')
+            raw_key = re.sub(r'[\x00-\x1F]+', '', raw_key)
+            # Replace common punctuation/separators with spaces
+            raw_key = re.sub(r'[\\/\-#.:()\[\]|]+', ' ', raw_key)
+            key = ' '.join(raw_key.split()).strip().lower()
+            if not key:
+                # Skip entries with no header
+                continue
+            if isinstance(v, list):
+                val = ",".join([str(x).strip() for x in v if x is not None])
+            else:
+                val = str(v or '').strip()
+            clean[key] = val
+            # Also provide an underscore variant for convenience (e.g., manufacturer_part)
+            if ' ' in key:
+                clean[key.replace(' ', '_')] = val
+            # Also provide a no-space variant (e.g., mfrpn) to catch tight matches
+            nospace = key.replace(' ', '')
+            if nospace and nospace not in clean:
+                clean[nospace] = val
+        rows.append(clean)
+    return rows
+
+
+def _std_field(row: dict, *candidates: str) -> str:
+    """Return the first non-empty field value from row for any of the candidate keys.
+
+    Tries multiple key variants per candidate: exact, space<->underscore, no-space.
+    Keys in `row` are expected to already be lowercased by _parse_csv_text.
+    """
+    if not row:
+        return ''
+    for c in candidates:
+        if not c:
+            continue
+        base = str(c).strip().lower()
+        if not base:
+            continue
+        variants = [base]
+        if ' ' in base:
+            variants.append(base.replace(' ', '_'))
+        if '_' in base:
+            variants.append(base.replace('_', ' '))
+        variants.append(base.replace(' ', ''))  # no-space
+        for k in variants:
+            v = row.get(k)
+            if v is not None and str(v).strip() != '':
+                return str(v).strip()
+    return ''
+
+
+@app.route('/api/entities/<sfid>/bom/import/preview', methods=['POST'])
+def api_bom_import_preview(sfid):
+    """Preview BOM CSV import and attempt to auto-map lines.
+
+    - Accepts file upload (multipart) or 'csv_text' in form/JSON.
+    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr/mfg, mpn/mfr_pn/etc, name (optional).
+    - Auto-fills 'use' when a unique (manufacturer, mpn) match exists.
+    - Dedupe by stable key (prefer use; else manufacturer+mpn; else row index), keeping last occurrence.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        # Read CSV content
+        text = ''
+        if 'file' in request.files:
+            f = request.files['file']
+            b = f.read()
+            text = _decode_csv_bytes(b)
+        else:
+            payload = request.get_json(silent=True) if request.is_json else None
+            text = (request.form.get('csv_text') or (payload or {}).get('csv_text') or '')
+        text = _sanitize_csv_text(text)
+        if not text:
+            return jsonify({'success': False, 'error': 'No CSV provided'}), 400
+
+        # Debug: detect delimiter and raw headers
+        sample = text[:8192]
+        dbg_delim = ','
+        try:
+            sniffed = csv.Sniffer().sniff(sample, delimiters=[',', '\t', ';', '|'])
+            dbg_delim = sniffed.delimiter or dbg_delim
+        except Exception:
+            header = sample.splitlines()[0] if sample else ''
+            if '\t' in header:
+                dbg_delim = '\t'
+            elif header.count(';') >= header.count(',') and ';' in header:
+                dbg_delim = ';'
+            elif '|' in header and header.count('|') > header.count(','):
+                dbg_delim = '|'
+        dbg_reader = csv.DictReader(io.StringIO(text), delimiter=dbg_delim, skipinitialspace=True)
+        dbg_headers = dbg_reader.fieldnames or []
+        if len([h for h in (dbg_headers or []) if h and str(h).strip()]) <= 1:
+            for d in ['\t', ';', '|']:
+                if d == dbg_delim:
+                    continue
+                dbg_reader = csv.DictReader(io.StringIO(text), delimiter=d, skipinitialspace=True)
+                dbg_headers = dbg_reader.fieldnames or []
+                if len([h for h in (dbg_headers or []) if h and str(h).strip()]) > 1:
+                    dbg_delim = d
+                    break
+
+        # Parse rows using robust parser (which normalizes keys per-row)
+        raw_rows = _parse_csv_text(text)
+        idx = _index_parts_by_mfg_mpn(datarepo_path)
+
+        # Build preview rows and dedupe (keep last occurrence)
+        dedupe_map: dict[str, dict] = {}
+        for i, r in enumerate(raw_rows):
+            use = _std_field(r, 'use', 'child', 'part', 'sfid')
+            qty = _std_field(r, 'qty', 'quantity') or '1'
+            rev = _std_field(r, 'rev', 'revision') or 'released'
+            mfg = _std_field(r, 'manufacturer', 'mfr', 'mfg')
+            mpn = _std_field(r, 'mpn', 'mfr_pn', 'pn', 'part_number', 'manufacturer part', 'manufacturer_part', 'mfg_part', 'mfg part')
+            # Prefer CSV-provided name when present; otherwise, if we know the child 'use', look up entity name
+            name_val = _std_field(r, 'name')
+
+            auto_filled = False
+            ambiguous = False
+            matches: list[str] = []
+
+            if not use and mfg and mpn:
+                key = (_norm_token(mfg), _norm_token(mpn))
+                cands = idx.get(key) or []
+                seen: set[str] = set()
+                for c in cands:
+                    if c not in seen:
+                        matches.append(c)
+                        seen.add(c)
+                if len(matches) == 1:
+                    use = matches[0]
+                    auto_filled = True
+                elif len(matches) > 1:
+                    ambiguous = True
+
+            # If no CSV name provided and we have a resolved 'use', attempt to resolve the entity's name
+            if not name_val and use:
+                try:
+                    child = get_entity(datarepo_path, use)
+                    name_val = child.get('name', use)
+                except Exception:
+                    # Best-effort only; leave blank if lookup fails
+                    pass
+
+            # Stable dedupe key
+            k = _norm_token(use)
+            if not k:
+                nmfg = _norm_token(mfg)
+                nmpn = _norm_token(mpn)
+                if nmfg or nmpn:
+                    k = f"m:{nmfg}|p:{nmpn}"
+                else:
+                    k = f"row:{i:06d}"
+            preview = {
+                'use': use,
+                'name': name_val,
+                'qty': qty,
+                'rev': rev,
+                'manufacturer': mfg,
+                'mpn': mpn,
+                'auto_filled': auto_filled,
+                'ambiguous': ambiguous,
+                'matches': matches if ambiguous else [],
+            }
+            # Pass through any additional CSV fields so they are available during apply.
+            # We keep the preview's canonical keys and avoid overwriting them; unknown keys are preserved.
+            try:
+                known_keys = {
+                    'use', 'name', 'qty', 'rev', 'manufacturer', 'mpn', 'auto_filled', 'ambiguous', 'matches'
+                }
+                for kk, vv in (r or {}).items():
+                    if kk in known_keys:
+                        continue
+                    if vv is None:
+                        continue
+                    s = str(vv).strip()
+                    if s == '':
+                        continue
+                    if kk not in preview:
+                        preview[kk] = s
+            except Exception:
+                # Best-effort preservation; ignore any unexpected errors
+                pass
+            dedupe_map[k] = preview
+
+        rows = list(dedupe_map.values())
+
+        # Build normalized header preview using the same normalization logic
+        def _norm_header(h: str) -> list[str]:
+            s = str(h or '')
+            s = s.replace('\ufeff', '')
+            s = re.sub(r'[\x00-\x1F]+', '', s)
+            s = re.sub(r'[\\/\-#.:()\[\]|]+', ' ', s)
+            base = ' '.join(s.split()).strip().lower()
+            outs = []
+            if base:
+                outs.append(base)
+                if ' ' in base:
+                    outs.append(base.replace(' ', '_'))
+            return outs
+
+        norm_headers: list[str] = []
+        seen_h = set()
+        for h in (dbg_headers or []):
+            for v in _norm_header(h):
+                if v and v not in seen_h:
+                    norm_headers.append(v)
+                    seen_h.add(v)
+
+        return jsonify({
+            'success': True,
+            'rows': rows,
+            'debug': {
+                'detected_delimiter': dbg_delim,
+                'raw_headers': dbg_headers,
+                'norm_headers': norm_headers,
+                'parsed_row_count': len(rows),
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 
 @app.route('/api/entities/<sfid>/bom/deep', methods=['GET'])

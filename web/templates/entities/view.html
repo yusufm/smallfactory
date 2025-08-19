@@ -378,9 +378,14 @@
             <h2 class="text-lg font-semibold text-gray-900">Bill of Materials</h2>
             <span id="bom-count" class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
           </div>
-          <button id="bom-edit-toggle" type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onclick="toggleBomMode()">
-            <i class="fas fa-toolbox mr-1"></i><span>Edit BOM</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <a id="bom-import-open" href="{{ url_for('entities_bom_import', sfid=entity.sfid) }}" class="px-2.5 py-1 rounded bg-gray-700 text-white text-sm hover:bg-gray-800">
+              <i class="fas fa-file-import mr-1"></i><span>Import CSV</span>
+            </a>
+            <button id="bom-edit-toggle" type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onclick="toggleBomMode()">
+              <i class="fas fa-toolbox mr-1"></i><span>Edit BOM</span>
+            </button>
+          </div>
         </div>
         <div id="bom-add-toolbar" class="px-6 py-4 border-b border-gray-100 hidden">
           <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
@@ -450,6 +455,7 @@ function confirmRetire(){
 const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
+let bomCurrentRows = [];
 const FILES_ROOT = 'files';
 const ATTR_SKIP_KEYS = new Set(['manufacturer','mfr','mpn','mfr_pn','vendor','supplier','sku','spn']);
 
@@ -650,10 +656,11 @@ async function bomLoad(){
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to load BOM');
-    renderBomRows(data.rows||[]);
+    bomCurrentRows = Array.isArray(data.rows) ? data.rows : [];
+    renderBomRows(bomCurrentRows);
     const count = document.getElementById('bom-count');
     if(count){
-      const n = (data.rows||[]).length;
+      const n = bomCurrentRows.length;
       count.textContent = `${n} item${n===1?'':'s'}`;
     }
     const err = document.getElementById('bom-error');
