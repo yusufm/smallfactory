@@ -237,6 +237,8 @@
     tb.innerHTML = '';
     // Compute suggestions for rows missing use, ensuring no collisions with existing or within-preview
     const taken = new Set(Array.from(existingUses || []));
+    const existingByUse = {};
+    (existingRows||[]).forEach(er => { const u = String(er.use||'').trim(); if(u) existingByUse[u] = er; });
     rows.forEach((r) => {
       const use = normalizeSfid(r.use);
       if((!use || !isValidSfid(use)) && !r.ambiguous){
@@ -257,6 +259,8 @@
       let badge = '';
       let rowCls = '';
       let canApply = canApplyRow(r);
+      let qtyCellHtml = `${qty}`;
+      let revCellHtml = `${rev||'released'}`;
       const showInput = r.ambiguous || (!use || !isValidSfid(use)) || (!!r.auto_suggested);
       if(r.ambiguous){
         status = 'Ambiguous';
@@ -271,9 +275,23 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
         rowCls = 'bg-red-50';
       }else if(existingUses.has(use)){
-        status = 'Already present';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">exists</span>';
-        rowCls = 'opacity-70';
+        const ex = existingByUse[use] || {};
+        const oldQty = (ex.qty ?? 1);
+        const oldRev = (ex.rev || 'released');
+        const changedQty = Number(oldQty) !== Number(qty);
+        const changedRev = String(oldRev) !== String(rev||'released');
+        if(changedQty || changedRev){
+          status = 'Will update';
+          badge = '<span class="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">update</span>';
+          rowCls = '';
+          qtyCellHtml = changedQty ? `<span class="line-through text-gray-400">${oldQty}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${qty}</span>` : `${qty}`;
+          revCellHtml = changedRev ? `<span class="line-through text-gray-400">${oldRev||'released'}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${rev||'released'}</span>` : `${rev||'released'}`;
+        }else{
+          status = 'No change';
+          badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">no-op</span>';
+          rowCls = 'opacity-70';
+          canApply = false; // do not allow selecting no-op rows
+        }
       }else if(r.auto_suggested){
         status = 'Suggested';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-indigo-100 text-indigo-700">suggested</span>';
@@ -282,8 +300,8 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">auto</span>';
         rowCls = '';
       }else{
-        status = 'OK';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
+        status = 'Add';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">add</span>';
       }
       const useCell = showInput
         ? `<input data-sfid-input="1" data-row-index="${i}" type="text" value="${use||''}"
@@ -297,8 +315,8 @@
           </td>
           <td class="px-2 py-1">${useCell}</td>
           <td class="px-2 py-1">${name||'—'}</td>
-          <td class="px-2 py-1 text-right">${qty}</td>
-          <td class="px-2 py-1">${rev||'released'}</td>
+          <td class="px-2 py-1 text-right">${qtyCellHtml}</td>
+          <td class="px-2 py-1">${revCellHtml}</td>
           <td class="px-2 py-1">${mfr||'—'}</td>
           <td class="px-2 py-1">${mpn||'—'}</td>
           <td class="px-2 py-1">${badge} <span class="text-gray-600">${status}</span></td>
@@ -375,12 +393,26 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
         rowCls = 'bg-red-50';
       }else if(duplicate){
-        status = 'Already present';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">exists</span>';
-        rowCls = 'opacity-70';
+        // Determine if the update is a no-op or will change qty/rev
+        const ex = (existingRows||[]).find(er => String(er.use||'').trim() === val) || {};
+        const oldQty = (ex.qty ?? 1);
+        const oldRev = (ex.rev || 'released');
+        const newQty = previewRows[idx].qty ?? 1;
+        const newRev = previewRows[idx].rev || 'released';
+        const changedQty = Number(oldQty) !== Number(newQty);
+        const changedRev = String(oldRev) !== String(newRev);
+        if(changedQty || changedRev){
+          status = 'Will update';
+          badge = '<span class="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">update</span>';
+          rowCls = '';
+        }else{
+          status = 'No change';
+          badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">no-op</span>';
+          rowCls = 'opacity-70';
+        }
       }else{
-        status = 'OK';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
+        status = 'Add';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">add</span>';
         rowCls = '';
       }
       tr.className = rowCls;
@@ -388,12 +420,40 @@
       // Enable/disable and auto-check the row selection checkbox based on eligibility
       const cb = tr.querySelector('input[data-row-select="1"]');
       if(cb){
-        const eligible = canApplyRow(previewRows[idx]);
+        // additionally, disable if duplicate but no change
+        let eligible = canApplyRow(previewRows[idx]);
+        if(duplicate){
+          const ex = (existingRows||[]).find(er => String(er.use||'').trim() === val) || {};
+          const oldQty = (ex.qty ?? 1);
+          const oldRev = (ex.rev || 'released');
+          const newQty = previewRows[idx].qty ?? 1;
+          const newRev = previewRows[idx].rev || 'released';
+          const changed = (Number(oldQty) !== Number(newQty)) || (String(oldRev) !== String(newRev));
+          if(!changed) eligible = false;
+        }
         cb.disabled = !eligible;
         if(!eligible) cb.checked = false;
       }
       const tds = tr.querySelectorAll('td');
       if(tds && tds.length >= 8){
+        // Update Qty/Rev cells to show old → new if applicable
+        if(duplicate){
+          const ex = (existingRows||[]).find(er => String(er.use||'').trim() === val) || {};
+          const oldQty = (ex.qty ?? 1);
+          const oldRev = (ex.rev || 'released');
+          const newQty = previewRows[idx].qty ?? 1;
+          const newRev = previewRows[idx].rev || 'released';
+          const changedQty = Number(oldQty) !== Number(newQty);
+          const changedRev = String(oldRev) !== String(newRev);
+          tds[3].innerHTML = changedQty ? `<span class="line-through text-gray-400">${oldQty}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${newQty}</span>` : `${newQty}`;
+          tds[4].innerHTML = changedRev ? `<span class="line-through text-gray-400">${oldRev||'released'}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${newRev||'released'}</span>` : `${newRev||'released'}`;
+        }else{
+          // reset to plain values
+          const newQty = previewRows[idx].qty ?? 1;
+          const newRev = previewRows[idx].rev || 'released';
+          tds[3].innerHTML = `${newQty}`;
+          tds[4].innerHTML = `${newRev}`;
+        }
         const statusTd = tds[7];
         statusTd.innerHTML = `${badge} <span class="text-gray-600">${status}</span>`;
       }
