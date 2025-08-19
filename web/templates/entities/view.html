@@ -379,7 +379,7 @@
             <span id="bom-count" class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
           </div>
           <div class="flex items-center gap-2">
-            <a id="bom-import-open" href="{{ url_for('entities_bom_import', sfid=entity.sfid) }}" target="_blank" rel="noopener" class="px-2.5 py-1 rounded bg-gray-700 text-white text-sm hover:bg-gray-800">
+            <a id="bom-import-open" href="{{ url_for('entities_bom_import', sfid=entity.sfid) }}" class="px-2.5 py-1 rounded bg-gray-700 text-white text-sm hover:bg-gray-800">
               <i class="fas fa-file-import mr-1"></i><span>Import CSV</span>
             </a>
             <button id="bom-edit-toggle" type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onclick="toggleBomMode()">
