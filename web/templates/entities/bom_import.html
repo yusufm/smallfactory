@@ -52,8 +52,7 @@
         </table>
       </div>
       <div class="flex justify-end gap-2">
-        <button id="imp-reset" type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Reset</button>
-        <button id="imp-preview" type="button" class="px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-800">Preview</button>
+        <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Cancel</a>
         <button id="imp-apply" type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" disabled>Apply</button>
       </div>
     </div>
@@ -68,6 +67,8 @@
   let previewRows = [];
   let existingUses = new Set();
   let existingRows = [];
+  // Debounce handle for auto-preview on text input
+  let textPreviewTimer = null;
   // Expose for modal script to read counts
   window.previewRows = previewRows;
   window.existingRows = existingRows;
@@ -163,10 +164,20 @@
   }
 
   function onFileChange(){
-    if(elFile() && elFile().files && elFile().files.length > 0 && elText()) elText().value = '';
+    // If a file is chosen, clear text and immediately preview
+    if(elFile() && elFile().files && elFile().files.length > 0){
+      if(elText()) elText().value = '';
+      runPreview();
+    }
   }
   function onTextInput(){
+    // If user is pasting text, clear file and auto-preview with debounce
     if(elText() && elText().value.trim() && elFile()) elFile().value = '';
+    if(textPreviewTimer) clearTimeout(textPreviewTimer);
+    textPreviewTimer = setTimeout(()=>{
+      const txt = (elText() && elText().value || '').trim();
+      if(txt) runPreview();
+    }, 500);
   }
 
   async function runPreview(){
@@ -396,8 +407,6 @@
   // Wire up events
   document.getElementById('imp-file').addEventListener('change', onFileChange);
   document.getElementById('imp-text').addEventListener('input', onTextInput);
-  document.getElementById('imp-reset').addEventListener('click', resetAll);
-  document.getElementById('imp-preview').addEventListener('click', runPreview);
   document.getElementById('imp-apply').addEventListener('click', openImpApplyModal);
   elTBody().addEventListener('input', onTBodyInput);
 
