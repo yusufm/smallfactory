@@ -1653,6 +1653,8 @@ def api_bom_import_apply(sfid):
         desired: dict[str, dict] = {}
         # Track any provided names for referenced uses (last occurrence wins)
         names_by_use: dict[str, str] = {}
+        # Track full field dictionaries per 'use' to create entities with all CSV attributes
+        fields_by_use: dict[str, dict] = {}
         for r in (in_rows if isinstance(in_rows, list) else []):
             try:
                 use = str((r or {}).get('use') or '').strip()
@@ -1674,6 +1676,27 @@ def api_bom_import_apply(sfid):
                 nm = (r or {}).get('name')
                 if isinstance(nm, str) and nm.strip():
                     names_by_use[use] = nm.strip()
+                # Build a field set for entity creation from all available CSV fields, excluding BOM/apply-only keys
+                # Keep normalized keys exactly as provided by preview for compatibility with specs
+                meta_keys = {'use', 'qty', 'rev', 'ambiguous', 'auto_filled', 'matches'}
+                fld: dict[str, str] = {}
+                for k, v in (r or {}).items():
+                    if k in meta_keys:
+                        continue
+                    if v is None:
+                        continue
+                    s = str(v).strip()
+                    if s == '':
+                        continue
+                    # Do not persist sfid field inside entity.yml; create_entity will strip it as well, but be explicit
+                    if k == 'sfid':
+                        continue
+                    fld[k] = s
+                # Ensure name captured via names_by_use is present in fields if available
+                if use in names_by_use and names_by_use[use]:
+                    fld.setdefault('name', names_by_use[use])
+                if fld:
+                    fields_by_use[use] = fld
             except Exception:
                 continue
 
@@ -1693,10 +1716,38 @@ def api_bom_import_apply(sfid):
                     _ = get_entity(datarepo_path, use)
                 except FileNotFoundError:
                     try:
-                        fields = {}
-                        nm = names_by_use.get(use)
-                        if nm:
-                            fields['name'] = nm
+                        # Prefer full field set collected from CSV row; fall back to name-only if present
+                        fields = dict(fields_by_use.get(use, {}))
+                        # For new part entities (p_ prefix), split unknown CSV fields into attrs
+                        # and keep only known top-level keys on the entity root. This preserves all
+                        # CSV data while complying with the spec and UI expectations.
+                        if fields and isinstance(use, str) and use.startswith('p_'):
+                            known_top = {
+                                'name', 'uom', 'policy', 'category', 'description', 'tags'
+                            }
+                            top: dict = {}
+                            attrs: dict = {}
+                            for k, v in list(fields.items()):
+                                if k in known_top:
+                                    top[k] = v
+                                elif k == 'attrs' and isinstance(v, dict):
+                                    # Merge any provided attrs map
+                                    for ak, av in v.items():
+                                        attrs[ak] = av
+                                else:
+                                    attrs[k] = v
+                            # Normalize tags if provided as a comma-separated string
+                            if 'tags' in top and isinstance(top['tags'], str):
+                                toks = [t.strip() for t in top['tags'].split(',') if t and t.strip()]
+                                if toks:
+                                    top['tags'] = toks
+                            # Always include attrs (empty dict if none)
+                            top['attrs'] = attrs or {}
+                            fields = top
+                        if not fields:
+                            nm = names_by_use.get(use)
+                            if nm:
+                                fields = {'name': nm}
                         created = create_entity(datarepo_path, use, fields if fields else None)
                         # Track created entity for summary
                         result['created'] += 1
@@ -2126,6 +2177,25 @@ def api_bom_import_preview(sfid):
                 'ambiguous': ambiguous,
                 'matches': matches if ambiguous else [],
             }
+            # Pass through any additional CSV fields so they are available during apply.
+            # We keep the preview's canonical keys and avoid overwriting them; unknown keys are preserved.
+            try:
+                known_keys = {
+                    'use', 'name', 'qty', 'rev', 'manufacturer', 'mpn', 'auto_filled', 'ambiguous', 'matches'
+                }
+                for kk, vv in (r or {}).items():
+                    if kk in known_keys:
+                        continue
+                    if vv is None:
+                        continue
+                    s = str(vv).strip()
+                    if s == '':
+                        continue
+                    if kk not in preview:
+                        preview[kk] = s
+            except Exception:
+                # Best-effort preservation; ignore any unexpected errors
+                pass
             dedupe_map[k] = preview
 
         rows = list(dedupe_map.values())
