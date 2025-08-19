@@ -379,9 +379,9 @@
             <span id="bom-count" class="text-sm text-gray-500">{{ bom_rows|length }} item{{ '' if bom_rows|length == 1 else 's' }}</span>
           </div>
           <div class="flex items-center gap-2">
-            <button id="bom-import-open" type="button" class="px-2.5 py-1 rounded bg-gray-700 text-white text-sm hover:bg-gray-800" onclick="openBomImportModal()">
+            <a id="bom-import-open" href="{{ url_for('entities_bom_import', sfid=entity.sfid) }}" target="_blank" rel="noopener" class="px-2.5 py-1 rounded bg-gray-700 text-white text-sm hover:bg-gray-800">
               <i class="fas fa-file-import mr-1"></i><span>Import CSV</span>
-            </button>
+            </a>
             <button id="bom-edit-toggle" type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700" onclick="toggleBomMode()">
               <i class="fas fa-toolbox mr-1"></i><span>Edit BOM</span>
             </button>
@@ -456,7 +456,6 @@ const SFID = '{{ entity.sfid }}';
 const isPart = SFID && SFID.startsWith('p_');
 let bomEditMode = false;
 let bomCurrentRows = [];
-let bomImportPreviewRows = [];
 const FILES_ROOT = 'files';
 const ATTR_SKIP_KEYS = new Set(['manufacturer','mfr','mpn','mfr_pn','vendor','supplier','sku','spn']);
 
@@ -811,145 +810,6 @@ async function bomAltRemove(index, alt_use, alt_index){
 function showBomError(msg){
   const el = document.getElementById('bom-error');
   if(el) el.textContent = msg||'';
-}
-
-// -----------------
-// BOM Import (CSV) modal + logic
-// -----------------
-function openBomImportModal(){
-  bomImportReset();
-  const modal = document.getElementById('bom-import-modal');
-  if(modal) modal.classList.remove('hidden');
-}
-function closeBomImportModal(){
-  const modal = document.getElementById('bom-import-modal');
-  if(modal) modal.classList.add('hidden');
-}
-function bomImportReset(){
-  bomImportPreviewRows = [];
-  const f = document.getElementById('bom-import-file'); if(f) f.value = '';
-  const t = document.getElementById('bom-import-text'); if(t) t.value = '';
-  const tb = document.getElementById('bom-import-preview-tbody'); if(tb) tb.innerHTML = '';
-  const err = document.getElementById('bom-import-error'); if(err) err.textContent = '';
-  const sum = document.getElementById('bom-import-summary'); if(sum) sum.textContent = '';
-  const apply = document.getElementById('bom-import-apply-btn'); if(apply) apply.disabled = true;
-}
-function bomImportOnFileChange(){
-  // Clear text area if a file is chosen (to avoid double sources)
-  const f = document.getElementById('bom-import-file');
-  const t = document.getElementById('bom-import-text');
-  if(f && f.files && f.files.length > 0 && t) t.value = '';
-}
-function bomImportOnTextInput(){
-  // Clear file input if text is provided
-  const f = document.getElementById('bom-import-file');
-  const t = document.getElementById('bom-import-text');
-  if(t && t.value.trim() && f) f.value = '';
-}
-async function bomImportRunPreview(){
-  const err = document.getElementById('bom-import-error'); if(err) err.textContent = '';
-  const sum = document.getElementById('bom-import-summary'); if(sum) sum.textContent = '';
-  const tb = document.getElementById('bom-import-preview-tbody'); if(tb) tb.innerHTML = '';
-  const apply = document.getElementById('bom-import-apply-btn'); if(apply) apply.disabled = true;
-  const fileEl = document.getElementById('bom-import-file');
-  const textEl = document.getElementById('bom-import-text');
-  const hasFile = !!(fileEl && fileEl.files && fileEl.files.length > 0);
-  const text = (textEl?.value||'').trim();
-  if(!hasFile && !text){ if(err) err.textContent = 'Please choose a CSV file or paste CSV text.'; return; }
-  try{
-    const form = new FormData();
-    if(hasFile){ form.append('file', fileEl.files[0]); }
-    else{ form.append('csv_text', text); }
-    const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/import/preview`, { method:'POST', body: form });
-    const data = await res.json();
-    if(!data.success) throw new Error(data.error||'Preview failed');
-    bomImportPreviewRows = Array.isArray(data.rows)? data.rows : [];
-    renderBomImportPreview(bomImportPreviewRows);
-    const n = bomImportPreviewRows.length;
-    if(sum) sum.textContent = `${n} row${n===1?'':'s'} in preview.`;
-    if(apply) apply.disabled = n === 0;
-  }catch(e){ if(err) err.textContent = e.message||String(e); }
-}
-function renderBomImportPreview(rows){
-  const tb = document.getElementById('bom-import-preview-tbody'); if(!tb) return;
-  tb.innerHTML = '';
-  // Build a set of existing uses to flag duplicates in preview
-  const existing = new Set((bomCurrentRows||[]).map(r=>String(r.use||'').trim()).filter(Boolean));
-  rows.forEach((r, i)=>{
-    const use = (r.use||'').trim();
-    const qty = r.qty ?? 1;
-    const rev = (r.rev||'released');
-    const mfr = r.manufacturer||'';
-    const mpn = r.mpn||'';
-    let status = '';
-    let badge = '';
-    let rowCls = '';
-    let canApply = true;
-    if(r.ambiguous){
-      status = 'Ambiguous';
-      badge = '<span class="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800">ambiguous</span>';
-      rowCls = 'bg-yellow-50';
-      canApply = false;
-    }else if(!use){
-      status = 'Missing use';
-      badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">missing</span>';
-      rowCls = 'bg-red-50';
-      canApply = false;
-    }else if(existing.has(use)){
-      status = 'Duplicate (exists)';
-      badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">duplicate</span>';
-      rowCls = 'opacity-70';
-      canApply = false;
-    }else if(r.auto_filled){
-      status = 'Auto-filled';
-      badge = '<span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">auto</span>';
-      rowCls = '';
-    }else{
-      status = 'OK';
-      badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
-      rowCls = '';
-    }
-    tb.insertAdjacentHTML('beforeend', `
-      <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}">
-        <td class="px-2 py-1 font-mono text-blue-700">${use||'—'}</td>
-        <td class="px-2 py-1 text-right">${qty}</td>
-        <td class="px-2 py-1">${rev||'released'}</td>
-        <td class="px-2 py-1">${mfr||'—'}</td>
-        <td class="px-2 py-1">${mpn||'—'}</td>
-        <td class="px-2 py-1">${badge} <span class="text-gray-600">${status}</span></td>
-      </tr>
-    `);
-  });
-}
-async function bomImportApply(){
-  const err = document.getElementById('bom-import-error'); if(err) err.textContent = '';
-  const sum = document.getElementById('bom-import-summary'); if(sum) sum.textContent = '';
-  const tb = document.getElementById('bom-import-preview-tbody'); if(!tb) return;
-  if(!Array.isArray(bomImportPreviewRows) || bomImportPreviewRows.length===0){ if(err) err.textContent = 'Nothing to import.'; return; }
-  // Local set to avoid duplicates within this batch
-  const existing = new Set((bomCurrentRows||[]).map(r=>String(r.use||'').trim()).filter(Boolean));
-  let applied = 0, skipped = 0, failed = 0;
-  for(const r of bomImportPreviewRows){
-    const use = (r.use||'').trim();
-    const qty = parseInt(r.qty ?? '1', 10) || 1;
-    const rev = (r.rev||'released');
-    if(r.ambiguous || !use || existing.has(use)) { skipped++; continue; }
-    try{
-      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/add`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ use, qty, rev, check_exists: true })
-      });
-      const data = await res.json();
-      if(!res.ok || !data.success) throw new Error(data.error||'Failed to add line');
-      // Update current rows and UI snapshot
-      bomCurrentRows = Array.isArray(data.rows) ? data.rows : bomCurrentRows;
-      existing.add(use);
-      applied++;
-    }catch(e){ failed++; }
-  }
-  // Refresh BOM table/count
-  await bomLoad();
-  if(sum){ sum.textContent = `Applied ${applied}, skipped ${skipped}, failed ${failed}.`; }
 }
 
 // -----------------
@@ -1316,58 +1176,6 @@ if(isPart){ bomLoad(); }
 {% endblock %}
 
 {% block modals %}
-<!-- BOM: Import CSV Modal -->
-<div id="bom-import-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
-  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeBomImportModal();">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl" onclick="event.stopPropagation();">
-      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
-        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-file-import mr-2"></i>Import BOM from CSV</h3>
-        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeBomImportModal()">×</button>
-      </div>
-      <div class="px-5 py-4 text-sm text-gray-800 space-y-4">
-        <div class="text-gray-600">
-          Upload a CSV file or paste CSV text. Columns supported: <span class="font-mono">qty</span>, <span class="font-mono">rev</span>, <span class="font-mono">manufacturer</span>, <span class="font-mono">mpn</span>, and optional <span class="font-mono">use</span>.
-          If <span class="font-mono">use</span> is omitted, a unique <span class="font-mono">manufacturer+mpn</span> match will be auto-filled. Ambiguous matches are flagged and skipped.
-        </div>
-        <div class="grid md:grid-cols-2 gap-4">
-          <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">CSV file</label>
-            <input id="bom-import-file" type="file" accept=".csv,text/csv" class="w-full text-sm" onchange="bomImportOnFileChange()">
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Or paste CSV text</label>
-            <textarea id="bom-import-text" rows="6" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="qty,rev,manufacturer,mpn\n1,released,ACME,AC-456" oninput="bomImportOnTextInput()"></textarea>
-          </div>
-        </div>
-        <div id="bom-import-error" class="text-sm text-red-600"></div>
-        <div id="bom-import-summary" class="text-sm text-gray-600"></div>
-        <div class="border border-gray-200 rounded overflow-hidden">
-          <table class="min-w-full text-sm">
-            <thead class="bg-gray-50 text-gray-700">
-              <tr>
-                <th class="px-2 py-1 text-left">Use</th>
-                <th class="px-2 py-1 text-right">Qty</th>
-                <th class="px-2 py-1 text-left">Rev</th>
-                <th class="px-2 py-1 text-left">Manufacturer</th>
-                <th class="px-2 py-1 text-left">MPN</th>
-                <th class="px-2 py-1 text-left">Status</th>
-              </tr>
-            </thead>
-            <tbody id="bom-import-preview-tbody" class="divide-y divide-gray-100"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
-        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeBomImportModal()">Close</button>
-        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="bomImportReset()">Reset</button>
-        <button type="button" class="px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-800" onclick="bomImportRunPreview()">Preview</button>
-        <button id="bom-import-apply-btn" type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" onclick="bomImportApply()" disabled>Apply</button>
-      </div>
-    </div>
-  </div>
-  <script>document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeBomImportModal(); });</script>
-</div>
-
 <!-- Files: New Folder Modal -->
 <div id="df-mkdir-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
   <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeDfMkdirModal();">

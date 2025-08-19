@@ -1118,6 +1118,18 @@ def entities_bom_tree(sfid):
         return redirect(url_for('entities_view', sfid=sfid))
 
 
+@app.route('/entities/<sfid>/bom/import')
+def entities_bom_import(sfid):
+    """Dedicated BOM CSV import page."""
+    try:
+        datarepo_path = get_datarepo_path()
+        entity = get_entity(datarepo_path, sfid)
+        return render_template('entities/bom_import.html', entity=entity)
+    except Exception as e:
+        flash(f'Error loading BOM import page: {e}', 'error')
+        return redirect(url_for('entities_view', sfid=sfid))
+
+
 @app.route('/entities/<sfid>/build', methods=['GET', 'POST'])
 def entities_build(sfid):
     """Quick Build flow for finished goods (p_* entities).

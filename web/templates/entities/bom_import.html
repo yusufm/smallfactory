@@ -1,0 +1,225 @@
+{% extends 'base.html' %}
+
+{% block title %}Import BOM · {{ entity.sfid }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <div class="text-sm text-gray-500"><a class="text-blue-600 hover:underline" href="{{ url_for('entities_view', sfid=entity.sfid) }}">{{ entity.sfid }}</a></div>
+      <h1 class="text-2xl font-semibold text-gray-900">Import BOM from CSV</h1>
+      <div class="text-gray-700">{{ entity.name or entity.sfid }}</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="{{ url_for('entities_view', sfid=entity.sfid) }}" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"><i class="fas fa-arrow-left mr-2"></i>Back to Entity</a>
+    </div>
+  </div>
+
+  <div class="bg-white shadow rounded-lg">
+    <div class="px-5 py-3 border-b border-gray-200">
+      <div class="text-sm text-gray-600">
+        Upload a CSV file or paste CSV text. Columns supported: <span class="font-mono">qty</span>, <span class="font-mono">rev</span>, <span class="font-mono">manufacturer</span>, <span class="font-mono">mpn</span>, and optional <span class="font-mono">use</span>.
+        If <span class="font-mono">use</span> is omitted, a unique <span class="font-mono">manufacturer+mpn</span> match will be auto-filled. Ambiguous matches are flagged and skipped.
+      </div>
+    </div>
+    <div class="p-5 space-y-4">
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">CSV file</label>
+          <input id="imp-file" type="file" accept=".csv,text/csv" class="w-full text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1">Or paste CSV text</label>
+          <textarea id="imp-text" rows="6" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="qty,rev,manufacturer,mpn\n1,released,ACME,AC-456"></textarea>
+        </div>
+      </div>
+      <div id="imp-error" class="text-sm text-red-600"></div>
+      <div id="imp-summary" class="text-sm text-gray-600"></div>
+      <div class="border border-gray-200 rounded overflow-hidden">
+        <table class="min-w-full text-sm">
+          <thead class="bg-gray-50 text-gray-700">
+            <tr>
+              <th class="px-2 py-1 text-left">Use</th>
+              <th class="px-2 py-1 text-right">Qty</th>
+              <th class="px-2 py-1 text-left">Rev</th>
+              <th class="px-2 py-1 text-left">Manufacturer</th>
+              <th class="px-2 py-1 text-left">MPN</th>
+              <th class="px-2 py-1 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody id="imp-preview-tbody" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button id="imp-reset" type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50">Reset</button>
+        <button id="imp-preview" type="button" class="px-3 py-1.5 rounded bg-gray-700 text-white hover:bg-gray-800">Preview</button>
+        <button id="imp-apply" type="button" class="px-3 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" disabled>Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  const SFID = '{{ entity.sfid }}';
+  let previewRows = [];
+  let existingUses = new Set();
+
+  const elFile = () => document.getElementById('imp-file');
+  const elText = () => document.getElementById('imp-text');
+  const elErr = () => document.getElementById('imp-error');
+  const elSum = () => document.getElementById('imp-summary');
+  const elTBody = () => document.getElementById('imp-preview-tbody');
+  const elApply = () => document.getElementById('imp-apply');
+
+  async function loadExistingUses(){
+    try{
+      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
+      const data = await res.json();
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      existingUses = new Set(rows.map(r => String(r.use||'').trim()).filter(Boolean));
+    }catch(e){ /* non-fatal */ }
+  }
+
+  function resetAll(){
+    previewRows = [];
+    if(elFile()) elFile().value = '';
+    if(elText()) elText().value = '';
+    if(elTBody()) elTBody().innerHTML = '';
+    if(elErr()) elErr().textContent = '';
+    if(elSum()) elSum().textContent = '';
+    if(elApply()) elApply().disabled = true;
+  }
+
+  function onFileChange(){
+    if(elFile() && elFile().files && elFile().files.length > 0 && elText()) elText().value = '';
+  }
+  function onTextInput(){
+    if(elText() && elText().value.trim() && elFile()) elFile().value = '';
+  }
+
+  async function runPreview(){
+    if(elErr()) elErr().textContent = '';
+    if(elSum()) elSum().textContent = '';
+    if(elTBody()) elTBody().innerHTML = '';
+    if(elApply()) elApply().disabled = true;
+
+    const f = elFile();
+    const t = elText();
+    const hasFile = !!(f && f.files && f.files.length > 0);
+    const text = (t && t.value || '').trim();
+    if(!hasFile && !text){ if(elErr()) elErr().textContent = 'Please choose a CSV file or paste CSV text.'; return; }
+
+    try{
+      const form = new FormData();
+      if(hasFile){ form.append('file', f.files[0]); }
+      else{ form.append('csv_text', text); }
+      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/import/preview`, { method:'POST', body: form });
+      const data = await res.json();
+      if(!data.success) throw new Error(data.error || 'Preview failed');
+      previewRows = Array.isArray(data.rows) ? data.rows : [];
+      renderPreview(previewRows);
+      const n = previewRows.length;
+      if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview.`;
+      // Enable apply if there is at least one applicable row
+      const anyApplicable = previewRows.some(r => canApplyRow(r));
+      if(elApply()) elApply().disabled = !anyApplicable;
+    }catch(e){ if(elErr()) elErr().textContent = e.message || String(e); }
+  }
+
+  function canApplyRow(r){
+    const use = String((r.use||'')).trim();
+    if(r.ambiguous) return false;
+    if(!use) return false;
+    if(existingUses.has(use)) return false;
+    return true;
+  }
+
+  function renderPreview(rows){
+    const tb = elTBody(); if(!tb) return;
+    tb.innerHTML = '';
+    rows.forEach(r => {
+      const use = (r.use||'').trim();
+      const qty = r.qty ?? 1;
+      const rev = (r.rev||'released');
+      const mfr = r.manufacturer||'';
+      const mpn = r.mpn||'';
+      let status = '';
+      let badge = '';
+      let rowCls = '';
+      let canApply = canApplyRow(r);
+      if(r.ambiguous){
+        status = 'Ambiguous';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800">ambiguous</span>';
+        rowCls = 'bg-yellow-50';
+      }else if(!use){
+        status = 'Missing use';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">missing</span>';
+        rowCls = 'bg-red-50';
+      }else if(existingUses.has(use)){
+        status = 'Duplicate (exists)';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">duplicate</span>';
+        rowCls = 'opacity-70';
+      }else if(r.auto_filled){
+        status = 'Auto-filled';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">auto</span>';
+        rowCls = '';
+      }else{
+        status = 'OK';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
+      }
+      tb.insertAdjacentHTML('beforeend', `
+        <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}">
+          <td class="px-2 py-1 font-mono text-blue-700">${use||'—'}</td>
+          <td class="px-2 py-1 text-right">${qty}</td>
+          <td class="px-2 py-1">${rev||'released'}</td>
+          <td class="px-2 py-1">${mfr||'—'}</td>
+          <td class="px-2 py-1">${mpn||'—'}</td>
+          <td class="px-2 py-1">${badge} <span class="text-gray-600">${status}</span></td>
+        </tr>
+      `);
+    });
+  }
+
+  async function applyImport(){
+    if(elErr()) elErr().textContent = '';
+    if(elSum()) elSum().textContent = '';
+    if(!Array.isArray(previewRows) || previewRows.length === 0){ if(elErr()) elErr().textContent = 'Nothing to import.'; return; }
+    const btn = elApply(); if(btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+    let applied = 0, skipped = 0, failed = 0;
+    for(const r of previewRows){
+      const use = (r.use||'').trim();
+      const qty = parseInt(r.qty ?? '1', 10) || 1;
+      const rev = (r.rev||'released');
+      if(!canApplyRow(r)) { skipped++; continue; }
+      try{
+        const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/add`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ use, qty, rev, check_exists: true })
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success) throw new Error(data.error||'Failed to add line');
+        existingUses.add(use);
+        applied++;
+      }catch(e){ failed++; }
+    }
+    await loadExistingUses();
+    await runPreview(); // re-render against updated existingUses to reflect duplicates now
+    if(elSum()){ elSum().textContent = `Applied ${applied}, skipped ${skipped}, failed ${failed}.`; }
+    if(btn) { btn.disabled = false; btn.textContent = 'Apply'; }
+  }
+
+  // Wire up events
+  document.getElementById('imp-file').addEventListener('change', onFileChange);
+  document.getElementById('imp-text').addEventListener('input', onTextInput);
+  document.getElementById('imp-reset').addEventListener('click', resetAll);
+  document.getElementById('imp-preview').addEventListener('click', runPreview);
+  document.getElementById('imp-apply').addEventListener('click', applyImport);
+
+  // Init
+  loadExistingUses();
+})();
+</script>
+{% endblock %}
