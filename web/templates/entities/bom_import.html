@@ -76,6 +76,23 @@
   const elTBody = () => document.getElementById('imp-preview-tbody');
   const elApply = () => document.getElementById('imp-apply');
 
+  // SFID helpers
+  const isValidSfid = (s) => {
+    const v = String(s||'').trim();
+    return /^p_[a-z0-9_]+$/.test(v);
+  };
+  const normalizeSfid = (s) => String(s||'').trim().toLowerCase();
+
+  function updateSummaryAndApplyButton(){
+    if(!Array.isArray(previewRows)) previewRows = [];
+    const csvUses = new Set(previewRows.filter(r => !r.ambiguous).map(r => normalizeSfid(r.use)).filter(Boolean));
+    const removalCandidates = (existingRows||[]).filter(r => !csvUses.has(normalizeSfid(r.use)));
+    const n = previewRows.length;
+    if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview. ${removalCandidates.length} existing line${removalCandidates.length===1?'':'s'} will be removed.`;
+    const hasActions = (csvUses.size > 0) || (removalCandidates.length > 0);
+    if(elApply()) elApply().disabled = !hasActions;
+  }
+
   async function loadExistingUses(){
     try{
       const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
@@ -84,6 +101,8 @@
       existingRows = rows;
       existingUses = new Set(rows.map(r => String(r.use||'').trim()).filter(Boolean));
     }catch(e){ /* non-fatal */ }
+    // Keep summary/apply state in sync after rendering
+    updateSummaryAndApplyButton();
   }
 
   function resetAll(){
@@ -138,9 +157,10 @@
   }
 
   function canApplyRow(r){
-    const use = String((r.use||'')).trim();
+    const use = normalizeSfid(r.use);
     if(r.ambiguous) return false;
     if(!use) return false;
+    if(!isValidSfid(use)) return false;
     if(existingUses.has(use)) return false;
     return true;
   }
@@ -149,8 +169,8 @@
     const tb = elTBody(); if(!tb) return;
     tb.innerHTML = '';
     // 1) Render CSV-derived rows
-    rows.forEach(r => {
-      const use = (r.use||'').trim();
+    rows.forEach((r, i) => {
+      const use = normalizeSfid(r.use);
       const name = (r.name||'').trim();
       const qty = r.qty ?? 1;
       const rev = (r.rev||'released');
@@ -160,13 +180,18 @@
       let badge = '';
       let rowCls = '';
       let canApply = canApplyRow(r);
+      const showInput = (!use || !isValidSfid(use)) || r.ambiguous;
       if(r.ambiguous){
         status = 'Ambiguous';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-800">ambiguous</span>';
         rowCls = 'bg-yellow-50';
       }else if(!use){
-        status = 'Missing use';
+        status = 'Missing SFID';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">missing</span>';
+        rowCls = 'bg-red-50';
+      }else if(!isValidSfid(use)){
+        status = 'Invalid SFID';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
         rowCls = 'bg-red-50';
       }else if(existingUses.has(use)){
         status = 'Duplicate (exists)';
@@ -180,9 +205,14 @@
         status = 'OK';
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
       }
+      const useCell = showInput
+        ? `<input data-sfid-input="1" data-row-index="${i}" type="text" value="${use||''}"
+                 placeholder="p_example"
+                 class="w-44 border ${isValidSfid(use)?'border-gray-300':'border-red-300'} rounded px-2 py-1 font-mono text-sm" />`
+        : `<span class="font-mono text-blue-700">${use||'—'}</span>`;
       tb.insertAdjacentHTML('beforeend', `
         <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}">
-          <td class="px-2 py-1 font-mono text-blue-700">${use||'—'}</td>
+          <td class="px-2 py-1">${useCell}</td>
           <td class="px-2 py-1">${name||'—'}</td>
           <td class="px-2 py-1 text-right">${qty}</td>
           <td class="px-2 py-1">${rev||'released'}</td>
@@ -223,6 +253,57 @@
     });
   }
 
+  function onTBodyInput(ev){
+    const t = ev.target;
+    if(!(t && t.matches('input[data-sfid-input="1"]'))) return;
+    const idxStr = t.getAttribute('data-row-index')||'-1';
+    const idx = parseInt(idxStr, 10);
+    if(Number.isNaN(idx) || idx < 0 || idx >= previewRows.length) return;
+    const val = normalizeSfid(t.value);
+    // reflect normalization in the UI so user sees final value
+    if(t.value !== val) t.value = val;
+    previewRows[idx].use = val;
+    previewRows[idx].ambiguous = false;
+    // Live validate and update row UI without re-rendering entire table
+    // Input border style
+    t.classList.remove('border-red-300','border-gray-300');
+    t.classList.add(isValidSfid(val) ? 'border-gray-300' : 'border-red-300');
+
+    // Row-level status and class updates
+    const tr = t.closest('tr');
+    if(tr){
+      let status = '';
+      let badge = '';
+      let rowCls = '';
+      const duplicate = !!existingUses && existingUses.has(val);
+      if(!val){
+        status = 'Missing SFID';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">missing</span>';
+        rowCls = 'bg-red-50';
+      }else if(!isValidSfid(val)){
+        status = 'Invalid SFID';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
+        rowCls = 'bg-red-50';
+      }else if(duplicate){
+        status = 'Duplicate (exists)';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">duplicate</span>';
+        rowCls = 'opacity-70';
+      }else{
+        status = 'OK';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">ok</span>';
+        rowCls = '';
+      }
+      tr.className = rowCls;
+      tr.setAttribute('data-can-apply', canApplyRow(previewRows[idx]) ? '1' : '0');
+      const tds = tr.querySelectorAll('td');
+      if(tds && tds.length >= 7){
+        const statusTd = tds[6];
+        statusTd.innerHTML = `${badge} <span class="text-gray-600">${status}</span>`;
+      }
+    }
+    updateSummaryAndApplyButton();
+  }
+
   async function applyImport(){
     if(elErr()) elErr().textContent = '';
     if(elSum()) elSum().textContent = '';
@@ -253,6 +334,7 @@
   document.getElementById('imp-reset').addEventListener('click', resetAll);
   document.getElementById('imp-preview').addEventListener('click', runPreview);
   document.getElementById('imp-apply').addEventListener('click', applyImport);
+  elTBody().addEventListener('input', onTBodyInput);
 
   // Init
   loadExistingUses();
