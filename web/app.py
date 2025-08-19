@@ -1984,7 +1984,7 @@ def api_bom_import_preview(sfid):
     """Preview BOM CSV import and attempt to auto-map lines.
 
     - Accepts file upload (multipart) or 'csv_text' in form/JSON.
-    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr/mfg, mpn/mfr_pn/etc.
+    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr/mfg, mpn/mfr_pn/etc, name (optional).
     - Auto-fills 'use' when a unique (manufacturer, mpn) match exists.
     - Dedupe by stable key (prefer use; else manufacturer+mpn; else row index), keeping last occurrence.
     """
@@ -2041,6 +2041,8 @@ def api_bom_import_preview(sfid):
             rev = _std_field(r, 'rev', 'revision') or 'released'
             mfg = _std_field(r, 'manufacturer', 'mfr', 'mfg')
             mpn = _std_field(r, 'mpn', 'mfr_pn', 'pn', 'part_number', 'manufacturer part', 'manufacturer_part', 'mfg_part', 'mfg part')
+            # Prefer CSV-provided name when present; otherwise, if we know the child 'use', look up entity name
+            name_val = _std_field(r, 'name')
 
             auto_filled = False
             ambiguous = False
@@ -2060,6 +2062,15 @@ def api_bom_import_preview(sfid):
                 elif len(matches) > 1:
                     ambiguous = True
 
+            # If no CSV name provided and we have a resolved 'use', attempt to resolve the entity's name
+            if not name_val and use:
+                try:
+                    child = get_entity(datarepo_path, use)
+                    name_val = child.get('name', use)
+                except Exception:
+                    # Best-effort only; leave blank if lookup fails
+                    pass
+
             # Stable dedupe key
             k = _norm_token(use)
             if not k:
@@ -2071,6 +2082,7 @@ def api_bom_import_preview(sfid):
                     k = f"row:{i:06d}"
             preview = {
                 'use': use,
+                'name': name_val,
                 'qty': qty,
                 'rev': rev,
                 'manufacturer': mfg,
