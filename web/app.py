@@ -1736,6 +1736,14 @@ def api_bom_import_apply(sfid):
                                         attrs[ak] = av
                                 else:
                                     attrs[k] = v
+                            # Filter out BOM-only fields from attrs (e.g., qty/quantity variants)
+                            def _is_qty_like(key: str) -> bool:
+                                try:
+                                    norm = re.sub(r'[\s_]+', '', str(key or '').strip().lower())
+                                except Exception:
+                                    return False
+                                return norm in ('qty', 'quantity')
+                            attrs = {k: v for k, v in attrs.items() if not _is_qty_like(k)}
                             # Normalize tags if provided as a comma-separated string
                             if 'tags' in top and isinstance(top['tags'], str):
                                 toks = [t.strip() for t in top['tags'].split(',') if t and t.strip()]

@@ -309,3 +309,58 @@ p_caps,2,released,Murata,GRM188R60J106ME47,10V,5%,Cap 10uF
     assert attrs.get("mpn") == "GRM188R60J106ME47"
     assert attrs.get("voltage") == "10V"
     assert attrs.get("tolerance") == "5%"
+    # Ensure qty/quantity are NOT persisted as part attributes or top-level fields
+    assert "qty" not in attrs
+    assert "quantity" not in attrs
+    assert "qty" not in child
+
+
+def test_bom_apply_excludes_quantity_alias_from_attrs(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+
+    # Ensure parent exists
+    create_entity(repo, "p_parenty", {"name": "ParentY"})
+
+    client = app.test_client()
+
+    # CSV using 'quantity' alias instead of 'qty'
+    csv_text = """use,quantity,rev,name,manufacturer,mpn\n
+p_qtyalias,7,released,AliasPart,Acme,AC-123\n
+"""
+
+    # Preview should canonicalize quantity -> qty and pass through extra fields
+    pr = client.post(
+        "/api/entities/p_parenty/bom/import/preview",
+        json={"csv_text": csv_text},
+    )
+    assert pr.status_code == 200
+    pdata = pr.get_json()
+    assert pdata.get("success") is True
+    rows = pdata.get("rows") or []
+    assert len(rows) == 1
+    r0 = rows[0]
+    assert str(r0.get("qty")) == "7"
+
+    # Apply using preview rows
+    ar = client.post(
+        "/api/entities/p_parenty/bom/import/apply",
+        json={"rows": rows},
+    )
+    assert ar.status_code == 200
+    adata = ar.get_json()
+    assert adata.get("success") is True
+
+    # Child created; qty should be on BOM, not in attrs
+    child = get_entity(repo, "p_qtyalias")
+    assert child.get("name") == "AliasPart"
+    attrs = child.get("attrs") or {}
+    assert "qty" not in attrs
+    assert "quantity" not in attrs
+    assert "qty" not in child
+
+    # BOM line should reflect qty 7
+    bom = bom_list(repo, "p_parenty")
+    line = next((ln for ln in bom if ln.get("use") == "p_qtyalias"), None)
+    assert line and int(line.get("qty", 0)) == 7
