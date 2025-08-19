@@ -1651,6 +1651,8 @@ def api_bom_import_apply(sfid):
 
         # Normalize desired spec from rows (dedupe by 'use', keep last)
         desired: dict[str, dict] = {}
+        # Track any provided names for referenced uses (last occurrence wins)
+        names_by_use: dict[str, str] = {}
         for r in (in_rows if isinstance(in_rows, list) else []):
             try:
                 use = str((r or {}).get('use') or '').strip()
@@ -1668,6 +1670,10 @@ def api_bom_import_apply(sfid):
                     qty = 1
                 rev = str((r or {}).get('rev') or 'released').strip() or 'released'
                 desired[use] = {'qty': qty, 'rev': rev}
+                # Capture provided name if present for potential entity creation
+                nm = (r or {}).get('name')
+                if isinstance(nm, str) and nm.strip():
+                    names_by_use[use] = nm.strip()
             except Exception:
                 continue
 
@@ -1676,7 +1682,35 @@ def api_bom_import_apply(sfid):
                 'added': 0,
                 'updated': 0,
                 'removed': 0,
+                'created': 0,
+                'created_entities': [],
             }
+            # Before syncing BOM lines, ensure all referenced 'use' entities exist.
+            # Create any missing ones (best-effort), including name if provided.
+            for use in list(desired.keys()):
+                try:
+                    # If entity exists, this will succeed; otherwise raises
+                    _ = get_entity(datarepo_path, use)
+                except FileNotFoundError:
+                    try:
+                        fields = {}
+                        nm = names_by_use.get(use)
+                        if nm:
+                            fields['name'] = nm
+                        created = create_entity(datarepo_path, use, fields if fields else None)
+                        # Track created entity for summary
+                        result['created'] += 1
+                        result['created_entities'].append({
+                            'sfid': created.get('sfid', use),
+                            'name': created.get('name') or names_by_use.get(use) or use,
+                        })
+                    except Exception:
+                        # If creation fails, leave it to bom_* operations to surface errors when adding
+                        # We do not remove it from desired to preserve caller intent
+                        pass
+                except Exception:
+                    # On other errors while checking existence, skip creation attempt
+                    pass
             # Current state
             current = bom_list(datarepo_path, sfid) or []
             cur_by_use: dict[str, dict] = {}
@@ -1745,8 +1779,9 @@ def api_bom_import_apply(sfid):
         bom = res.get('bom')
         # Build enriched rows for UI
         rows = _enrich_bom_rows(datarepo_path, bom)
-        summary = {k: res.get(k, 0) for k in ('added', 'updated', 'removed')}
-        return jsonify({'success': True, 'rows': rows, 'summary': summary})
+        summary = {k: res.get(k, 0) for k in ('added', 'updated', 'removed', 'created')}
+        created_entities = res.get('created_entities', [])
+        return jsonify({'success': True, 'rows': rows, 'summary': summary, 'created_entities': created_entities})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
