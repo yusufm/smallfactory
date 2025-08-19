@@ -1665,6 +1665,153 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
     return nodes
 
 
+# -----------------------
+# BOM CSV import helpers
+# -----------------------
+def _norm_token(val: str | None) -> str:
+    try:
+        return str(val or '').strip().lower()
+    except Exception:
+        return ''
+
+
+def _index_parts_by_mfg_mpn(datarepo_path: Path) -> dict[tuple[str, str], list[str]]:
+    """Return a case-insensitive index mapping (manufacturer, mpn) -> [sfid,...].
+
+    Recognizes common attribute keys on entities: manufacturer/mfr and mpn/mfr_pn.
+    Only indexes part entities (sfid starts with 'p_').
+    """
+    idx: dict[tuple[str, str], list[str]] = {}
+    try:
+        ents = list_entities(datarepo_path) or []
+    except Exception:
+        ents = []
+    for e in ents:
+        try:
+            sfid = str(e.get('sfid', '')).strip()
+            if not (sfid and sfid.startswith('p_')):
+                continue
+            mfg = _norm_token(e.get('manufacturer') or e.get('mfr'))
+            mpn = _norm_token(e.get('mpn') or e.get('mfr_pn'))
+            if not (mfg and mpn):
+                continue
+            key = (mfg, mpn)
+            lst = idx.get(key)
+            if lst is None:
+                idx[key] = [sfid]
+            else:
+                lst.append(sfid)
+        except Exception:
+            continue
+    return idx
+
+
+def _parse_csv_text(text: str) -> list[dict]:
+    """Parse CSV text into list of dict rows (keys from header)."""
+    rows: list[dict] = []
+    sio = io.StringIO(text)
+    reader = csv.DictReader(sio)
+    for r in reader:
+        # Ensure plain dict with string keys and string values
+        # csv.DictReader can emit a (None, list) entry when there are extra columns beyond headers.
+        # We skip empty/None keys and normalize list values by joining their items.
+        clean: dict[str, str] = {}
+        for k, v in (r or {}).items():
+            key = (k or '').strip()
+            if not key:
+                # Skip entries with no header
+                continue
+            if isinstance(v, list):
+                val = ",".join([str(x).strip() for x in v if x is not None])
+            else:
+                val = str(v or '').strip()
+            clean[key] = val
+        rows.append(clean)
+    return rows
+
+
+def _std_field(row: dict, *candidates: str) -> str:
+    for c in candidates:
+        if c in row and str(row[c]).strip():
+            return str(row[c]).strip()
+    return ''
+
+
+@app.route('/api/entities/<sfid>/bom/import/preview', methods=['POST'])
+def api_bom_import_preview(sfid):
+    """Parse uploaded CSV for BOM import and return a preview with auto-fill.
+
+    Behavior:
+    - Accepts file upload under form field name 'file' or raw text under 'csv_text'.
+    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr, mpn/mfr_pn.
+    - If 'use' is missing, tries to auto-fill via unique match on (manufacturer, mpn), case-insensitive.
+    - Dedupe rows by a stable key (prefer 'use'; else manufacturer+mpn) keeping the last occurrence.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        # Read CSV content
+        text = ''
+        if 'file' in request.files:
+            f = request.files['file']
+            text = f.read().decode('utf-8', errors='ignore')
+        else:
+            text = (request.form.get('csv_text') or request.get_json(silent=True) or {}).get('csv_text', '') if request.is_json else (request.form.get('csv_text') or '')
+        if not text:
+            return jsonify({'success': False, 'error': 'No CSV provided'}), 400
+
+        raw_rows = _parse_csv_text(text)
+        idx = _index_parts_by_mfg_mpn(datarepo_path)
+
+        # Build preview rows and dedupe (keep last occurrence)
+        dedupe_map: dict[str, dict] = {}
+        for r in raw_rows:
+            # Extract fields with flexibility
+            use = _std_field(r, 'use', 'child', 'part', 'sfid')
+            qty = _std_field(r, 'qty', 'quantity') or '1'
+            rev = _std_field(r, 'rev', 'revision') or 'released'
+            mfg = _std_field(r, 'manufacturer', 'mfr')
+            mpn = _std_field(r, 'mpn', 'mfr_pn')
+
+            auto_filled = False
+            ambiguous = False
+            matches: list[str] = []
+
+            if not use and mfg and mpn:
+                key = (_norm_token(mfg), _norm_token(mpn))
+                cands = idx.get(key) or []
+                # Deduplicate candidates while preserving original order
+                seen: set[str] = set()
+                for c in cands:
+                    if c not in seen:
+                        matches.append(c)
+                        seen.add(c)
+                if len(matches) == 1:
+                    use = matches[0]
+                    auto_filled = True
+                elif len(matches) > 1:
+                    ambiguous = True
+
+            # Stable dedupe key: prefer 'use', else (mfg,mpn)
+            k = _norm_token(use) or (f"m:{_norm_token(mfg)}|p:{_norm_token(mpn)}")
+            preview = {
+                'use': use,
+                'qty': qty,
+                'rev': rev,
+                'manufacturer': mfg,
+                'mpn': mpn,
+                'auto_filled': auto_filled,
+                'ambiguous': ambiguous,
+                'matches': matches if ambiguous else [],
+            }
+            # Keep last occurrence
+            dedupe_map[k] = preview
+
+        rows = list(dedupe_map.values())
+        return jsonify({'success': True, 'rows': rows})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
 @app.route('/api/entities/<sfid>/bom/deep', methods=['GET'])
 def api_bom_deep(sfid):
     try:
