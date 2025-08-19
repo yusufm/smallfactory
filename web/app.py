@@ -1633,6 +1633,123 @@ def api_bom_get(sfid):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
+@app.route('/api/entities/<sfid>/bom/import/apply', methods=['POST'])
+def api_bom_import_apply(sfid):
+    """Apply BOM CSV import: sync BOM to provided rows.
+
+    Expects JSON payload with:
+      - rows: list of dicts (keys: use, qty, rev, ambiguous, ...)
+      - remove_missing: bool (default True) -> remove existing uses not present in rows
+      - update_existing: bool (default True) -> update qty/rev for existing uses when changed
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or {}
+        in_rows = payload.get('rows') or []
+        remove_missing = bool(payload.get('remove_missing', True))
+        update_existing = bool(payload.get('update_existing', True))
+
+        # Normalize desired spec from rows (dedupe by 'use', keep last)
+        desired: dict[str, dict] = {}
+        for r in (in_rows if isinstance(in_rows, list) else []):
+            try:
+                use = str((r or {}).get('use') or '').strip()
+                if not use:
+                    continue
+                # Skip ambiguous preview rows
+                if (r or {}).get('ambiguous'):
+                    continue
+                qty_raw = (r or {}).get('qty', 1)
+                try:
+                    qty = int(qty_raw)
+                except Exception:
+                    qty = 1
+                if qty <= 0:
+                    qty = 1
+                rev = str((r or {}).get('rev') or 'released').strip() or 'released'
+                desired[use] = {'qty': qty, 'rev': rev}
+            except Exception:
+                continue
+
+        def _mutate():
+            result = {
+                'added': 0,
+                'updated': 0,
+                'removed': 0,
+            }
+            # Current state
+            current = bom_list(datarepo_path, sfid) or []
+            cur_by_use: dict[str, dict] = {}
+            for i, line in enumerate(current):
+                try:
+                    u = str(line.get('use') or '').strip()
+                    if not u:
+                        continue
+                    cur_by_use[u] = {'index': i, 'line': line}
+                except Exception:
+                    continue
+
+            # Remove lines whose use is not in desired
+            if remove_missing:
+                to_remove = [u for u in cur_by_use.keys() if u not in desired]
+                for u in to_remove:
+                    bom_remove_line(datarepo_path, sfid, index=None, use=u, remove_all=True)
+                    result['removed'] += 1
+
+            # Recompute current after removals (indices may have shifted)
+            current = bom_list(datarepo_path, sfid) or []
+            cur_by_use = {}
+            for i, line in enumerate(current):
+                try:
+                    u = str(line.get('use') or '').strip()
+                    if not u:
+                        continue
+                    cur_by_use[u] = {'index': i, 'line': line}
+                except Exception:
+                    continue
+
+            # Add new or update existing
+            for use, spec in desired.items():
+                qty = spec.get('qty', 1)
+                rev = spec.get('rev', 'released')
+                if use not in cur_by_use:
+                    bom_add_line(datarepo_path, sfid, use=use, qty=qty, rev=rev, alternates=None, alternates_group=None, index=None, check_exists=True)
+                    result['added'] += 1
+                else:
+                    if update_existing:
+                        ent = cur_by_use[use]
+                        idx = ent['index']
+                        line = ent['line'] or {}
+                        updates = {}
+                        # Compare and update
+                        if int(line.get('qty', 1)) != int(qty):
+                            updates['qty'] = qty
+                        if (line.get('rev') or 'released') != (rev or 'released'):
+                            updates['rev'] = rev or 'released'
+                        if updates:
+                            bom_set_line(datarepo_path, sfid, index=idx, updates=updates, check_exists=True)
+                            result['updated'] += 1
+
+            # Return final bom
+            final = bom_list(datarepo_path, sfid) or []
+            result['bom'] = final
+            return result
+
+        res = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] BOM import apply (sync) for {sfid} remove_missing={remove_missing} update_existing={update_existing}",
+            autocommit_paths=[f"entities/{sfid}"]
+        )
+
+        bom = res.get('bom')
+        # Build enriched rows for UI
+        rows = _enrich_bom_rows(datarepo_path, bom)
+        summary = {k: res.get(k, 0) for k in ('added', 'updated', 'removed')}
+        return jsonify({'success': True, 'rows': rows, 'summary': summary})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 # Deep BOM traversal using core API
 def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
     """Return a flat list of deep BOM nodes with metadata via core traversal.

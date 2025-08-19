@@ -66,6 +66,7 @@
   const SFID = '{{ entity.sfid }}';
   let previewRows = [];
   let existingUses = new Set();
+  let existingRows = [];
 
   const elFile = () => document.getElementById('imp-file');
   const elText = () => document.getElementById('imp-text');
@@ -79,6 +80,7 @@
       const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom`);
       const data = await res.json();
       const rows = Array.isArray(data.rows) ? data.rows : [];
+      existingRows = rows;
       existingUses = new Set(rows.map(r => String(r.use||'').trim()).filter(Boolean));
     }catch(e){ /* non-fatal */ }
   }
@@ -113,6 +115,8 @@
     if(!hasFile && !text){ if(elErr()) elErr().textContent = 'Please choose a CSV file or paste CSV text.'; return; }
 
     try{
+      // Ensure we have the latest existing BOM before diffing
+      await loadExistingUses();
       const form = new FormData();
       if(hasFile){ form.append('file', f.files[0]); }
       else{ form.append('csv_text', text); }
@@ -122,10 +126,13 @@
       previewRows = Array.isArray(data.rows) ? data.rows : [];
       renderPreview(previewRows);
       const n = previewRows.length;
-      if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview.`;
-      // Enable apply if there is at least one applicable row
-      const anyApplicable = previewRows.some(r => canApplyRow(r));
-      if(elApply()) elApply().disabled = !anyApplicable;
+      // Compute removals summary
+      const csvUses = new Set(previewRows.filter(r => !r.ambiguous).map(r => String(r.use||'').trim()).filter(Boolean));
+      const removalCandidates = (existingRows||[]).filter(r => !csvUses.has(String(r.use||'').trim()));
+      if(elSum()) elSum().textContent = `${n} row${n===1?'':'s'} in preview. ${removalCandidates.length} existing line${removalCandidates.length===1?'':'s'} will be removed.`;
+      // Enable Apply if there will be any changes (adds/updates OR removals)
+      const hasActions = (csvUses.size > 0) || (removalCandidates.length > 0);
+      if(elApply()) elApply().disabled = !hasActions;
     }catch(e){ if(elErr()) elErr().textContent = e.message || String(e); }
   }
 
@@ -140,6 +147,7 @@
   function renderPreview(rows){
     const tb = elTBody(); if(!tb) return;
     tb.innerHTML = '';
+    // 1) Render CSV-derived rows
     rows.forEach(r => {
       const use = (r.use||'').trim();
       const qty = r.qty ?? 1;
@@ -181,34 +189,50 @@
         </tr>
       `);
     });
+
+    // 2) Render removal candidates from existing BOM that are not present in CSV
+    const csvUses = new Set(rows.filter(rr => !rr.ambiguous).map(rr => String(rr.use||'').trim()).filter(Boolean));
+    const toRemove = (existingRows||[]).filter(er => !csvUses.has(String(er.use||'').trim()));
+    toRemove.forEach(er => {
+      const use = (er.use||'').trim();
+      const qty = er.qty ?? 1;
+      const rev = (er.rev||'released');
+      const badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">remove</span>';
+      tb.insertAdjacentHTML('beforeend', `
+        <tr class="bg-red-50" data-remove="1">
+          <td class="px-2 py-1 font-mono text-red-700">${use||'—'}</td>
+          <td class="px-2 py-1 text-right">${qty}</td>
+          <td class="px-2 py-1">${rev||'released'}</td>
+          <td class="px-2 py-1">—</td>
+          <td class="px-2 py-1">—</td>
+          <td class="px-2 py-1">${badge} <span class="text-gray-700">Will remove</span></td>
+        </tr>
+      `);
+    });
   }
 
   async function applyImport(){
     if(elErr()) elErr().textContent = '';
     if(elSum()) elSum().textContent = '';
-    if(!Array.isArray(previewRows) || previewRows.length === 0){ if(elErr()) elErr().textContent = 'Nothing to import.'; return; }
+    // Allow zero preview rows (means remove all existing when remove_missing=true)
+    if(!Array.isArray(previewRows)) previewRows = [];
     const btn = elApply(); if(btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
-    let applied = 0, skipped = 0, failed = 0;
-    for(const r of previewRows){
-      const use = (r.use||'').trim();
-      const qty = parseInt(r.qty ?? '1', 10) || 1;
-      const rev = (r.rev||'released');
-      if(!canApplyRow(r)) { skipped++; continue; }
-      try{
-        const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/add`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ use, qty, rev, check_exists: true })
-        });
-        const data = await res.json();
-        if(!res.ok || !data.success) throw new Error(data.error||'Failed to add line');
-        existingUses.add(use);
-        applied++;
-      }catch(e){ failed++; }
+    try{
+      const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/bom/import/apply`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ rows: previewRows, remove_missing: true, update_existing: true })
+      });
+      const data = await res.json();
+      if(!res.ok || !data.success) throw new Error(data.error||'Failed to apply');
+      const summary = data.summary || { added:0, updated:0, removed:0 };
+      await loadExistingUses();
+      await runPreview();
+      if(elSum()){ elSum().textContent = `Applied. Added ${summary.added||0}, updated ${summary.updated||0}, removed ${summary.removed||0}.`; }
+    }catch(e){
+      if(elErr()) elErr().textContent = e.message || String(e);
+    }finally{
+      if(btn) { btn.disabled = false; btn.textContent = 'Apply'; }
     }
-    await loadExistingUses();
-    await runPreview(); // re-render against updated existingUses to reflect duplicates now
-    if(elSum()){ elSum().textContent = `Applied ${applied}, skipped ${skipped}, failed ${failed}.`; }
-    if(btn) { btn.disabled = false; btn.textContent = 'Apply'; }
   }
 
   // Wire up events
