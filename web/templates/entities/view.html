@@ -1326,7 +1326,8 @@ if(isPart){ bomLoad(); }
       </div>
       <div class="px-5 py-4 text-sm text-gray-800 space-y-4">
         <div class="text-gray-600">
-          Upload a CSV file or paste CSV text. Columns supported: <span class="font-mono">use</span>, <span class="font-mono">qty</span>, <span class="font-mono">rev</span>, <span class="font-mono">manufacturer</span>, <span class="font-mono">mpn</span>.
+          Upload a CSV file or paste CSV text. Columns supported: <span class="font-mono">qty</span>, <span class="font-mono">rev</span>, <span class="font-mono">manufacturer</span>, <span class="font-mono">mpn</span>, and optional <span class="font-mono">use</span>.
+          If <span class="font-mono">use</span> is omitted, a unique <span class="font-mono">manufacturer+mpn</span> match will be auto-filled. Ambiguous matches are flagged and skipped.
         </div>
         <div class="grid md:grid-cols-2 gap-4">
           <div>
@@ -1335,7 +1336,7 @@ if(isPart){ bomLoad(); }
           </div>
           <div>
             <label class="block text-xs font-medium text-gray-700 mb-1">Or paste CSV text</label>
-            <textarea id="bom-import-text" rows="6" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="use,qty,rev,manufacturer,mpn\np_child_1,2,released,ACME,AC-123" oninput="bomImportOnTextInput()"></textarea>
+            <textarea id="bom-import-text" rows="6" class="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500" placeholder="qty,rev,manufacturer,mpn\n1,released,ACME,AC-456" oninput="bomImportOnTextInput()"></textarea>
           </div>
         </div>
         <div id="bom-import-error" class="text-sm text-red-600"></div>

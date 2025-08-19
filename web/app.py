@@ -10,6 +10,7 @@ import json
 import sys
 import os
 import csv
+import re
 import base64
 import io
 from PIL import Image
@@ -1674,6 +1675,52 @@ def _norm_token(val: str | None) -> str:
     except Exception:
         return ''
 
+def _decode_csv_bytes(b: bytes) -> str:
+    """Decode uploaded CSV bytes, handling common BOMs and UTF-16 files.
+
+    Strategy:
+    - If UTF-8 BOM, decode with 'utf-8-sig' (strips BOM)
+    - If UTF-16 BOM, decode with 'utf-16' (auto-detects endianness)
+    - If many NUL bytes present, try utf-16-le then utf-16-be
+    - Fallback to utf-8 with errors ignored
+    """
+    try:
+        if not b:
+            return ''
+        if b.startswith(b'\xef\xbb\xbf'):
+            return b.decode('utf-8-sig', errors='ignore')
+        if b.startswith(b'\xff\xfe') or b.startswith(b'\xfe\xff'):
+            return b.decode('utf-16', errors='ignore')
+        # Heuristic: lots of NUL bytes => likely UTF-16 without BOM
+        nul_ratio = (b.count(b'\x00') / max(1, len(b)))
+        if nul_ratio > 0.05:
+            try:
+                return b.decode('utf-16-le', errors='ignore')
+            except Exception:
+                try:
+                    return b.decode('utf-16-be', errors='ignore')
+                except Exception:
+                    pass
+        return b.decode('utf-8', errors='ignore')
+    except Exception:
+        try:
+            return b.decode('utf-8', errors='ignore')
+        except Exception:
+            return ''
+
+def _sanitize_csv_text(text: str) -> str:
+    """Sanitize CSV text: remove embedded NULs and stray BOM, normalize newlines."""
+    if not isinstance(text, str):
+        try:
+            text = str(text)
+        except Exception:
+            return ''
+    # Strip Unicode BOM if present and embedded NULs from UTF-16 mis-decode
+    text = text.replace('\ufeff', '').replace('\x00', '')
+    # Normalize CRLF/CR to LF
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    return text
+
 
 def _index_parts_by_mfg_mpn(datarepo_path: Path) -> dict[tuple[str, str], list[str]]:
     """Return a case-insensitive index mapping (manufacturer, mpn) -> [sfid,...].
@@ -1707,17 +1754,56 @@ def _index_parts_by_mfg_mpn(datarepo_path: Path) -> dict[tuple[str, str], list[s
 
 
 def _parse_csv_text(text: str) -> list[dict]:
-    """Parse CSV text into list of dict rows (keys from header)."""
+    """Parse CSV/TSV text into list of dict rows (keys from header).
+
+    Auto-detects common delimiters: comma, tab, semicolon, pipe.
+    Normalizes header keys to lowercase and trims values.
+    """
+    # Pre-sanitize in case caller didn't
+    text = _sanitize_csv_text(text)
     rows: list[dict] = []
-    sio = io.StringIO(text)
-    reader = csv.DictReader(sio)
+    sample = text[:8192]
+    # Detect delimiter
+    delim = ','
+    try:
+        sniffed = csv.Sniffer().sniff(sample, delimiters=[',', '\t', ';', '|'])
+        delim = sniffed.delimiter or delim
+    except Exception:
+        header = sample.splitlines()[0] if sample else ''
+        if '\t' in header:
+            delim = '\t'
+        elif header.count(';') >= header.count(',') and ';' in header:
+            delim = ';'
+        elif '|' in header and header.count('|') > header.count(','):
+            delim = '|'
+    def _make_reader(d):
+        return csv.DictReader(io.StringIO(text), delimiter=d, skipinitialspace=True)
+
+    reader = _make_reader(delim)
+    # If only one or zero headers detected, retry with alternative delimiters (no plain space to avoid corruption)
+    fns = reader.fieldnames or []
+    if len([fn for fn in fns if fn and fn.strip()]) <= 1:
+        for d in ['\t', ';', '|']:
+            if d == delim:
+                continue
+            reader = _make_reader(d)
+            fns = reader.fieldnames or []
+            if len([fn for fn in fns if fn and fn.strip()]) > 1:
+                break
     for r in reader:
         # Ensure plain dict with string keys and string values
         # csv.DictReader can emit a (None, list) entry when there are extra columns beyond headers.
         # We skip empty/None keys and normalize list values by joining their items.
         clean: dict[str, str] = {}
         for k, v in (r or {}).items():
-            key = (k or '').strip()
+            # Collapse all whitespace (incl. NBSP) to single space, then lowercase
+            raw_key = (k or '')
+            # Strip control chars (incl. NUL) and stray BOM
+            raw_key = raw_key.replace('\ufeff', '')
+            raw_key = re.sub(r'[\x00-\x1F]+', '', raw_key)
+            # Replace common punctuation/separators with spaces
+            raw_key = re.sub(r'[\\/\-#.:()\[\]|]+', ' ', raw_key)
+            key = ' '.join(raw_key.split()).strip().lower()
             if not key:
                 # Skip entries with no header
                 continue
@@ -1726,26 +1812,52 @@ def _parse_csv_text(text: str) -> list[dict]:
             else:
                 val = str(v or '').strip()
             clean[key] = val
+            # Also provide an underscore variant for convenience (e.g., manufacturer_part)
+            if ' ' in key:
+                clean[key.replace(' ', '_')] = val
+            # Also provide a no-space variant (e.g., mfrpn) to catch tight matches
+            nospace = key.replace(' ', '')
+            if nospace and nospace not in clean:
+                clean[nospace] = val
         rows.append(clean)
     return rows
 
 
 def _std_field(row: dict, *candidates: str) -> str:
+    """Return the first non-empty field value from row for any of the candidate keys.
+
+    Tries multiple key variants per candidate: exact, space<->underscore, no-space.
+    Keys in `row` are expected to already be lowercased by _parse_csv_text.
+    """
+    if not row:
+        return ''
     for c in candidates:
-        if c in row and str(row[c]).strip():
-            return str(row[c]).strip()
+        if not c:
+            continue
+        base = str(c).strip().lower()
+        if not base:
+            continue
+        variants = [base]
+        if ' ' in base:
+            variants.append(base.replace(' ', '_'))
+        if '_' in base:
+            variants.append(base.replace('_', ' '))
+        variants.append(base.replace(' ', ''))  # no-space
+        for k in variants:
+            v = row.get(k)
+            if v is not None and str(v).strip() != '':
+                return str(v).strip()
     return ''
 
 
 @app.route('/api/entities/<sfid>/bom/import/preview', methods=['POST'])
 def api_bom_import_preview(sfid):
-    """Parse uploaded CSV for BOM import and return a preview with auto-fill.
+    """Preview BOM CSV import and attempt to auto-map lines.
 
-    Behavior:
-    - Accepts file upload under form field name 'file' or raw text under 'csv_text'.
-    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr, mpn/mfr_pn.
-    - If 'use' is missing, tries to auto-fill via unique match on (manufacturer, mpn), case-insensitive.
-    - Dedupe rows by a stable key (prefer 'use'; else manufacturer+mpn) keeping the last occurrence.
+    - Accepts file upload (multipart) or 'csv_text' in form/JSON.
+    - Recognized columns: use, qty/quantity, rev, manufacturer/mfr/mfg, mpn/mfr_pn/etc.
+    - Auto-fills 'use' when a unique (manufacturer, mpn) match exists.
+    - Dedupe by stable key (prefer use; else manufacturer+mpn; else row index), keeping last occurrence.
     """
     try:
         datarepo_path = get_datarepo_path()
@@ -1753,24 +1865,53 @@ def api_bom_import_preview(sfid):
         text = ''
         if 'file' in request.files:
             f = request.files['file']
-            text = f.read().decode('utf-8', errors='ignore')
+            b = f.read()
+            text = _decode_csv_bytes(b)
         else:
-            text = (request.form.get('csv_text') or request.get_json(silent=True) or {}).get('csv_text', '') if request.is_json else (request.form.get('csv_text') or '')
+            payload = request.get_json(silent=True) if request.is_json else None
+            text = (request.form.get('csv_text') or (payload or {}).get('csv_text') or '')
+        text = _sanitize_csv_text(text)
         if not text:
             return jsonify({'success': False, 'error': 'No CSV provided'}), 400
 
+        # Debug: detect delimiter and raw headers
+        sample = text[:8192]
+        dbg_delim = ','
+        try:
+            sniffed = csv.Sniffer().sniff(sample, delimiters=[',', '\t', ';', '|'])
+            dbg_delim = sniffed.delimiter or dbg_delim
+        except Exception:
+            header = sample.splitlines()[0] if sample else ''
+            if '\t' in header:
+                dbg_delim = '\t'
+            elif header.count(';') >= header.count(',') and ';' in header:
+                dbg_delim = ';'
+            elif '|' in header and header.count('|') > header.count(','):
+                dbg_delim = '|'
+        dbg_reader = csv.DictReader(io.StringIO(text), delimiter=dbg_delim, skipinitialspace=True)
+        dbg_headers = dbg_reader.fieldnames or []
+        if len([h for h in (dbg_headers or []) if h and str(h).strip()]) <= 1:
+            for d in ['\t', ';', '|']:
+                if d == dbg_delim:
+                    continue
+                dbg_reader = csv.DictReader(io.StringIO(text), delimiter=d, skipinitialspace=True)
+                dbg_headers = dbg_reader.fieldnames or []
+                if len([h for h in (dbg_headers or []) if h and str(h).strip()]) > 1:
+                    dbg_delim = d
+                    break
+
+        # Parse rows using robust parser (which normalizes keys per-row)
         raw_rows = _parse_csv_text(text)
         idx = _index_parts_by_mfg_mpn(datarepo_path)
 
         # Build preview rows and dedupe (keep last occurrence)
         dedupe_map: dict[str, dict] = {}
-        for r in raw_rows:
-            # Extract fields with flexibility
+        for i, r in enumerate(raw_rows):
             use = _std_field(r, 'use', 'child', 'part', 'sfid')
             qty = _std_field(r, 'qty', 'quantity') or '1'
             rev = _std_field(r, 'rev', 'revision') or 'released'
-            mfg = _std_field(r, 'manufacturer', 'mfr')
-            mpn = _std_field(r, 'mpn', 'mfr_pn')
+            mfg = _std_field(r, 'manufacturer', 'mfr', 'mfg')
+            mpn = _std_field(r, 'mpn', 'mfr_pn', 'pn', 'part_number', 'manufacturer part', 'manufacturer_part', 'mfg_part', 'mfg part')
 
             auto_filled = False
             ambiguous = False
@@ -1779,7 +1920,6 @@ def api_bom_import_preview(sfid):
             if not use and mfg and mpn:
                 key = (_norm_token(mfg), _norm_token(mpn))
                 cands = idx.get(key) or []
-                # Deduplicate candidates while preserving original order
                 seen: set[str] = set()
                 for c in cands:
                     if c not in seen:
@@ -1791,8 +1931,15 @@ def api_bom_import_preview(sfid):
                 elif len(matches) > 1:
                     ambiguous = True
 
-            # Stable dedupe key: prefer 'use', else (mfg,mpn)
-            k = _norm_token(use) or (f"m:{_norm_token(mfg)}|p:{_norm_token(mpn)}")
+            # Stable dedupe key
+            k = _norm_token(use)
+            if not k:
+                nmfg = _norm_token(mfg)
+                nmpn = _norm_token(mpn)
+                if nmfg or nmpn:
+                    k = f"m:{nmfg}|p:{nmpn}"
+                else:
+                    k = f"row:{i:06d}"
             preview = {
                 'use': use,
                 'qty': qty,
@@ -1803,11 +1950,42 @@ def api_bom_import_preview(sfid):
                 'ambiguous': ambiguous,
                 'matches': matches if ambiguous else [],
             }
-            # Keep last occurrence
             dedupe_map[k] = preview
 
         rows = list(dedupe_map.values())
-        return jsonify({'success': True, 'rows': rows})
+
+        # Build normalized header preview using the same normalization logic
+        def _norm_header(h: str) -> list[str]:
+            s = str(h or '')
+            s = s.replace('\ufeff', '')
+            s = re.sub(r'[\x00-\x1F]+', '', s)
+            s = re.sub(r'[\\/\-#.:()\[\]|]+', ' ', s)
+            base = ' '.join(s.split()).strip().lower()
+            outs = []
+            if base:
+                outs.append(base)
+                if ' ' in base:
+                    outs.append(base.replace(' ', '_'))
+            return outs
+
+        norm_headers: list[str] = []
+        seen_h = set()
+        for h in (dbg_headers or []):
+            for v in _norm_header(h):
+                if v and v not in seen_h:
+                    norm_headers.append(v)
+                    seen_h.add(v)
+
+        return jsonify({
+            'success': True,
+            'rows': rows,
+            'debug': {
+                'detected_delimiter': dbg_delim,
+                'raw_headers': dbg_headers,
+                'norm_headers': norm_headers,
+                'parsed_row_count': len(rows),
+            }
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
