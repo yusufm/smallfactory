@@ -68,6 +68,9 @@
   let previewRows = [];
   let existingUses = new Set();
   let existingRows = [];
+  // Expose for modal script to read counts
+  window.previewRows = previewRows;
+  window.existingRows = existingRows;
 
   const elFile = () => document.getElementById('imp-file');
   const elText = () => document.getElementById('imp-text');
@@ -142,6 +145,7 @@
       const rows = Array.isArray(data.rows) ? data.rows : [];
       existingRows = rows;
       existingUses = new Set(rows.map(r => String(r.use||'').trim()).filter(Boolean));
+      window.existingRows = existingRows;
     }catch(e){ /* non-fatal */ }
     // Keep summary/apply state in sync after rendering
     updateSummaryAndApplyButton();
@@ -149,6 +153,7 @@
 
   function resetAll(){
     previewRows = [];
+    window.previewRows = previewRows;
     if(elFile()) elFile().value = '';
     if(elText()) elText().value = '';
     if(elTBody()) elTBody().innerHTML = '';
@@ -186,6 +191,7 @@
       const data = await res.json();
       if(!data.success) throw new Error(data.error || 'Preview failed');
       previewRows = Array.isArray(data.rows) ? data.rows : [];
+      window.previewRows = previewRows;
       renderPreview(previewRows);
       const n = previewRows.length;
       // Compute removals summary
@@ -384,17 +390,69 @@
       if(btn) { btn.disabled = false; btn.textContent = 'Apply'; }
     }
   }
+  // Expose for modal confirm handler
+  window.applyImport = applyImport;
 
   // Wire up events
   document.getElementById('imp-file').addEventListener('change', onFileChange);
   document.getElementById('imp-text').addEventListener('input', onTextInput);
   document.getElementById('imp-reset').addEventListener('click', resetAll);
   document.getElementById('imp-preview').addEventListener('click', runPreview);
-  document.getElementById('imp-apply').addEventListener('click', applyImport);
+  document.getElementById('imp-apply').addEventListener('click', openImpApplyModal);
   elTBody().addEventListener('input', onTBodyInput);
 
   // Init
   loadExistingUses();
 })();
+</script>
+{% endblock %}
+
+{% block modals %}
+<!-- BOM Import: Apply Confirmation Modal -->
+<div id="imp-apply-modal" class="fixed inset-0 bg-black/30 z-50 hidden" aria-modal="true" role="dialog">
+  <div class="min-h-full flex items-center justify-center p-4" onclick="if(event.target===this) closeImpApplyModal();">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md" onclick="event.stopPropagation();">
+      <div class="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-900"><i class="fas fa-file-import mr-2"></i>Apply BOM changes</h3>
+        <button type="button" class="text-gray-500 hover:text-gray-700" onclick="closeImpApplyModal()">×</button>
+      </div>
+      <div class="px-5 py-4 text-sm text-gray-800 space-y-3">
+        <p>You're about to apply changes to <span class="font-mono text-blue-700">{{ entity.sfid }}</span>.</p>
+        <div class="bg-gray-50 border border-gray-200 rounded p-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Summary</div>
+          <ul class="list-disc pl-5 text-gray-700">
+            <li><span id="imp-apply-count-rows">0</span> preview row(s)</li>
+            <li><span id="imp-apply-count-removals">0</span> existing line(s) will be removed</li>
+          </ul>
+          <div class="text-xs text-gray-500 mt-2">Missing parts will be created for suggested SFIDs. Qty and Rev will be synced.</div>
+        </div>
+        <div id="imp-apply-error" class="text-sm text-red-600"></div>
+      </div>
+      <div class="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" onclick="closeImpApplyModal()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700" onclick="confirmImpApplyModal()">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// Expose modal controls in global scope to match existing modal patterns
+(function(){
+  window.openImpApplyModal = function(){
+    try{
+      const rows = Array.isArray(window.previewRows) ? window.previewRows : (typeof previewRows!=='undefined' ? previewRows : []);
+      const existRows = Array.isArray(window.existingRows) ? window.existingRows : (typeof existingRows!=='undefined' ? existingRows : []);
+      const csvUses = new Set(rows.filter(r => !r.ambiguous).map(r => (String(r.use||'').trim().toLowerCase())).filter(Boolean));
+      const removalCandidates = (existRows||[]).filter(r => !csvUses.has(String(r.use||'').trim().toLowerCase()));
+      const n = rows.length;
+      const rEl = document.getElementById('imp-apply-count-rows'); if(rEl) rEl.textContent = String(n);
+      const dEl = document.getElementById('imp-apply-count-removals'); if(dEl) dEl.textContent = String(removalCandidates.length);
+    }catch(e){ /* non-fatal */ }
+    const m = document.getElementById('imp-apply-modal'); if(m) m.classList.remove('hidden');
+  };
+  window.closeImpApplyModal = function(){ const m = document.getElementById('imp-apply-modal'); if(m) m.classList.add('hidden'); };
+  window.confirmImpApplyModal = async function(){ window.closeImpApplyModal(); try{ await (typeof applyImport==='function' ? applyImport() : null); }catch(e){} };
+})();
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeImpApplyModal(); });
 </script>
 {% endblock %}
