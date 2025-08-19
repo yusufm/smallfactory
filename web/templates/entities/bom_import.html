@@ -40,6 +40,7 @@
           <thead class="bg-gray-50 text-gray-700">
             <tr>
               <th class="px-2 py-1 text-left">Use</th>
+              <th class="px-2 py-1 text-left">Name</th>
               <th class="px-2 py-1 text-right">Qty</th>
               <th class="px-2 py-1 text-left">Rev</th>
               <th class="px-2 py-1 text-left">Manufacturer</th>
@@ -150,6 +151,7 @@
     // 1) Render CSV-derived rows
     rows.forEach(r => {
       const use = (r.use||'').trim();
+      const name = (r.name||'').trim();
       const qty = r.qty ?? 1;
       const rev = (r.rev||'released');
       const mfr = r.manufacturer||'';
@@ -181,6 +183,7 @@
       tb.insertAdjacentHTML('beforeend', `
         <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}">
           <td class="px-2 py-1 font-mono text-blue-700">${use||'—'}</td>
+          <td class="px-2 py-1">${name||'—'}</td>
           <td class="px-2 py-1 text-right">${qty}</td>
           <td class="px-2 py-1">${rev||'released'}</td>
           <td class="px-2 py-1">${mfr||'—'}</td>
@@ -193,14 +196,23 @@
     // 2) Render removal candidates from existing BOM that are not present in CSV
     const csvUses = new Set(rows.filter(rr => !rr.ambiguous).map(rr => String(rr.use||'').trim()).filter(Boolean));
     const toRemove = (existingRows||[]).filter(er => !csvUses.has(String(er.use||'').trim()));
+    if(toRemove.length){
+      tb.insertAdjacentHTML('beforeend', `
+        <tr class="bg-red-100">
+          <td class="px-2 py-1 text-xs text-red-800" colspan="7">Removals</td>
+        </tr>
+      `);
+    }
     toRemove.forEach(er => {
       const use = (er.use||'').trim();
+      const name = (er.name||'').trim();
       const qty = er.qty ?? 1;
       const rev = (er.rev||'released');
       const badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">remove</span>';
       tb.insertAdjacentHTML('beforeend', `
         <tr class="bg-red-50" data-remove="1">
           <td class="px-2 py-1 font-mono text-red-700">${use||'—'}</td>
+          <td class="px-2 py-1">${name||'—'}</td>
           <td class="px-2 py-1 text-right">${qty}</td>
           <td class="px-2 py-1">${rev||'released'}</td>
           <td class="px-2 py-1">—</td>
