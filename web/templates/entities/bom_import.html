@@ -194,8 +194,8 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
         rowCls = 'bg-red-50';
       }else if(existingUses.has(use)){
-        status = 'Duplicate (exists)';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">duplicate</span>';
+        status = 'Already present';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">exists</span>';
         rowCls = 'opacity-70';
       }else if(r.auto_filled){
         status = 'Auto-filled';
@@ -285,8 +285,8 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">invalid</span>';
         rowCls = 'bg-red-50';
       }else if(duplicate){
-        status = 'Duplicate (exists)';
-        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">duplicate</span>';
+        status = 'Already present';
+        badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">exists</span>';
         rowCls = 'opacity-70';
       }else{
         status = 'OK';
