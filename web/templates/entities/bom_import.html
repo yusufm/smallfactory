@@ -76,10 +76,11 @@
   const elTBody = () => document.getElementById('imp-preview-tbody');
   const elApply = () => document.getElementById('imp-apply');
 
-  // SFID helpers
+  // SFID helpers (matches SPECIFICATION.md authoritative regex)
+  const SFID_REGEX = /^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$/;
   const isValidSfid = (s) => {
     const v = String(s||'').trim();
-    return /^p_[a-z0-9_]+$/.test(v);
+    return SFID_REGEX.test(v);
   };
   const normalizeSfid = (s) => String(s||'').trim().toLowerCase();
 
