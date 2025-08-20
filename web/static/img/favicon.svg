@@ -1,13 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Background -->
-  <rect x="2" y="2" width="60" height="60" rx="12" ry="12" fill="#2563EB"/>
-  <!-- Cube top -->
-  <polygon points="32,14 46,22 32,30 18,22" fill="#93C5FD"/>
-  <!-- Cube left -->
-  <polygon points="18,22 32,30 32,46 18,38" fill="#BFDBFE"/>
-  <!-- Cube right -->
-  <polygon points="46,22 32,30 32,46 46,38" fill="#60A5FA"/>
-  <!-- Subtle highlight -->
-  <path d="M18 38 L32 46 L46 38" fill="none" stroke="#FFFFFF" stroke-opacity="0.15"/>
+  <!-- Transparent canvas bounds -->
+  <rect x="0" y="0" width="64" height="64" fill="none"/>
+
+  <!-- Hexagon background (flat-top) with rounded joins to soften corners at small sizes -->
+  <polygon points="58,32 45,54 19,54 6,32 19,10 45,10" fill="none" stroke="none"/>
+
+  <!-- Cube (brand blue left face, white top & right faces); no background -->
+  <g transform="translate(0,2) translate(32,30) scale(2) translate(-32,-30)">
+    <!-- Left (blue base) -->
+    <polygon points="18,22 32,30 32,46 18,38" fill="#2563EB"/>
+    <!-- Right (blue base underlay) -->
+    <polygon points="46,22 32,30 32,46 46,38" fill="#2563EB"/>
+    <!-- Top (blue base underlay) -->
+    <polygon points="32,14 46,22 32,30 18,22" fill="#2563EB"/>
+    <!-- White faces scaled together about cube center (32,30) to keep shared edge aligned -->
+    <g transform="translate(32,30) scale(0.76) translate(-32,-30)">
+      <!-- Right (white) -->
+      <polygon points="46,22 32,30 32,46 46,38" fill="#FFFFFF"/>
+      <!-- Top (white) -->
+      <polygon points="32,14 46,22 32,30 18,22" fill="#FFFFFF"/>
+      <!-- Divider between white faces -->
+      <line x1="46" y1="22" x2="32" y2="30" stroke="#2563EB" stroke-width="6" stroke-linecap="round"/>
+    </g>
+  </g>
 </svg>
