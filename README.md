@@ -83,6 +83,9 @@ http://127.0.0.1:8080
 ---
 
 ## What to read next
+- [Start Here](docs/START_HERE.md)
+- [Users docs](docs/users/README.md)
+- [Developers docs](docs/developers/README.md)
 - [Web UI docs](web/README.md)
-- [Core spec](smallfactory/core/v1/SPECIFICATION.md)
 - [CLI docs](docs/cli/README.md)
+- [Core spec](smallfactory/core/v1/SPECIFICATION.md)

@@ -1,11 +1,17 @@
-# Documentation
+# Documentation Index
 
 Welcome to the smallFactory documentation.
 
-- CLI Docs: see `docs/cli/` for user-facing command documentation
-  - Entities: `docs/cli/entities.md`
+## Users
+- [Start Here](START_HERE.md)
+- [Web UI guide](../web/README.md)
+- [CLI basics](cli/README.md)
 
-- Developers: Git transaction workflow and env vars
-  - `docs/developers/git-workflow.md`
+## Developers
+- [PLM SPEC (Core v1)](../smallfactory/core/v1/SPECIFICATION.md)
+- [Git workflow and environment](developers/git-workflow.md)
+- [Developers index](developers/README.md)
 
-Additional sections (specification, developer guide, web UI) will be added as the project evolves.
+Notes:
+- User-facing branding is "smallFactory" (lowercase s, uppercase F).
+- Prefer the term `sfid` for smallFactory identifiers in examples.
