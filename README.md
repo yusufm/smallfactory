@@ -61,8 +61,7 @@ http://127.0.0.1:8080
 - **BOM** — Manage bills of materials with alternates; edit in the app; see structure at a glance.
 
 ![Entities list](docs/img/screenshots/entities_list.png)
-![Entity overview, files, and BOM](docs/img/screenshots/entity_view_overview.png)
-![BOM editor](docs/img/screenshots/entity_bom_list.png)
+![BOM tree](docs/img/screenshots/bom_tree.png)
 
 ### Build & release
 - **Revisions** — One‑click, numbered revisions with clear release tracking.
@@ -79,13 +78,13 @@ http://127.0.0.1:8080
 - **Search & dashboard** — Find parts fast and see key stats at a glance.
 - **QR‑first workflows** — Label, scan, and act quickly on the floor.
 
-![Inventory list](docs/img/screenshots/inventory_list.png)
+![Inventory list](docs/img/screenshots/inventory_dashboard.png)
 ![Mobile Quick Adjust (QR scanning)](docs/img/screenshots/mobile_adjust_scan.png)
 
 ### Vision
 Use a camera or upload to extract parts from invoices and batch-create entities.
 
-![Invoice extraction](docs/img/screenshots/vision_invoice_extract.png)
+![Invoice extraction](docs/img/screenshots/vision_mobile_part_extract.png)
 
 ### Platform
 - **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
