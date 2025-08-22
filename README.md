@@ -1,6 +1,8 @@
 # smallFactory
  
 ## What is smallFactory
+![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
+
 A Git-native toolset for small teams to manage the things they make.
 
 - Design
@@ -58,17 +60,31 @@ http://127.0.0.1:8080
 - **Files workspace** — Upload, organize, and download design files and documents; snapshots captured in revisions.
 - **BOM** — Manage bills of materials with alternates; edit in the app; see structure at a glance.
 
+![Entities list](docs/img/screenshots/entities_list.png)
+![BOM tree](docs/img/screenshots/bom_tree.png)
+
 ### Build & release
 - **Revisions** — One‑click, numbered revisions with clear release tracking.
 - **Stickers** — Generate QR stickers for parts and locations; print in batches with chosen fields.
 - **Camera capture** — Snap a photo of an invoice or label to auto‑extract parts data.
 - **Vision‑assisted intake** — Extract parts from invoices and batch‑create with review.
 
+![Revisions management](docs/img/screenshots/revisions_section.png)
+![Batch QR stickers](docs/img/screenshots/stickers_batch.png)
+
 ### Operate
 - **Inventory** — Track quantities by location; adjust quickly with mobile QR scanning.
 - **Mobile access** — Optimized for phones with simple, touch‑first flows.
 - **Search & dashboard** — Find parts fast and see key stats at a glance.
 - **QR‑first workflows** — Label, scan, and act quickly on the floor.
+
+![Inventory list](docs/img/screenshots/inventory_dashboard.png)
+![Mobile Quick Adjust (QR scanning)](docs/img/screenshots/mobile_adjust_scan.png)
+
+### Vision
+Use a camera or upload to extract parts from invoices and batch-create entities.
+
+![Invoice extraction](docs/img/screenshots/vision_mobile_part_extract.png)
 
 ### Platform
 - **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
@@ -83,6 +99,9 @@ http://127.0.0.1:8080
 ---
 
 ## What to read next
+- [Start Here](docs/START_HERE.md)
+- [Users docs](docs/users/README.md)
+- [Developers docs](docs/developers/README.md)
 - [Web UI docs](web/README.md)
-- [Core spec](smallfactory/core/v1/SPECIFICATION.md)
 - [CLI docs](docs/cli/README.md)
+- [Core spec](smallfactory/core/v1/SPECIFICATION.md)
