@@ -149,7 +149,7 @@
             {% if entity.get('description') %}
             <div class="sm:col-span-2">
               <dt class="text-sm font-medium text-gray-600">Description</dt>
-              <dd id="ovw-description-display" class="mt-1 text-sm text-gray-900">{{ entity.get('description') }}</dd>
+              <dd id="ovw-description-display" class="mt-1 text-sm text-gray-900 whitespace-pre-wrap break-words">{{ entity.get('description') }}</dd>
             </div>
             {% endif %}
             {% if entity.get('category') %}
@@ -1042,6 +1042,19 @@ async function submitDfMoveModal(){
 
 // Removed legacy dfSetSubdir(): no fixed subdirectories anymore
 
+function _escapeHtml(s){
+  try{ return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  }catch(_){ return ''; }
+}
+function _nl2br(s){
+  try{ return String(s).replace(/\r\n|\r|\n/g, '<br>'); }catch(_){ return ''; }
+}
+
 function renderRevisionsRows(list){
   const tbody = document.getElementById('revisions-tbody');
   if(!tbody) return;
@@ -1056,7 +1069,8 @@ function renderRevisionsRows(list){
     const ra = r.released_at||'—';
     const st = (r && r.released_at) ? 'released' : (r && r.status ? r.status : '—');
     const ca = r.created_at||'—';
-    const notes = r.notes?String(r.notes):'';
+    const notesRaw = r.notes ? String(r.notes) : '';
+    const notesHtml = notesRaw ? _nl2br(_escapeHtml(notesRaw)) : '';
     const actions = '<span class="text-gray-400">—</span>';
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50">
@@ -1064,7 +1078,7 @@ function renderRevisionsRows(list){
         <td class="px-3 py-1.5 text-gray-800">${st}</td>
         <td class="px-3 py-1.5 text-gray-700">${ca}</td>
         <td class="px-3 py-1.5 text-gray-700">${ra}</td>
-        <td class="px-3 py-1.5 text-gray-700">${notes||'<span class=\'text-gray-400\'>—</span>'}</td>
+        <td class="px-3 py-1.5 text-gray-700 whitespace-pre-wrap break-words">${notesHtml || '<span class=\'text-gray-400\'>—</span>'}</td>
         <td class="px-3 py-1.5">${actions}</td>
       </tr>`);
   });
@@ -1210,7 +1224,7 @@ if(isPart){ bomLoad(); }
         <p>You're about to create and release a new revision for <span class="font-mono text-blue-700">{{ entity.sfid }}</span>.</p>
         <div class="bg-gray-50 border border-gray-200 rounded p-3">
           <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</div>
-          <div id="rev-confirm-notes" class="text-gray-800 break-words">—</div>
+          <div id="rev-confirm-notes" class="text-gray-800 whitespace-pre-wrap break-words">—</div>
         </div>
         <div id="rev-confirm-error" class="text-sm text-red-600"></div>
       </div>
