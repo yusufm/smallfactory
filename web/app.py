@@ -874,38 +874,51 @@ def inventory_list():
     """Display all inventory items in a table."""
     try:
         datarepo_path = get_datarepo_path()
+        # Inventory summary (existing parts with journals/caches)
         summary = inventory_onhand(datarepo_path)
-        parts = summary.get('parts', []) if isinstance(summary, dict) else []
-        # Enrich with entity names and per-location breakdown
+        summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
+
+        # All canonical part entities
+        entities = list_entities(datarepo_path) or []
+        part_entities = [e for e in entities if str(e.get('sfid', '')).startswith('p_')]
+
+        # Build items list: include every part, defaulting to zero if absent from inventory
         items = []
-        for p in parts:
-            sfid = p.get('sfid')
+        for ent in part_entities:
+            sfid = ent.get('sfid')
             if not sfid:
                 continue
-            # Entity metadata for name (best-effort)
-            try:
-                ent = get_entity(datarepo_path, sfid)
-                name = ent.get('name', sfid)
-                description = ent.get('description', '')
-                category = ent.get('category', '')
-            except Exception:
-                name = sfid
-                description = ''
-                category = ''
-            # Per-part onhand cache for by-location and total
-            try:
-                cache = inventory_onhand(datarepo_path, part=sfid)
-            except Exception:
-                cache = {}
+            name = ent.get('name', sfid)
+            description = ent.get('description', '')
+            category = ent.get('category', '')
+
+            if sfid in inv_totals:
+                # Populate full cache details (by-location, uom, as_of) for parts that have inventory
+                try:
+                    cache = inventory_onhand(datarepo_path, part=sfid)
+                except Exception:
+                    cache = {}
+                uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
+                total = int(cache.get('total', 0) or 0)
+                by_location = cache.get('by_location', {}) or {}
+                as_of = cache.get('as_of')
+            else:
+                # Zero-quantity default for parts without any inventory activity
+                uom = ent.get('uom', 'ea') or 'ea'
+                total = 0
+                by_location = {}
+                as_of = None
+
             items.append({
                 'sfid': sfid,
                 'name': name,
                 'description': description,
                 'category': category,
-                'uom': cache.get('uom', 'ea'),
-                'total': int(cache.get('total', 0) or 0),
-                'by_location': cache.get('by_location', {}) or {},
-                'as_of': cache.get('as_of'),
+                'uom': uom,
+                'total': total,
+                'by_location': by_location,
+                'as_of': as_of,
             })
         # Optional pre-filtering from dashboard drill-downs
         status = (request.args.get('status') or '').strip().lower()
