@@ -1096,7 +1096,7 @@ def main():
                     qty = n.get("qty", 1)
                     rev = n.get("rev", "released")
                     cum = n.get("cumulative_qty")
-                    cum_s = f" (cum={cum})" if cum is not None else ""
+                    cum_s = f" (gross={cum})" if cum is not None else ""
                     oh = n.get("onhand_total")
                     oh_s = f" onhand={oh}" if oh is not None else ""
                     print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{oh_s}{cum_s}")
