@@ -1450,7 +1450,55 @@ def api_inventory_view(item_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
 
-# Entities API endpoints
+@app.route('/api/inventory/adjust', methods=['POST'])
+def api_inventory_adjust():
+    """Adjust inventory quantity for a part at an optional location via JSON.
+
+    Request JSON body:
+      - sfid: part id (required)
+      - l_sfid or location: location id/name (optional; defaults to None/default location)
+      - delta: signed integer (required)
+
+    Response JSON on success includes updated totals and by_location.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        sfid = str(payload.get('sfid', '')).strip()
+        location = (str(payload.get('l_sfid', '')).strip() or str(payload.get('location', '')).strip() or None)
+        if not sfid:
+            return jsonify({'success': False, 'error': 'Missing required field: sfid'}), 400
+        try:
+            delta = int(payload.get('delta', 0))
+        except Exception:
+            return jsonify({'success': False, 'error': 'delta must be an integer'}), 400
+
+        datarepo_path = get_datarepo_path()
+
+        def _mutate():
+            return inventory_post(datarepo_path, sfid, delta, location)
+
+        _ = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+            autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
+            autocommit_paths=[f"inventory/{sfid}"]
+        )
+
+        cache = inventory_onhand(datarepo_path, part=sfid)
+        by_loc = cache.get('by_location', {}) or {}
+        new_qty = (by_loc.get(location) if location is not None else None)
+        return jsonify({
+            'success': True,
+            'sfid': sfid,
+            'l_sfid': location,
+            'delta': delta,
+            'total': cache.get('total', 0),
+            'by_location': by_loc,
+            'new_qty': new_qty,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 @app.route('/api/entities')
 def api_entities_list():
     try:

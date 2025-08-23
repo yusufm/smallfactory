@@ -3,7 +3,7 @@
 {% block title %}{{ item.name }} - Inventory - smallFactory{% endblock %}
 
 {% block content %}
-<div class="content-container">
+<div class="content-container" id="sf-item-root" data-sfid="{{ item.sfid }}" data-adjust-url="{{ url_for('api_inventory_adjust') }}">
     <!-- Header -->
     <div class="flex justify-between items-center mb-8">
         <div>
@@ -87,13 +87,23 @@
                                         <p class="text-xs text-gray-500">Storage Location</p>
                                     </div>
                                 </div>
-                                <div class="flex items-center space-x-3">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
-                                        {{ quantity }} units
+                                <div class="flex items-center space-x-3 sf-loc-row" data-location="{{ location }}" data-original="{{ quantity }}" data-delta="0">
+                                    <button type="button" class="sf-dec inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Decrease">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <span class="sf-qty-badge inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                        <span class="sf-qty">{{ quantity }}</span> units
                                     </span>
-                                    <a href="{{ url_for('inventory_adjust', sfid=item.sfid, l_sfid=location) }}" class="text-blue-600 hover:text-blue-900 text-sm">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
+                                    <button type="button" class="sf-inc inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Increase">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button type="button" class="sf-save invisible inline-flex items-center px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                                        <i class="fas fa-save mr-1"></i>Save
+                                    </button>
+                                    <button type="button" class="sf-cancel invisible inline-flex items-center px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs">
+                                        <i class="fas fa-rotate-left mr-1"></i>Reset
+                                    </button>
+                                    <span class="sf-msg text-xs text-gray-500"></span>
                                 </div>
                             </div>
                             {% endfor %}
@@ -119,7 +129,7 @@
                 <div class="space-y-4">
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-500">Total Quantity</span>
-                        <span class="text-lg font-bold {% if item.total > 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                        <span id="sf-total-qty" class="text-lg font-bold {% if item.total > 0 %}text-green-600{% else %}text-red-600{% endif %}">
                             {{ item.total }}
                         </span>
                     </div>
@@ -156,5 +166,126 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const root = document.getElementById('sf-item-root');
+  const sfid = root ? root.getAttribute('data-sfid') : null;
+  const adjustUrl = root ? root.getAttribute('data-adjust-url') : null;
+  const totalEl = document.getElementById('sf-total-qty');
+
+  function setBadgeColor(badgeEl, qty) {
+    badgeEl.classList.remove('bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
+    if ((parseInt(qty) || 0) > 0) {
+      badgeEl.classList.add('bg-green-100', 'text-green-800');
+    } else {
+      badgeEl.classList.add('bg-red-100', 'text-red-800');
+    }
+  }
+
+  function setTotalColor(el, qty) {
+    el.classList.remove('text-green-600', 'text-red-600');
+    if ((parseInt(qty) || 0) > 0) {
+      el.classList.add('text-green-600');
+    } else {
+      el.classList.add('text-red-600');
+    }
+  }
+
+  function updateRowUI(row) {
+    const qtyEl = row.querySelector('.sf-qty');
+    const badgeEl = row.querySelector('.sf-qty-badge');
+    const saveBtn = row.querySelector('.sf-save');
+    const cancelBtn = row.querySelector('.sf-cancel');
+    const msgEl = row.querySelector('.sf-msg');
+    const original = parseInt(row.dataset.original || '0');
+    const delta = parseInt(row.dataset.delta || '0');
+    const newQty = original + delta;
+    qtyEl.textContent = newQty;
+    setBadgeColor(badgeEl, newQty);
+    if (delta !== 0) {
+      saveBtn.classList.remove('invisible');
+      cancelBtn.classList.remove('invisible');
+    } else {
+      saveBtn.classList.add('invisible');
+      cancelBtn.classList.add('invisible');
+      if (msgEl) msgEl.textContent = '';
+    }
+  }
+
+  document.querySelectorAll('.sf-loc-row').forEach(function (row) {
+    const inc = row.querySelector('.sf-inc');
+    const dec = row.querySelector('.sf-dec');
+    const save = row.querySelector('.sf-save');
+    const cancel = row.querySelector('.sf-cancel');
+    const msgEl = row.querySelector('.sf-msg');
+
+    function setSavingState(isSaving) {
+      [inc, dec, save, cancel].forEach(btn => { if (btn) btn.disabled = isSaving; });
+    }
+
+    inc.addEventListener('click', function () {
+      const d = parseInt(row.dataset.delta || '0') + 1;
+      row.dataset.delta = String(d);
+      updateRowUI(row);
+    });
+    dec.addEventListener('click', function () {
+      const d = parseInt(row.dataset.delta || '0') - 1;
+      row.dataset.delta = String(d);
+      updateRowUI(row);
+    });
+    cancel.addEventListener('click', function () {
+      row.dataset.delta = '0';
+      updateRowUI(row);
+    });
+
+    save.addEventListener('click', async function () {
+      const delta = parseInt(row.dataset.delta || '0');
+      if (delta === 0) return;
+      const location = row.dataset.location || null;
+      setSavingState(true);
+      if (msgEl) msgEl.textContent = 'Saving...';
+      try {
+        const resp = await fetch(adjustUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sfid: sfid, l_sfid: location, delta: delta })
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to adjust');
+        const byLoc = data.by_location || {};
+        const newQty = (location !== null) ? (byLoc[location] ?? null) : null;
+        if (newQty !== null) {
+          row.dataset.original = String(parseInt(newQty));
+        } else {
+          // Fallback to computing from original+delta
+          const orig = parseInt(row.dataset.original || '0');
+          row.dataset.original = String(orig + delta);
+        }
+        row.dataset.delta = '0';
+        updateRowUI(row);
+        // Update total display
+        if (totalEl && typeof data.total !== 'undefined') {
+          totalEl.textContent = data.total;
+          setTotalColor(totalEl, data.total);
+        }
+        if (msgEl) {
+          msgEl.textContent = 'Saved';
+          setTimeout(() => { if (msgEl.textContent === 'Saved') msgEl.textContent = ''; }, 1500);
+        }
+      } catch (err) {
+        if (msgEl) msgEl.textContent = 'Error: ' + (err.message || err);
+      } finally {
+        setSavingState(false);
+      }
+    });
+
+    // Initial UI sync
+    updateRowUI(row);
+  });
+});
+</script>
 {% endblock %}
 
