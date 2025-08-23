@@ -60,7 +60,7 @@ http://127.0.0.1:8080
 - **Files workspace** — Upload, organize, and download design files and documents; snapshots captured in revisions.
 - **BOM** — Manage bills of materials with alternates; edit in the app; see structure at a glance.
 
-![Entities list](docs/img/screenshots/entities_list.png)
+![Entities list](docs/img/screenshots/entity_view_overview.png)
 ![BOM tree](docs/img/screenshots/bom_tree.png)
 
 ### Build & release
@@ -69,7 +69,6 @@ http://127.0.0.1:8080
 - **Camera capture** — Snap a photo of an invoice or label to auto‑extract parts data.
 - **Vision‑assisted intake** — Extract parts from invoices and batch‑create with review.
 
-![Revisions management](docs/img/screenshots/revisions_section.png)
 ![Batch QR stickers](docs/img/screenshots/stickers_batch.png)
 
 ### Operate
@@ -79,12 +78,29 @@ http://127.0.0.1:8080
 - **QR‑first workflows** — Label, scan, and act quickly on the floor.
 
 ![Inventory list](docs/img/screenshots/inventory_dashboard.png)
-![Mobile Quick Adjust (QR scanning)](docs/img/screenshots/mobile_adjust_scan.png)
+  <div style="display: flex; flex-wrap: wrap;">
+  <div style="width: 33.33%;">
+    <img src="docs/img/screenshots/mobile_adjust_scan_1.jpeg" style="max-width: 100%;">
+  </div>
+  <div style="width: 33.33%;">
+    <img src="docs/img/screenshots/mobile_adjust_scan_2.jpeg" style="max-width: 100%;">
+  </div>
+</div>
 
 ### Vision
 Use a camera or upload to extract parts from invoices and batch-create entities.
 
-![Invoice extraction](docs/img/screenshots/vision_mobile_part_extract.png)
+<div style="display: flex; flex-wrap: wrap;">
+  <div style="width: 33.33%;">
+    <img src="docs/img/screenshots/mobile_partscan_1.jpeg" style="max-width: 100%;">
+  </div>
+  <div style="width: 33.33%;">
+    <img src="docs/img/screenshots/mobile_partscan_2.jpeg" style="max-width: 100%;">
+  </div>
+  <div style="width: 33.33%;">
+    <img src="docs/img/screenshots/mobile_partscan_3.jpeg" style="max-width: 100%;">
+  </div>
+</div>
 
 ### Platform
 - **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
