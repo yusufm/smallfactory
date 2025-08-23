@@ -1350,6 +1350,21 @@ def entities_add():
                 autocommit_paths=[f"entities/{sfid}"]
             )
             flash(f"Successfully created entity: {sfid}", 'success')
+            # If the user clicked "Save & Create Another", return to add form
+            action = (request.form.get('action') or '').strip()
+            if action == 'create_another':
+                # Carry over SFID type prefix (e.g., "p_") to the next create form
+                prefix = ''
+                try:
+                    if sfid:
+                        i = sfid.find('_')
+                        if i > 0 and sfid[:i].isalpha():
+                            prefix = sfid[:i+1].lower()
+                except Exception:
+                    prefix = ''
+                if prefix:
+                    return redirect(url_for('entities_add', sfid=prefix))
+                return redirect(url_for('entities_add'))
             if next_url and _is_safe_next(next_url):
                 # If caller indicated which param to update, rewrite the next URL
                 try:
