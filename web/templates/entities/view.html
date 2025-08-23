@@ -595,7 +595,8 @@ async function saveOverview(){
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to update');
     // Inline update display (best-effort; only updates existing elements)
-    const setText = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt||''; };
+    let needReload = false;
+    const setText = (id, txt) => { const el = document.getElementById(id); if(el) { el.textContent = txt||''; } else { needReload = true; } };
     setText('ovw-name-display', name||SFID);
     setText('ovw-description-display', description||'');
     setText('ovw-notes-display', notes||'');
@@ -613,7 +614,7 @@ async function saveOverview(){
       else if(lower==='buy') polEl.classList.add('bg-amber-100','text-amber-800');
       else if(lower==='phantom') polEl.classList.add('bg-purple-100','text-purple-800');
       else polEl.classList.add('bg-gray-100','text-gray-700');
-    }
+    } else { needReload = true; }
     // UOM
     setText('ovw-uom-display', uom||'ea');
     // Tags
@@ -621,16 +622,16 @@ async function saveOverview(){
     if(tagsEl){
       const parts = (tags||'').split(',').map(s=>s.trim()).filter(Boolean);
       tagsEl.innerHTML = parts.map(t=>`<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">${t}</span>`).join(' ');
-    }
+    } else { needReload = true; }
     // Common attrs
     const manufacturer = attrs.manufacturer || attrs.mfr || '';
     const mpn = attrs.mpn || attrs.mfr_pn || '';
     const supplier = attrs.vendor || attrs.supplier || '';
     const skuVal = attrs.sku || attrs.spn || '';
     setText('ovw-manufacturer-display', manufacturer);
-    const mpnEl = document.getElementById('ovw-mpn-display'); if(mpnEl) mpnEl.textContent = mpn;
+    const mpnEl = document.getElementById('ovw-mpn-display'); if(mpnEl) mpnEl.textContent = mpn; else needReload = true;
     setText('ovw-supplier-display', supplier);
-    const skuEl = document.getElementById('ovw-sku-display'); if(skuEl) skuEl.textContent = skuVal;
+    const skuEl = document.getElementById('ovw-sku-display'); if(skuEl) skuEl.textContent = skuVal; else needReload = true;
     // Rebuild generic attributes grid
     const grid = document.getElementById('ovw-attrs-grid');
     if(grid){
@@ -641,7 +642,7 @@ async function saveOverview(){
           <div class="mt-1 text-sm text-gray-900 break-words">${attrs[k]}</div>
         </div>
       `).join('');
-    }
+    } else { needReload = true; }
     // Close editor
     ovwInitialState = getOverviewCurrentState();
     ovwEditMode = false;
@@ -651,6 +652,12 @@ async function saveOverview(){
     if(disp) disp.classList.remove('hidden');
     if(ed) ed.classList.add('hidden');
     if(btn) btn.textContent = 'Edit';
+    if(btn) btn.classList.remove('hidden');
+    // If some display elements were not present initially (due to templating conditions),
+    // reload to render new sections (e.g., Description/Notes/Tags/Attributes just added).
+    if(needReload){
+      window.location.reload();
+    }
   }catch(e){ if(err) err.textContent = e.message||String(e); }
 }
 
