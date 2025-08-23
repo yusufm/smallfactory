@@ -434,7 +434,7 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
     """Walk the BOM starting at root_sfid and return flat list of resolved nodes.
 
     Node fields: parent, use, name, qty, rev_spec, rev (resolved), level, is_alt,
-    alternates_group, cumulative_qty, cycle
+    alternates_group, gross_qty, cycle
     """
     nodes: List[Dict] = []
 
@@ -484,7 +484,7 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
                 "level": level,
                 "is_alt": False,
                 "alternates_group": alt_group,
-                "cumulative_qty": cum,
+                "gross_qty": cum,
                 "cycle": bool(cycle),
             }
             nodes.append(node)
@@ -504,7 +504,7 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
                     "level": level + 1,
                     "is_alt": True,
                     "alternates_group": alt_group,
-                    "cumulative_qty": cum,
+                    "gross_qty": cum,
                     "cycle": alt_use in path_stack,
                 }
                 nodes.append(alt_node)

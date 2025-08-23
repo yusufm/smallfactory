@@ -1897,7 +1897,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
             'level': (n.get('level') or 0) + 1,
             'is_alt': n.get('is_alt', False),
             'alternates_group': n.get('alternates_group'),
-            'cumulative_qty': n.get('cumulative_qty'),
+            'gross_qty': n.get('gross_qty'),
             'cycle': n.get('cycle', False),
             'onhand_total': _get_onhand_total(n.get('use')),
         })
@@ -2278,13 +2278,13 @@ def api_bom_deep(sfid):
         fmt = (request.args.get('format') or '').lower()
         if fmt == 'csv':
             # Build CSV from nodes
-            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle', 'onhand_total']
+            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'gross_qty', 'cycle', 'onhand_total']
             sio = io.StringIO()
             writer = csv.DictWriter(sio, fieldnames=headers)
             writer.writeheader()
             for n in nodes:
                 # Ensure only known headers are written
-                row = {k: n.get(k) for k in headers}
+                row = {k: (n.get('gross_qty') if k == 'gross_qty' else n.get(k)) for k in headers}
                 writer.writerow(row)
             csv_text = sio.getvalue()
             return Response(
