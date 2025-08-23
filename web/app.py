@@ -624,8 +624,9 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
         name, email = _extract_identity_from_headers(request)
         def _do_mutate_and_autocommit():
             r = mutate_fn()
-            # Ensure a commit exists if web autocommit is enabled
-            _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
+            # Ensure a commit exists if web autocommit is enabled and paths provided
+            if autocommit_paths:
+                _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths)
             return r
         if name and email:
             with _with_git_identity(name, email):
@@ -1018,15 +1019,15 @@ def inventory_adjust():
                 delta = int(delta_raw)
             except Exception:
                 raise ValueError('delta must be an integer (can be negative)')
+            # Optional reason passthrough for auditability
+            reason = (request.form.get('reason') or '').strip() or None
 
             datarepo_path = get_datarepo_path()
             def _mutate():
-                return inventory_post(datarepo_path, sfid, delta, location)
+                return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
             _ = _run_repo_txn(
                 datarepo_path,
                 _mutate,
-                autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
-                autocommit_paths=[f"inventory/{sfid}"]
             )
             loc_msg = location or 'default location'
             flash(f"Adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
@@ -1471,17 +1472,23 @@ def api_inventory_adjust():
             delta = int(payload.get('delta', 0))
         except Exception:
             return jsonify({'success': False, 'error': 'delta must be an integer'}), 400
+        # Optional reason passthrough for auditability
+        reason = payload.get('reason')
+        try:
+            reason = str(reason).strip()
+        except Exception:
+            reason = None
+        if not reason:
+            reason = None
 
         datarepo_path = get_datarepo_path()
 
         def _mutate():
-            return inventory_post(datarepo_path, sfid, delta, location)
+            return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
 
         _ = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
-            autocommit_paths=[f"inventory/{sfid}"]
         )
 
         cache = inventory_onhand(datarepo_path, part=sfid)
