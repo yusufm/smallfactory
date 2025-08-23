@@ -25,7 +25,7 @@ from contextlib import contextmanager
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -992,24 +992,44 @@ def inventory_delete(item_id):
 # Mobile quick adjust (QR-friendly)
 @app.route('/inventory/adjust', methods=['GET', 'POST'])
 def inventory_adjust():
-    """Mobile-friendly Quick Adjust page.
+    """Quick Adjust page using absolute quantity (compute delta server-side).
 
-    Minimal form with sfid, l_sfid, and signed delta. On mobile, inputs get QR scan buttons automatically
-    via base template scripts; entity autocomplete also applies.
+    - GET: optionally prefill sfid/location; show current qty if available
+    - POST: accept absolute quantity, compute delta, apply inventory_post
     """
     field_specs = get_inventory_field_specs()
     form_data = {}
+    current_qty = None
 
     if request.method == 'GET':
         pre_sfid = (request.args.get('sfid') or '').strip()
         pre_l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
-        pre_delta = (request.args.get('delta') or '').strip()
+        pre_qty = (request.args.get('quantity') or '').strip()
         if pre_sfid:
             form_data['sfid'] = pre_sfid
         if pre_l_sfid:
             form_data['l_sfid'] = pre_l_sfid
-        if pre_delta:
-            form_data['delta'] = pre_delta
+        # Determine current qty for initial display
+        if pre_sfid:
+            try:
+                datarepo_path = get_datarepo_path()
+                cache = inventory_onhand(datarepo_path, part=pre_sfid)
+                by_loc = cache.get('by_location', {}) or {}
+                # Resolve default location if not provided
+                loc = pre_l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+                if loc:
+                    try:
+                        current_qty = int(by_loc.get(loc, 0) or 0)
+                    except Exception:
+                        current_qty = 0
+                else:
+                    current_qty = None
+            except Exception:
+                current_qty = None
+        if pre_qty:
+            form_data['quantity'] = pre_qty
+        elif current_qty is not None:
+            form_data['quantity'] = current_qty
 
     if request.method == 'POST':
         # Preserve form values on error for re-display
@@ -1018,31 +1038,65 @@ def inventory_adjust():
             sfid = (request.form.get('sfid') or '').strip()
             # Canonical field name is l_sfid; support legacy 'location' as fallback
             location = (request.form.get('l_sfid') or '').strip() or (request.form.get('location') or '').strip() or None
-            delta_raw = (request.form.get('delta') or '0').strip()
+            qty_raw = (request.form.get('quantity') or '').strip()
             if not sfid:
                 raise ValueError('Missing required field: sfid')
+            if qty_raw == '':
+                raise ValueError('Missing required field: quantity')
             try:
-                delta = int(delta_raw)
+                new_qty = int(qty_raw)
             except Exception:
-                raise ValueError('delta must be an integer (can be negative)')
+                raise ValueError('quantity must be an integer >= 0')
+            if new_qty < 0:
+                raise ValueError('quantity must be >= 0')
             # Optional reason passthrough for auditability
             reason = (request.form.get('reason') or '').strip() or None
 
             datarepo_path = get_datarepo_path()
-            def _mutate():
-                return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
-            _ = _run_repo_txn(
-                datarepo_path,
-                _mutate,
-            )
-            loc_msg = location or 'default location'
-            flash(f"Adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
-            return redirect(url_for('inventory_view', item_id=sfid))
+            # Compute current quantity at target location (resolving default if needed)
+            cache = inventory_onhand(datarepo_path, part=sfid)
+            by_loc = cache.get('by_location', {}) or {}
+            loc = location or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+            if not loc:
+                raise ValueError('location is required (or set sfdatarepo.yml: inventory.default_location)')
+            try:
+                cur_qty = int(by_loc.get(loc, 0) or 0)
+            except Exception:
+                cur_qty = 0
+            delta = int(new_qty - cur_qty)
+            if delta == 0:
+                # No change to apply
+                current_qty = cur_qty
+                flash('No change: quantity unchanged.', 'info')
+                # fall through to re-render form with info
+            else:
+                def _mutate():
+                    return inventory_post(datarepo_path, sfid, delta, loc, reason=reason)
+                _ = _run_repo_txn(
+                    datarepo_path,
+                    _mutate,
+                )
+                flash(f"Set '{sfid}' at {loc} to {new_qty} (Δ {delta})", 'success')
+                return redirect(url_for('inventory_view', item_id=sfid))
         except Exception as e:
             flash(f'Error adjusting quantity: {e}', 'error')
             # fall through to re-render form with previous values
 
-    return render_template('inventory/adjust.html', field_specs=field_specs, form_data=form_data)
+        # Compute current qty for redisplay if possible
+        try:
+            sfid = form_data.get('sfid')
+            l_sfid = form_data.get('l_sfid') or form_data.get('location')
+            if sfid:
+                datarepo_path = get_datarepo_path()
+                cache = inventory_onhand(datarepo_path, part=sfid)
+                by_loc = cache.get('by_location', {}) or {}
+                loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+                if loc:
+                    current_qty = int(by_loc.get(loc, 0) or 0)
+        except Exception:
+            pass
+
+    return render_template('inventory/adjust.html', field_specs=field_specs, form_data=form_data, current_qty=current_qty)
 
 # -------------------------------
 # Entities module (canonical metadata)
@@ -1461,12 +1515,14 @@ def api_inventory_view(item_id):
 
 @app.route('/api/inventory/adjust', methods=['POST'])
 def api_inventory_adjust():
-    """Adjust inventory quantity for a part at an optional location via JSON.
+    """Adjust inventory using delta or absolute quantity via JSON.
 
     Request JSON body:
       - sfid: part id (required)
-      - l_sfid or location: location id/name (optional; defaults to None/default location)
-      - delta: signed integer (required)
+      - l_sfid or location: location id/name (optional; defaults to repo inventory.default_location)
+      - quantity: absolute non-negative integer (preferred)
+        or
+      - delta: signed integer
 
     Response JSON on success includes updated totals and by_location.
     """
@@ -1476,10 +1532,51 @@ def api_inventory_adjust():
         location = (str(payload.get('l_sfid', '')).strip() or str(payload.get('location', '')).strip() or None)
         if not sfid:
             return jsonify({'success': False, 'error': 'Missing required field: sfid'}), 400
-        try:
-            delta = int(payload.get('delta', 0))
-        except Exception:
-            return jsonify({'success': False, 'error': 'delta must be an integer'}), 400
+
+        datarepo_path = get_datarepo_path()
+
+        # Resolve target location (respect default if not provided)
+        loc = location or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+        if not loc:
+            return jsonify({'success': False, 'error': 'location is required (or set sfdatarepo.yml: inventory.default_location)'}), 400
+
+        # Determine delta
+        delta = None
+        if 'quantity' in payload and payload.get('quantity') is not None and str(payload.get('quantity')).strip() != '':
+            try:
+                new_qty = int(payload.get('quantity'))
+            except Exception:
+                return jsonify({'success': False, 'error': 'quantity must be an integer'}), 400
+            if new_qty < 0:
+                return jsonify({'success': False, 'error': 'quantity must be >= 0'}), 400
+            cache = inventory_onhand(datarepo_path, part=sfid)
+            by_loc = cache.get('by_location', {}) or {}
+            try:
+                cur_qty = int(by_loc.get(loc, 0) or 0)
+            except Exception:
+                cur_qty = 0
+            delta = int(new_qty - cur_qty)
+        else:
+            try:
+                delta = int(payload.get('delta', 0))
+            except Exception:
+                return jsonify({'success': False, 'error': 'delta must be an integer'}), 400
+
+        if delta == 0:
+            # No-op; return current state
+            cache = inventory_onhand(datarepo_path, part=sfid)
+            by_loc = cache.get('by_location', {}) or {}
+            new_qty = int(by_loc.get(loc, 0) or 0)
+            return jsonify({
+                'success': True,
+                'sfid': sfid,
+                'l_sfid': loc,
+                'delta': 0,
+                'total': cache.get('total', 0),
+                'by_location': by_loc,
+                'new_qty': new_qty,
+            })
+
         # Optional reason passthrough for auditability
         reason = payload.get('reason')
         try:
@@ -1489,10 +1586,8 @@ def api_inventory_adjust():
         if not reason:
             reason = None
 
-        datarepo_path = get_datarepo_path()
-
         def _mutate():
-            return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
+            return inventory_post(datarepo_path, sfid, delta, loc, reason=reason)
 
         _ = _run_repo_txn(
             datarepo_path,
@@ -1501,15 +1596,51 @@ def api_inventory_adjust():
 
         cache = inventory_onhand(datarepo_path, part=sfid)
         by_loc = cache.get('by_location', {}) or {}
-        new_qty = (by_loc.get(location) if location is not None else None)
+        new_qty = int(by_loc.get(loc, 0) or 0)
         return jsonify({
             'success': True,
             'sfid': sfid,
-            'l_sfid': location,
+            'l_sfid': loc,
             'delta': delta,
             'total': cache.get('total', 0),
             'by_location': by_loc,
             'new_qty': new_qty,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/inventory/onhand', methods=['GET'])
+def api_inventory_onhand():
+    """Return current on-hand info for a part and optional location.
+
+    Query params:
+      - sfid (required)
+      - l_sfid or location (optional)
+    """
+    try:
+        sfid = (request.args.get('sfid') or '').strip()
+        if not sfid:
+            return jsonify({'success': False, 'error': 'Missing required parameter: sfid'}), 400
+        l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
+        datarepo_path = get_datarepo_path()
+        cache = inventory_onhand(datarepo_path, part=sfid)
+        by_loc = cache.get('by_location', {}) or {}
+        # Resolve default location if not provided
+        loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+        loc_qty = None
+        if loc:
+            try:
+                loc_qty = int(by_loc.get(loc, 0) or 0)
+            except Exception:
+                loc_qty = 0
+        return jsonify({
+            'success': True,
+            'sfid': sfid,
+            'l_sfid': loc,
+            'uom': cache.get('uom'),
+            'total': cache.get('total', 0),
+            'by_location': by_loc,
+            'location_qty': loc_qty,
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400

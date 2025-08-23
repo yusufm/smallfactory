@@ -6,7 +6,7 @@
 <div class="content-container">
   <div class="max-w-md mx-auto">
     <h1 class="text-2xl font-bold text-gray-900 mb-4">Quick Adjust</h1>
-    <p class="text-sm text-gray-600 mb-6">Scan or type an item and location, then enter a signed adjustment (use negatives to subtract).</p>
+    <p class="text-sm text-gray-600 mb-6">Scan or type an item and location, then set the new absolute quantity. We'll compute the delta for you.</p>
 
     <form method="POST" class="space-y-5">
       <div>
@@ -26,26 +26,29 @@
       </div>
 
       <div>
-        <label for="delta" class="block text-sm font-medium text-gray-700">Adjustment (Δ) <span class="text-red-500">*</span></label>
+        <div class="flex items-baseline justify-between">
+          <label for="quantity" class="block text-sm font-medium text-gray-700">Quantity <span class="text-red-500">*</span></label>
+          <div class="text-xs text-gray-600">Current: <span id="current-qty" class="font-semibold">{{ current_qty if current_qty is not none else '—' }}</span></div>
+        </div>
         <div class="flex items-center gap-2 mt-1">
           <div class="flex-1">
-            <input type="number" name="delta" id="delta" step="1"
+            <input type="number" name="quantity" id="quantity" step="1" min="0"
                    class="block w-full border border-gray-300 rounded-md px-3 py-3 text-base focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                   placeholder="e.g. -5 or 10" value="{{ form_data.get('delta', '') or 0 }}" required>
+                   placeholder="e.g. 0, 5, 12" value="{{ form_data.get('quantity', '') }}" required>
           </div>
           <div class="flex gap-1">
-            <button type="button" data-delta="-10" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-10</button>
-            <button type="button" data-delta="-1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-1</button>
-            <button type="button" data-delta="+1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+1</button>
-            <button type="button" data-delta="+10" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+10</button>
+            <button type="button" data-adjust="-10" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-10</button>
+            <button type="button" data-adjust="-1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">-1</button>
+            <button type="button" data-adjust="+1" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+1</button>
+            <button type="button" data-adjust="+10" class="px-3 py-2 text-sm border rounded-md text-gray-700 bg-white">+10</button>
           </div>
         </div>
-        <p class="mt-1 text-xs text-gray-500">Use quick buttons to adjust the value.</p>
+        <p class="mt-1 text-xs text-gray-500">Tip: use quick buttons to nudge the absolute quantity. Quantity cannot be negative.</p>
       </div>
 
       <div class="pt-2 flex gap-3">
         <a href="{{ url_for('inventory_list') }}" class="flex-1 text-center px-4 py-3 border border-gray-300 rounded-md text-base font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</a>
-        <button type="submit" class="flex-1 px-4 py-3 border border-transparent rounded-md text-base font-medium text-white bg-blue-600 hover:bg-blue-700">Adjust</button>
+        <button type="submit" class="flex-1 px-4 py-3 border border-transparent rounded-md text-base font-medium text-white bg-blue-600 hover:bg-blue-700">Save</button>
       </div>
     </form>
   </div>
@@ -54,23 +57,59 @@
 
 {% block scripts %}
 <script>
-  // Autofocus item field on load
+  // Autofocus and dynamic current quantity fetch
   document.addEventListener('DOMContentLoaded', function(){
-    try {
-      const sfid = document.getElementById('sfid');
-      if (sfid) sfid.focus();
-      // Quick delta buttons
-      document.querySelectorAll('button[data-delta]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const dv = document.getElementById('delta');
-          const inc = parseInt(btn.getAttribute('data-delta'), 10);
-          let v = parseInt(dv.value || '0', 10);
-          if (isNaN(v)) v = 0;
-          dv.value = v + inc;
-          dv.dispatchEvent(new Event('input', { bubbles: true }));
-        });
+    const sfidEl = document.getElementById('sfid');
+    const locEl = document.getElementById('l_sfid');
+    const qtyEl = document.getElementById('quantity');
+    const curEl = document.getElementById('current-qty');
+
+    const clampNonNegative = (n) => Math.max(0, n|0);
+
+    async function fetchOnhand(overwriteQty = false) {
+      try {
+        const sfid = (sfidEl?.value || '').trim();
+        if (!sfid) { if (curEl) curEl.textContent = '—'; return; }
+        const l = (locEl?.value || '').trim();
+        const params = new URLSearchParams({ sfid });
+        if (l) params.set('l_sfid', l);
+        const res = await fetch(`/api/inventory/onhand?${params.toString()}`);
+        const data = await res.json();
+        if (!data?.success) throw new Error(data?.error || 'Failed to load on-hand');
+        const q = (typeof data.location_qty === 'number') ? data.location_qty : null;
+        if (curEl) curEl.textContent = (q === null ? '—' : String(q));
+        // If qty is empty, prefill with current
+        if (qtyEl && (overwriteQty || qtyEl.value === '' || qtyEl.value === null)) {
+          if (q !== null) qtyEl.value = String(q);
+        }
+      } catch (e) {
+        console.error(e);
+        if (curEl) curEl.textContent = '—';
+      }
+    }
+
+    try { if (sfidEl) sfidEl.focus(); } catch(e) {}
+
+    // Fetch current qty when sfid or location changes
+    if (sfidEl) sfidEl.addEventListener('change', () => fetchOnhand(true));
+    if (locEl) locEl.addEventListener('change', () => fetchOnhand(true));
+    // Also on blur for good measure
+    if (sfidEl) sfidEl.addEventListener('blur', () => fetchOnhand(false));
+    if (locEl) locEl.addEventListener('blur', () => fetchOnhand(false));
+    // Initial fetch
+    fetchOnhand();
+
+    // Quick absolute adjust buttons
+    document.querySelectorAll('button[data-adjust]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inc = parseInt(btn.getAttribute('data-adjust'), 10);
+        let v = parseInt(qtyEl?.value || '0', 10);
+        if (isNaN(v)) v = 0;
+        v = clampNonNegative(v + inc);
+        if (qtyEl) qtyEl.value = String(v);
+        qtyEl?.dispatchEvent(new Event('input', { bubbles: true }));
       });
-    } catch(e) { console.error(e); }
+    });
   });
 </script>
 {% endblock %}
