@@ -79,29 +79,19 @@ http://127.0.0.1:8080
 - **QR‑first workflows** — Label, scan, and act quickly on the floor.
 
 ![Inventory list](docs/img/screenshots/inventory_dashboard.png)
-  <div style="display: flex; flex-wrap: wrap;">
-  <div style="width: 33.33%;">
-    <img src="docs/img/screenshots/mobile_adjust_scan_1.jpeg" style="max-width: 100%;">
-  </div>
-  <div style="width: 33.33%;">
-    <img src="docs/img/screenshots/mobile_adjust_scan_2.jpeg" style="max-width: 100%;">
-  </div>
-</div>
+<p>
+  <img src="docs/img/screenshots/mobile_adjust_scan_1.jpeg" width="250">
+  <img src="docs/img/screenshots/mobile_adjust_scan_2.jpeg" width="250">
+</p>
 
 ### Vision
 Use a camera or upload to extract parts from invoices and batch-create entities.
 
-<div style="display: flex; flex-wrap: wrap;">
-  <div style="width: 33.33%;">
-    <img src="docs/img/screenshots/mobile_partscan_1.jpeg" style="max-width: 100%;">
-  </div>
-  <div style="width: 33.33%;">
-    <img src="docs/img/screenshots/mobile_partscan_2.jpeg" style="max-width: 100%;">
-  </div>
-  <div style="width: 33.33%;">
-    <img src="docs/img/screenshots/mobile_partscan_3.jpeg" style="max-width: 100%;">
-  </div>
-</div>
+<p>
+  <img src="docs/img/screenshots/mobile_partscan_1.jpeg" width="250">
+  <img src="docs/img/screenshots/mobile_partscan_2.jpeg" width="250">
+  <img src="docs/img/screenshots/mobile_partscan_3.jpeg" width="250">
+</p>
 
 ### Platform
 - **Git‑native workflow** — Your product data lives in Git. Simple, transparent, and portable.
