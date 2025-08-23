@@ -23,8 +23,8 @@ PART_ENTITY_DEFAULT_FIELD_SPECS = {
         "required": False,
     },
     "description": {
-        "description": "Freeform description (<=500 chars).",
-        "regex": r"^$|^.{1,500}$",
+        "description": "Extended freeform description of the part.",
+        "multiline": True,
         "required": False,
     },
     "manufacturer": {
@@ -44,7 +44,7 @@ PART_ENTITY_DEFAULT_FIELD_SPECS = {
     },
     "notes": {
         "description": "Additional notes.",
-        "regex": r"^$|^.{1,500}$",
+        "multiline": True,
         "required": False,
     },
     "spn": {

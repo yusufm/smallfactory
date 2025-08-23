@@ -111,7 +111,7 @@ Top‑level directories (recap):
 
 - Consumers MUST obtain a resolved BOM tree via `resolved_bom_tree(...)`.
 - The returned node schema is the contract and MUST be treated as read-only by callers:
-  - `parent, use, name, qty, rev_spec, rev, level, is_alt, alternates_group, cumulative_qty, cycle`.
+  - `parent, use, name, qty, rev_spec, rev, level, is_alt, alternates_group, gross_qty, cycle`.
 - UI layers MAY enrich this with presentation-only data (e.g., on-hand totals, formatting), but MUST NOT alter resolution logic.
 
 ### Revisions (normative)

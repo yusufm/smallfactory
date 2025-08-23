@@ -1031,7 +1031,7 @@ def main():
         """Use core resolved_bom_tree() and enrich with on-hand totals for CLI output.
 
         Returns nodes with fields compatible with previous CLI output:
-        parent, use, name, qty, rev, level, is_alt, alternates_group, cumulative_qty, cycle, onhand_total.
+        parent, use, name, qty, rev, level, is_alt, alternates_group, gross_qty, cycle, onhand_total.
         """
         core_nodes = ent_resolved_bom_tree(datarepo_path, root_sfid, max_depth=max_depth)
         onhand_cache: dict[str, int | None] = {}
@@ -1064,7 +1064,7 @@ def main():
                 "level": n.get("level"),
                 "is_alt": n.get("is_alt", False),
                 "alternates_group": n.get("alternates_group"),
-                "cumulative_qty": n.get("cumulative_qty"),
+                "gross_qty": n.get("gross_qty"),
                 "cycle": n.get("cycle", False),
                 "onhand_total": get_onhand_total(n.get("use")),
             })
@@ -1095,11 +1095,11 @@ def main():
                     show_name = f" [{name}]" if name and name != use else ""
                     qty = n.get("qty", 1)
                     rev = n.get("rev", "released")
-                    cum = n.get("cumulative_qty")
-                    cum_s = f" (cum={cum})" if cum is not None else ""
+                    gross = n.get("gross_qty")
+                    gross_s = f" (gross={gross})" if gross is not None else ""
                     oh = n.get("onhand_total")
                     oh_s = f" onhand={oh}" if oh is not None else ""
-                    print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{oh_s}{cum_s}")
+                    print(f"{indent}- {tag}{qty} x {use}{show_name} rev={rev}{oh_s}{gross_s}")
 
     def cmd_bom_add(args):
         datarepo_path = _repo_path()

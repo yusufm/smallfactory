@@ -71,8 +71,11 @@
 
       <div class="flex justify-end space-x-3">
         <a href="{{ url_for('entities_list') }}" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancel</a>
+        <button type="submit" name="action" value="create_another" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+          <i class="fas fa-redo mr-2"></i>Save &amp; Create Another
+        </button>
         <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
-          <i class="fas fa-user-plus mr-2"></i>Create Entity
+          <i class="fas fa-user-plus mr-2"></i>Save
         </button>
       </div>
     </form>
@@ -83,6 +86,10 @@
 {% block scripts %}
 <script id="form-data" type="application/json">{{ (form_data or {}) | tojson }}</script>
 <script>
+// Persist working form state across re-renders while typing SFID
+const INITIAL_FORM_DATA = JSON.parse(document.getElementById('form-data').textContent || '{}');
+let sfAddFormState = Object.assign({}, INITIAL_FORM_DATA);
+
 async function fetchSpecsForSFID(sfid){
   if(!sfid) return null;
   try {
@@ -134,6 +141,14 @@ function addCustomField(){
   container.appendChild(div);
 }
 
+function syncStateFromForm(){
+  const formEl = document.querySelector('form');
+  formEl.querySelectorAll('#required-fields-grid input, #required-fields-grid textarea, #optional-fields-grid input, #optional-fields-grid textarea').forEach(el => {
+    const key = (el.name || el.id || '').trim();
+    if (key) sfAddFormState[key] = el.value;
+  });
+}
+
 async function renderFields(){
   const sfid = document.getElementById('sfid').value.trim();
   const specs = await fetchSpecsForSFID(sfid) || {};
@@ -141,22 +156,37 @@ async function renderFields(){
   const optGrid = document.getElementById('optional-fields-grid');
   const reqWrap = document.getElementById('required-fields');
   const optWrap = document.getElementById('optional-fields');
+  // Capture any current user-entered values before we clear/re-render and persist to state
+  const currentValues = {};
+  document.querySelectorAll('#required-fields-grid input, #required-fields-grid textarea, #optional-fields-grid input, #optional-fields-grid textarea').forEach(el => {
+    const key = (el.name || el.id || '').trim();
+    if (key) currentValues[key] = el.value;
+  });
+  const mergedData = Object.assign({}, sfAddFormState, currentValues); // currentValues take precedence
+  sfAddFormState = mergedData; // persist across renders
+  // Now clear grids for re-render
   reqGrid.innerHTML = '';
   optGrid.innerHTML = '';
-  const formData = JSON.parse(document.getElementById('form-data').textContent || '{}');
   // Split specs into required vs optional
   const entries = Object.entries(specs);
   const required = entries.filter(([k,v]) => v && v.required);
   const optional = entries.filter(([k,v]) => !v || !v.required);
   if(required.length){ reqWrap.classList.remove('hidden'); } else { reqWrap.classList.add('hidden'); }
   if(optional.length){ optWrap.classList.remove('hidden'); } else { optWrap.classList.add('hidden'); }
-  required.forEach(([name, spec]) => { reqGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, formData[name]||'')); });
-  optional.forEach(([name, spec]) => { optGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, formData[name]||'')); });
+  required.forEach(([name, spec]) => { reqGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, mergedData[name]||'')); });
+  optional.forEach(([name, spec]) => { optGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, mergedData[name]||'')); });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   const sfidEl = document.getElementById('sfid');
   sfidEl.addEventListener('input', renderFields);
+  // Delegate input events to persist state as user types
+  const formEl = document.querySelector('form');
+  formEl.addEventListener('input', (e) => {
+    const t = e.target;
+    const key = (t.name || t.id || '').trim();
+    if (key) { sfAddFormState[key] = t.value; }
+  });
   // Initial render if prefilled
   if(sfidEl.value) { renderFields(); }
   // If invoked with ?scan=1, ensure p_ prefix and auto-open camera
@@ -273,13 +303,15 @@ formEl.addEventListener('submit', function(){
 
     // Add any remaining fields that look useful and are not known/spec-defined
     Object.keys(extracted || {}).forEach(k => {
-      if (['supplier_name','invoice_number','invoice_date','unit_price','currency','quantity','uom','location_l_sfid','model'].includes(k)) return;
+      if (["supplier_name","invoice_number","invoice_date","unit_price","currency","quantity","uom","location_l_sfid","model"].includes(k)) return;
       if (k === 'sfid') return;
       if (mapping.name.includes(k) || mapping.manufacturer.includes(k) || mapping.mpn.includes(k) || mapping.description.includes(k) || mapping.tags.includes(k)) return;
       if (known.has(k)) { setField(k, extracted[k]); return; }
       // Unknown — inject as optional
       setField(k, Array.isArray(extracted[k]) ? extracted[k].join(', ') : extracted[k]);
     });
+    // Sync state so values survive any subsequent re-renders while typing SFID
+    syncStateFromForm();
   }
 
   async function handleFile(file){

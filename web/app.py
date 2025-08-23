@@ -624,8 +624,9 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
         name, email = _extract_identity_from_headers(request)
         def _do_mutate_and_autocommit():
             r = mutate_fn()
-            # Ensure a commit exists if web autocommit is enabled
-            _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths or [])
+            # Ensure a commit exists if web autocommit is enabled and paths provided
+            if autocommit_paths:
+                _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths)
             return r
         if name and email:
             with _with_git_identity(name, email):
@@ -669,12 +670,18 @@ def _parse_iso_ts(*values) -> str:
     We do not parse to datetime to avoid tz pitfalls in templates; lexical sort is ok for ISO.
     """
     for v in values:
+        # Treat None/null-like as empty
+        if v is None:
+            continue
         try:
             s = str(v).strip()
         except Exception:
             s = ""
-        if s:
-            return s
+        if not s:
+            continue
+        if s.lower() in {"none", "null"}:
+            continue
+        return s
     return ""
 
 
@@ -798,7 +805,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             name = b.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
         except Exception:
             name = sfid
-        opened_at = _parse_iso_ts(b.get('opened_at'))
+        opened_at = _parse_iso_ts(b.get('opened_at'), b.get('created_at'), b.get('datetime'))
         closed_at = _parse_iso_ts(b.get('closed_at'))
         sort_ts = _parse_iso_ts(closed_at, opened_at)
         recent_builds.append({
@@ -874,38 +881,51 @@ def inventory_list():
     """Display all inventory items in a table."""
     try:
         datarepo_path = get_datarepo_path()
+        # Inventory summary (existing parts with journals/caches)
         summary = inventory_onhand(datarepo_path)
-        parts = summary.get('parts', []) if isinstance(summary, dict) else []
-        # Enrich with entity names and per-location breakdown
+        summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
+
+        # All canonical part entities
+        entities = list_entities(datarepo_path) or []
+        part_entities = [e for e in entities if str(e.get('sfid', '')).startswith('p_')]
+
+        # Build items list: include every part, defaulting to zero if absent from inventory
         items = []
-        for p in parts:
-            sfid = p.get('sfid')
+        for ent in part_entities:
+            sfid = ent.get('sfid')
             if not sfid:
                 continue
-            # Entity metadata for name (best-effort)
-            try:
-                ent = get_entity(datarepo_path, sfid)
-                name = ent.get('name', sfid)
-                description = ent.get('description', '')
-                category = ent.get('category', '')
-            except Exception:
-                name = sfid
-                description = ''
-                category = ''
-            # Per-part onhand cache for by-location and total
-            try:
-                cache = inventory_onhand(datarepo_path, part=sfid)
-            except Exception:
-                cache = {}
+            name = ent.get('name', sfid)
+            description = ent.get('description', '')
+            category = ent.get('category', '')
+
+            if sfid in inv_totals:
+                # Populate full cache details (by-location, uom, as_of) for parts that have inventory
+                try:
+                    cache = inventory_onhand(datarepo_path, part=sfid)
+                except Exception:
+                    cache = {}
+                uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
+                total = int(cache.get('total', 0) or 0)
+                by_location = cache.get('by_location', {}) or {}
+                as_of = cache.get('as_of')
+            else:
+                # Zero-quantity default for parts without any inventory activity
+                uom = ent.get('uom', 'ea') or 'ea'
+                total = 0
+                by_location = {}
+                as_of = None
+
             items.append({
                 'sfid': sfid,
                 'name': name,
                 'description': description,
                 'category': category,
-                'uom': cache.get('uom', 'ea'),
-                'total': int(cache.get('total', 0) or 0),
-                'by_location': cache.get('by_location', {}) or {},
-                'as_of': cache.get('as_of'),
+                'uom': uom,
+                'total': total,
+                'by_location': by_location,
+                'as_of': as_of,
             })
         # Optional pre-filtering from dashboard drill-downs
         status = (request.args.get('status') or '').strip().lower()
@@ -1005,15 +1025,15 @@ def inventory_adjust():
                 delta = int(delta_raw)
             except Exception:
                 raise ValueError('delta must be an integer (can be negative)')
+            # Optional reason passthrough for auditability
+            reason = (request.form.get('reason') or '').strip() or None
 
             datarepo_path = get_datarepo_path()
             def _mutate():
-                return inventory_post(datarepo_path, sfid, delta, location)
+                return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
             _ = _run_repo_txn(
                 datarepo_path,
                 _mutate,
-                autocommit_message=f"[smallFactory][web] Inventory post {sfid} @ {location or 'default'} Δ{delta}",
-                autocommit_paths=[f"inventory/{sfid}"]
             )
             loc_msg = location or 'default location'
             flash(f"Adjusted '{sfid}' at {loc_msg} by {delta}", 'success')
@@ -1188,6 +1208,8 @@ def entities_build(sfid):
                 'datetime': ts_iso,
                 'serialnumber': ts_label,
                 'name': f"Build {entity.get('name', sfid)}",
+                'opened_at': ts_iso,
+                'status': 'open',
             }
             # Resolve selected revision to a concrete label for traceability
             try:
@@ -1350,6 +1372,21 @@ def entities_add():
                 autocommit_paths=[f"entities/{sfid}"]
             )
             flash(f"Successfully created entity: {sfid}", 'success')
+            # If the user clicked "Save & Create Another", return to add form
+            action = (request.form.get('action') or '').strip()
+            if action == 'create_another':
+                # Carry over SFID type prefix (e.g., "p_") to the next create form
+                prefix = ''
+                try:
+                    if sfid:
+                        i = sfid.find('_')
+                        if i > 0 and sfid[:i].isalpha():
+                            prefix = sfid[:i+1].lower()
+                except Exception:
+                    prefix = ''
+                if prefix:
+                    return redirect(url_for('entities_add', sfid=prefix))
+                return redirect(url_for('entities_add'))
             if next_url and _is_safe_next(next_url):
                 # If caller indicated which param to update, rewrite the next URL
                 try:
@@ -1422,7 +1459,61 @@ def api_inventory_view(item_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 404
 
-# Entities API endpoints
+@app.route('/api/inventory/adjust', methods=['POST'])
+def api_inventory_adjust():
+    """Adjust inventory quantity for a part at an optional location via JSON.
+
+    Request JSON body:
+      - sfid: part id (required)
+      - l_sfid or location: location id/name (optional; defaults to None/default location)
+      - delta: signed integer (required)
+
+    Response JSON on success includes updated totals and by_location.
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        sfid = str(payload.get('sfid', '')).strip()
+        location = (str(payload.get('l_sfid', '')).strip() or str(payload.get('location', '')).strip() or None)
+        if not sfid:
+            return jsonify({'success': False, 'error': 'Missing required field: sfid'}), 400
+        try:
+            delta = int(payload.get('delta', 0))
+        except Exception:
+            return jsonify({'success': False, 'error': 'delta must be an integer'}), 400
+        # Optional reason passthrough for auditability
+        reason = payload.get('reason')
+        try:
+            reason = str(reason).strip()
+        except Exception:
+            reason = None
+        if not reason:
+            reason = None
+
+        datarepo_path = get_datarepo_path()
+
+        def _mutate():
+            return inventory_post(datarepo_path, sfid, delta, location, reason=reason)
+
+        _ = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+        )
+
+        cache = inventory_onhand(datarepo_path, part=sfid)
+        by_loc = cache.get('by_location', {}) or {}
+        new_qty = (by_loc.get(location) if location is not None else None)
+        return jsonify({
+            'success': True,
+            'sfid': sfid,
+            'l_sfid': location,
+            'delta': delta,
+            'total': cache.get('total', 0),
+            'by_location': by_loc,
+            'new_qty': new_qty,
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 @app.route('/api/entities')
 def api_entities_list():
     try:
@@ -1882,7 +1973,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
             'level': (n.get('level') or 0) + 1,
             'is_alt': n.get('is_alt', False),
             'alternates_group': n.get('alternates_group'),
-            'cumulative_qty': n.get('cumulative_qty'),
+            'gross_qty': n.get('gross_qty'),
             'cycle': n.get('cycle', False),
             'onhand_total': _get_onhand_total(n.get('use')),
         })
@@ -2263,13 +2354,13 @@ def api_bom_deep(sfid):
         fmt = (request.args.get('format') or '').lower()
         if fmt == 'csv':
             # Build CSV from nodes
-            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'cumulative_qty', 'cycle', 'onhand_total']
+            headers = ['parent', 'use', 'name', 'qty', 'rev', 'level', 'is_alt', 'alternates_group', 'gross_qty', 'cycle', 'onhand_total']
             sio = io.StringIO()
             writer = csv.DictWriter(sio, fieldnames=headers)
             writer.writeheader()
             for n in nodes:
                 # Ensure only known headers are written
-                row = {k: n.get(k) for k in headers}
+                row = {k: (n.get('gross_qty') if k == 'gross_qty' else n.get(k)) for k in headers}
                 writer.writerow(row)
             csv_text = sio.getvalue()
             return Response(
