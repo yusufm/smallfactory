@@ -1,7 +1,8 @@
 # smallFactory
  
+ ![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
+
 ## What is smallFactory
-![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
 
 A Git-native toolset for small teams to manage the things they make.
 
