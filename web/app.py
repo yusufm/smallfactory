@@ -670,12 +670,18 @@ def _parse_iso_ts(*values) -> str:
     We do not parse to datetime to avoid tz pitfalls in templates; lexical sort is ok for ISO.
     """
     for v in values:
+        # Treat None/null-like as empty
+        if v is None:
+            continue
         try:
             s = str(v).strip()
         except Exception:
             s = ""
-        if s:
-            return s
+        if not s:
+            continue
+        if s.lower() in {"none", "null"}:
+            continue
+        return s
     return ""
 
 
@@ -799,7 +805,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
             name = b.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
         except Exception:
             name = sfid
-        opened_at = _parse_iso_ts(b.get('opened_at'))
+        opened_at = _parse_iso_ts(b.get('opened_at'), b.get('created_at'), b.get('datetime'))
         closed_at = _parse_iso_ts(b.get('closed_at'))
         sort_ts = _parse_iso_ts(closed_at, opened_at)
         recent_builds.append({
@@ -1202,6 +1208,8 @@ def entities_build(sfid):
                 'datetime': ts_iso,
                 'serialnumber': ts_label,
                 'name': f"Build {entity.get('name', sfid)}",
+                'opened_at': ts_iso,
+                'status': 'open',
             }
             # Resolve selected revision to a concrete label for traceability
             try:
