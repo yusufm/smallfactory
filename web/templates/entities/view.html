@@ -319,6 +319,66 @@
       </div>
 
 
+      <div id="sf-entity-inv-root" class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" data-sfid="{{ entity.sfid }}" data-adjust-url="{{ url_for('api_inventory_adjust') }}">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900">Locations &amp; Quantities</h2>
+          <div class="space-x-2">
+            <a href="{{ url_for('inventory_adjust', sfid=entity.sfid) }}" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors inline-flex items-center">
+              <i class="fas fa-right-left mr-1"></i>Adjust
+            </a>
+          </div>
+        </div>
+        <div class="px-6 py-4">
+          {% if inv and inv.by_location %}
+            <div class="space-y-4">
+              {% for location, quantity in inv.by_location.items() %}
+              <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div class="flex items-center">
+                  <div class="p-2 bg-blue-100 rounded-lg mr-3">
+                    <i class="fas fa-map-marker-alt text-blue-600"></i>
+                  </div>
+                  <div>
+                    <h3 class="text-sm font-medium text-gray-900">{{ location }}</h3>
+                    <p class="text-xs text-gray-500">Storage Location</p>
+                  </div>
+                </div>
+                <div class="sf-loc-row flex flex-col items-start space-y-2" data-location="{{ location }}" data-original="{{ quantity }}" data-delta="0">
+                  <div class="flex items-center space-x-3">
+                    <button type="button" class="sf-dec inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Decrease">
+                      <i class="fas fa-minus"></i>
+                    </button>
+                    <span class="sf-qty-badge inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                      <span class="sf-qty">{{ quantity }}</span> units
+                    </span>
+                    <button type="button" class="sf-inc inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Increase">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                  </div>
+                  <div class="sf-actions-row hidden flex items-center space-x-2">
+                    <button type="button" class="sf-save invisible inline-flex items-center px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                      <i class="fas fa-save mr-1"></i>Save
+                    </button>
+                    <button type="button" class="sf-cancel invisible inline-flex items-center px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs">
+                      <i class="fas fa-rotate-left mr-1"></i>Reset
+                    </button>
+                    <span class="sf-msg text-xs text-gray-500"></span>
+                  </div>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-center py-8">
+              <div class="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <i class="fas fa-map-marker-alt text-gray-400 text-xl"></i>
+              </div>
+              <h3 class="text-sm font-medium text-gray-900 mb-2">No locations assigned</h3>
+              <p class="text-xs text-gray-500 mb-4">Add a location to track quantities</p>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Files</h2>
@@ -1206,6 +1266,95 @@ loadRevisions();
 if(isPart){ bomLoad(); }
 </script>
 <script>
+</script>
+<script>
+// Inventory adjust controls on entity page
+document.addEventListener('DOMContentLoaded', function(){
+  const root = document.getElementById('sf-entity-inv-root');
+  if(!root) return;
+  const sfid = root.getAttribute('data-sfid');
+  const adjustUrl = root.getAttribute('data-adjust-url');
+
+  function setBadgeColor(badgeEl, qty){
+    badgeEl.classList.remove('bg-green-100','text-green-800','bg-red-100','text-red-800');
+    if((parseInt(qty)||0) > 0){
+      badgeEl.classList.add('bg-green-100','text-green-800');
+    }else{
+      badgeEl.classList.add('bg-red-100','text-red-800');
+    }
+  }
+
+  function updateRowUI(row){
+    const qtyEl = row.querySelector('.sf-qty');
+    const badgeEl = row.querySelector('.sf-qty-badge');
+    const saveBtn = row.querySelector('.sf-save');
+    const cancelBtn = row.querySelector('.sf-cancel');
+    const msgEl = row.querySelector('.sf-msg');
+    const actionsRow = row.querySelector('.sf-actions-row');
+    const original = parseInt(row.dataset.original || '0');
+    const delta = parseInt(row.dataset.delta || '0');
+    const newQty = original + delta;
+    if(qtyEl) qtyEl.textContent = newQty;
+    if(badgeEl) setBadgeColor(badgeEl, newQty);
+    if(delta !== 0){
+      if(saveBtn) saveBtn.classList.remove('invisible');
+      if(cancelBtn) cancelBtn.classList.remove('invisible');
+      if(actionsRow) actionsRow.classList.remove('hidden');
+    }else{
+      if(saveBtn) saveBtn.classList.add('invisible');
+      if(cancelBtn) cancelBtn.classList.add('invisible');
+      if(msgEl) msgEl.textContent = '';
+      if(actionsRow) actionsRow.classList.add('hidden');
+    }
+  }
+
+  document.querySelectorAll('#sf-entity-inv-root .sf-loc-row').forEach(function(row){
+    const inc = row.querySelector('.sf-inc');
+    const dec = row.querySelector('.sf-dec');
+    const save = row.querySelector('.sf-save');
+    const cancel = row.querySelector('.sf-cancel');
+    const msgEl = row.querySelector('.sf-msg');
+
+    function setSavingState(isSaving){ [inc,dec,save,cancel].forEach(btn=>{ if(btn) btn.disabled = isSaving; }); }
+
+    if(inc) inc.addEventListener('click', function(){ row.dataset.delta = String((parseInt(row.dataset.delta||'0')||0)+1); updateRowUI(row); });
+    if(dec) dec.addEventListener('click', function(){ row.dataset.delta = String((parseInt(row.dataset.delta||'0')||0)-1); updateRowUI(row); });
+    if(cancel) cancel.addEventListener('click', function(){ row.dataset.delta = '0'; updateRowUI(row); });
+    if(save) save.addEventListener('click', async function(){
+      const delta = parseInt(row.dataset.delta||'0');
+      if(delta === 0) return;
+      const location = row.dataset.location || null;
+      setSavingState(true);
+      if(msgEl) msgEl.textContent = 'Saving...';
+      try{
+        const resp = await fetch(adjustUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sfid: sfid, l_sfid: location, delta: delta })
+        });
+        const data = await resp.json();
+        if(!data.success) throw new Error(data.error || 'Failed to adjust');
+        const byLoc = data.by_location || {};
+        const newQty = (location !== null) ? (byLoc[location] ?? null) : null;
+        if(newQty !== null){
+          row.dataset.original = String(parseInt(newQty));
+        }else{
+          const orig = parseInt(row.dataset.original||'0');
+          row.dataset.original = String(orig + delta);
+        }
+        row.dataset.delta = '0';
+        updateRowUI(row);
+        if(msgEl){ msgEl.textContent = 'Saved'; setTimeout(()=>{ if(msgEl.textContent==='Saved') msgEl.textContent=''; }, 1500); }
+      }catch(err){
+        if(msgEl) msgEl.textContent = 'Error: ' + (err.message || err);
+      }finally{
+        setSavingState(false);
+      }
+    });
+
+    updateRowUI(row);
+  });
+});
 </script>
 {% endblock %}
 
