@@ -152,6 +152,12 @@
               <dd id="ovw-description-display" class="mt-1 text-sm text-gray-900 whitespace-pre-wrap break-words">{{ entity.get('description') }}</dd>
             </div>
             {% endif %}
+            {% if entity.get('notes') %}
+            <div class="sm:col-span-2">
+              <dt class="text-sm font-medium text-gray-600">Notes</dt>
+              <dd id="ovw-notes-display" class="mt-1 text-sm text-gray-900 whitespace-pre-wrap break-words">{{ entity.get('notes') }}</dd>
+            </div>
+            {% endif %}
             {% if entity.get('category') %}
             <div>
               <dt class="text-sm font-medium text-gray-600">Category</dt>
@@ -259,6 +265,10 @@
               <div class="sm:col-span-2">
                 <label class="block text-xs font-medium text-gray-700">Description</label>
                 <textarea id="ovw-description" rows="3" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">{{ entity.get('description','') }}</textarea>
+              </div>
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium text-gray-700">Notes</label>
+                <textarea id="ovw-notes" rows="7" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">{{ entity.get('notes','') }}</textarea>
               </div>
               <div>
                 <label class="block text-xs font-medium text-gray-700">Category</label>
@@ -467,6 +477,7 @@ let ovwInitialState = null;
 function getOverviewCurrentState(){
   const name = document.getElementById('ovw-name')?.value || '';
   const description = document.getElementById('ovw-description')?.value || '';
+  const notes = document.getElementById('ovw-notes')?.value || '';
   const category = document.getElementById('ovw-category')?.value || '';
   const policy = document.getElementById('ovw-policy')?.value || '';
   const uom = document.getElementById('ovw-uom')?.value || '';
@@ -484,7 +495,7 @@ function getOverviewCurrentState(){
       if(k){ attrs[k] = v; }
     }
   });
-  return { name, description, category, policy, uom, tags, attrs, serialnumber, datetime };
+  return { name, description, notes, category, policy, uom, tags, attrs, serialnumber, datetime };
 }
 function toggleOverviewMode(){
   const disp = document.getElementById('overview-display');
@@ -550,6 +561,7 @@ function ovwAddAttrRow(){
 async function saveOverview(){
   const name = document.getElementById('ovw-name').value;
   const description = document.getElementById('ovw-description').value;
+  const notes = document.getElementById('ovw-notes').value;
   const category = document.getElementById('ovw-category').value;
   const policy = document.getElementById('ovw-policy').value;
   const uom = document.getElementById('ovw-uom').value;
@@ -573,7 +585,7 @@ async function saveOverview(){
         if(k){ attrs[k] = v; }
       }
     });
-    const updates = { name, description, category, policy, uom, tags, attrs };
+    const updates = { name, description, notes, category, policy, uom, tags, attrs };
     if(serialnumber !== undefined) updates.serialnumber = serialnumber;
     if(datetime !== undefined) updates.datetime = datetime;
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
@@ -586,6 +598,7 @@ async function saveOverview(){
     const setText = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt||''; };
     setText('ovw-name-display', name||SFID);
     setText('ovw-description-display', description||'');
+    setText('ovw-notes-display', notes||'');
     setText('ovw-category-display', category||'');
     // Build fields
     if(serialnumber !== undefined) setText('ovw-serialnumber-display', serialnumber || '—');
