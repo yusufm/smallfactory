@@ -1170,7 +1170,21 @@ def entities_view(sfid):
                     'alternates_group': alternates_group,
                 })
 
-        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, released_rev=released_rev)
+        # Inventory on-hand for this entity (if part)
+        inv_cache = {}
+        try:
+            inv = inventory_onhand(datarepo_path, part=sfid)
+            if isinstance(inv, dict):
+                inv_cache = {
+                    'uom': inv.get('uom'),
+                    'total': inv.get('total', 0),
+                    'by_location': inv.get('by_location', {}) or {},
+                    'as_of': inv.get('as_of'),
+                }
+        except Exception:
+            inv_cache = {}
+
+        return render_template('entities/view.html', entity=entity, bom_rows=bom_rows, released_rev=released_rev, inv=inv_cache)
     except Exception as e:
         flash(f'Error viewing entity: {e}', 'error')
         return redirect(url_for('entities_list'))
