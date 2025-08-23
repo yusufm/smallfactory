@@ -87,23 +87,27 @@
                                         <p class="text-xs text-gray-500">Storage Location</p>
                                     </div>
                                 </div>
-                                <div class="flex items-center space-x-3 sf-loc-row" data-location="{{ location }}" data-original="{{ quantity }}" data-delta="0">
-                                    <button type="button" class="sf-dec inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Decrease">
-                                        <i class="fas fa-minus"></i>
-                                    </button>
-                                    <span class="sf-qty-badge inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
-                                        <span class="sf-qty">{{ quantity }}</span> units
-                                    </span>
-                                    <button type="button" class="sf-inc inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Increase">
-                                        <i class="fas fa-plus"></i>
-                                    </button>
-                                    <button type="button" class="sf-save invisible inline-flex items-center px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm">
-                                        <i class="fas fa-save mr-1"></i>Save
-                                    </button>
-                                    <button type="button" class="sf-cancel invisible inline-flex items-center px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs">
-                                        <i class="fas fa-rotate-left mr-1"></i>Reset
-                                    </button>
-                                    <span class="sf-msg text-xs text-gray-500"></span>
+                                <div class="sf-loc-row flex flex-col items-start space-y-2" data-location="{{ location }}" data-original="{{ quantity }}" data-delta="0">
+                                    <div class="flex items-center space-x-3">
+                                        <button type="button" class="sf-dec inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Decrease">
+                                            <i class="fas fa-minus"></i>
+                                        </button>
+                                        <span class="sf-qty-badge inline-flex items-center px-3 py-1 rounded-full text-sm font-medium {% if quantity > 0 %}bg-green-100 text-green-800{% else %}bg-red-100 text-red-800{% endif %}">
+                                            <span class="sf-qty">{{ quantity }}</span> units
+                                        </span>
+                                        <button type="button" class="sf-inc inline-flex items-center justify-center w-8 h-8 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100" aria-label="Increase">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                    <div class="sf-actions-row hidden flex items-center space-x-2">
+                                        <button type="button" class="sf-save invisible inline-flex items-center px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm">
+                                            <i class="fas fa-save mr-1"></i>Save
+                                        </button>
+                                        <button type="button" class="sf-cancel invisible inline-flex items-center px-2 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs">
+                                            <i class="fas fa-rotate-left mr-1"></i>Reset
+                                        </button>
+                                        <span class="sf-msg text-xs text-gray-500"></span>
+                                    </div>
                                 </div>
                             </div>
                             {% endfor %}
@@ -200,6 +204,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveBtn = row.querySelector('.sf-save');
     const cancelBtn = row.querySelector('.sf-cancel');
     const msgEl = row.querySelector('.sf-msg');
+    const actionsRow = row.querySelector('.sf-actions-row');
     const original = parseInt(row.dataset.original || '0');
     const delta = parseInt(row.dataset.delta || '0');
     const newQty = original + delta;
@@ -208,10 +213,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (delta !== 0) {
       saveBtn.classList.remove('invisible');
       cancelBtn.classList.remove('invisible');
+      if (actionsRow) actionsRow.classList.remove('hidden');
     } else {
       saveBtn.classList.add('invisible');
       cancelBtn.classList.add('invisible');
       if (msgEl) msgEl.textContent = '';
+      if (actionsRow) actionsRow.classList.add('hidden');
     }
   }
 
