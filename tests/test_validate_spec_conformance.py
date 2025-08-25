@@ -252,3 +252,62 @@ def test_git_commit_token_required(tmp_path: Path):
 
     res = validate_repo(repo, include_git=True)
     assert any(i["code"] == "GIT_TOKEN_REQUIRED" for i in res["issues"])  # must include ::sfid:: token when touching PLM
+
+
+def test_entity_yml_invalid_yaml(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    # Invalid YAML (just a colon)
+    _write(repo / "entities" / "p_bad" / "entity.yml", ":\n")
+    res = validate_repo(repo, include_git=False)
+    assert "ENT_ENTITY_YML_INVALID" in _codes(res["issues"])  # invalid yaml should be flagged
+
+
+def test_bom_alternates_missing_use_is_ignored(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    # Create child so parent bom 'use' is valid and doesn't trigger missing entity
+    _write(repo / "entities" / "p_child" / "entity.yml", "name: Child\n")
+    # Alternates list contains objects without 'use' -> should be ignored (no alt-use errors)
+    _write(
+        repo / "entities" / "p_parent" / "entity.yml",
+        """
+name: Parent
+bom:
+  - {use: p_child, alternates: [{}, {foo: 1}]}
+        """.lstrip(),
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])  # ensure no alt-specific errors are present
+    assert "ENT_BOM_ALT_NOT_LIST" not in codes
+    assert "ENT_BOM_ALT_ITEM_NOT_MAP" not in codes
+    assert "ENT_BOM_ALT_USE_REQUIRED" not in codes
+    assert "ENT_BOM_ALT_SFID_INVALID" not in codes
+    assert "ENT_BOM_ALT_ENTITY_MISSING" not in codes
+
+
+def test_gitattributes_union_merge_config_ok(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    # inventory root must exist for inventory scan
+    (repo / "inventory").mkdir(parents=True, exist_ok=True)
+    # Provide .gitattributes with recommended union merge line
+    _write(
+        repo / ".gitattributes",
+        "inventory/p_*/journal.ndjson merge=union\n",
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])  # no warnings about .gitattributes or union merge
+    assert "INV_GITATTRIBUTES_MISSING" not in codes
+    assert "INV_UNION_MERGE_MISSING" not in codes
+
+
+def test_inventory_default_location_valid_ok(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    # inventory root required for inventory checks
+    (repo / "inventory").mkdir(parents=True, exist_ok=True)
+    # Create location entity referenced by default_location
+    _write(repo / "entities" / "l_main" / "entity.yml", "name: Main Location\n")
+    # Configure repo default location to valid existing location
+    _write(repo / "sfdatarepo.yml", "inventory:\n  default_location: l_main\n")
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])  # should not surface invalid/missing entity errors
+    assert "INV_DEFAULT_LOCATION_INVALID" not in codes
+    assert "INV_DEFAULT_LOCATION_MISSING_ENTITY" not in codes
