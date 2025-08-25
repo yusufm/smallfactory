@@ -355,12 +355,8 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
             })
         j = p_dir / "journal.ndjson"
         if not j.exists():
-            issues.append({
-                "severity": "error",
-                "code": "INV_JOURNAL_MISSING",
-                "path": f"inventory/{part}/",
-                "message": "Missing journal.ndjson for part inventory"
-            })
+            # Missing journal is acceptable; implies on-hand 0 for this part.
+            # No issues are emitted; simply skip further journal validation.
             continue
         total_sum = 0
         loc_sums: Dict[str, int] = {}

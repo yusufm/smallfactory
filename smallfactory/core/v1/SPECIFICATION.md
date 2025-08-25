@@ -374,13 +374,13 @@ sf inventory rebuild
 Linter rules:
 
 - Each `inventory/<part>/` directory must correspond to an entity under `entities/<part>/` (INV_PART_ENTITY_MISSING).
-- Each journal file `inventory/<part>/journal.ndjson` must exist (INV_JOURNAL_MISSING); read errors are reported (INV_JOURNAL_READ).
- - Each journal line must be valid JSON and an object (INV_JOURNAL_JSON, INV_JOURNAL_OBJ).
- - Required keys: `txn` (ULID) and `qty_delta` (INV_JOURNAL_TXN_REQUIRED, INV_JOURNAL_TXN_FORMAT, INV_JOURNAL_QTY_REQUIRED).
- - Optional `location` must be an `l_*` SFID and valid per `validate_sfid()` (INV_LOCATION_INVALID, INV_LOCATION_SFID_INVALID) and must exist (INV_LOCATION_ENTITY_MISSING).
- - Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom` (INV_JOURNAL_FORBIDDEN_FIELD).
- - For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
- - Generated files (`onhand.generated.yml`) must not be hand-edited.
+- If `inventory/<part>/journal.ndjson` is missing, it is treated as acceptable and implies on‑hand 0; no issue is emitted. Read errors are reported (INV_JOURNAL_READ) when the file exists but cannot be read.
+- Each journal line must be valid JSON and an object (INV_JOURNAL_JSON, INV_JOURNAL_OBJ).
+- Required keys: `txn` (ULID) and `qty_delta` (INV_JOURNAL_TXN_REQUIRED, INV_JOURNAL_TXN_FORMAT, INV_JOURNAL_QTY_REQUIRED).
+- Optional `location` must be an `l_*` SFID and valid per `validate_sfid()` (INV_LOCATION_INVALID, INV_LOCATION_SFID_INVALID) and must exist (INV_LOCATION_ENTITY_MISSING).
+- Journal entries MUST NOT include `uom`; quantities are interpreted in the part’s base `uom` (INV_JOURNAL_FORBIDDEN_FIELD).
+- For unitized flows, prefer `qty_delta` ∈ {+1, −1}.
+- Generated files (`onhand.generated.yml`) must not be hand-edited.
  Optional per-location on-hand cache (reverse index):
  
  - Layout:
