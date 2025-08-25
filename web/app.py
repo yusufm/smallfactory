@@ -9,6 +9,8 @@ from pathlib import Path
 import json
 import sys
 import os
+import shutil
+import heapq
 import csv
 import re
 import base64
@@ -25,7 +27,7 @@ from contextlib import contextmanager
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config, DATAREPO_CONFIG_FILENAME
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -59,9 +61,36 @@ from smallfactory.core.v1.vision import (
     extract_invoice_part as vlm_extract_invoice_part,
 )
 from smallfactory.core.v1.gitutils import git_push
+from smallfactory.core.v1.validate import validate_repo
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
+
+# -----------------------
+# Jinja Filters / Helpers
+# -----------------------
+
+def _human_bytes(num: int) -> str:
+    """Format a byte count into a human-readable string (KB, MB, GB...)."""
+    try:
+        n = int(num)
+    except Exception:
+        return str(num)
+    sign = '-' if n < 0 else ''
+    if n < 0:
+        n = -n
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
+    for u in units:
+        if n < 1024 or u == units[-1]:
+            # Use 0 decimals for bytes, 1 decimal for others
+            if u == 'B':
+                return f"{sign}{n} {u}"
+            return f"{sign}{n:.1f} {u}"
+        n = n / 1024.0
+
+@app.template_filter('human_bytes')
+def _human_bytes_filter(value):
+    return _human_bytes(value)
 
 # -----------------------
 # Optional Git auto-commit support (ON by default)
@@ -611,6 +640,131 @@ def _flush_pending_pushes_on_exit() -> None:
 atexit.register(_flush_pending_pushes_on_exit)
 
 
+def _compute_git_metrics(datarepo_path: Path) -> dict:
+    """Gather Git-related metrics for the repository at datarepo_path.
+
+    All operations are read-only and tolerant of non-git directories or errors.
+    Returns a dict with keys: is_repo, branch, commits, latest, remotes, status.
+    """
+    repo = str(datarepo_path)
+    result: dict = {
+        'is_repo': False,
+        'branch': None,
+        'commits': 0,
+        'latest': {
+            'hash': None,
+            'short': None,
+            'date': None,
+            'author': None,
+            'email': None,
+            'subject': None,
+        },
+        'remotes': {
+            'count': 0,
+            'has_origin': False,
+            'origin_url': None,
+        },
+        'status': {
+            'changed': 0,
+            'untracked': 0,
+            'ahead': 0,
+            'behind': 0,
+        },
+    }
+
+    try:
+        ck = subprocess.run(['git', '-C', repo, 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
+        if ck.returncode != 0:
+            return result
+        result['is_repo'] = True
+
+        # Current branch name (best-effort)
+        br = subprocess.run(['git', '-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True)
+        if br.returncode == 0:
+            result['branch'] = (br.stdout or '').strip() or None
+
+        # Total commits (across all refs for a quick approximation)
+        cm = subprocess.run(['git', '-C', repo, 'rev-list', '--count', '--all'], capture_output=True, text=True)
+        if cm.returncode == 0:
+            try:
+                result['commits'] = int((cm.stdout or '0').strip() or '0')
+            except Exception:
+                result['commits'] = 0
+
+        # Latest commit metadata
+        lg = subprocess.run(
+            ['git', '-C', repo, 'log', '-1', '--format=%H|%h|%cI|%an|%ae|%s'],
+            capture_output=True,
+            text=True,
+        )
+        if lg.returncode == 0:
+            line = (lg.stdout or '').strip()
+            parts = line.split('|', 5)
+            if len(parts) >= 6:
+                result['latest'] = {
+                    'hash': parts[0] or None,
+                    'short': parts[1] or None,
+                    'date': parts[2] or None,  # ISO 8601
+                    'author': parts[3] or None,
+                    'email': parts[4] or None,
+                    'subject': parts[5] or None,
+                }
+
+        # Remotes info
+        rm = subprocess.run(['git', '-C', repo, 'remote'], capture_output=True, text=True)
+        if rm.returncode == 0:
+            names = [(ln or '').strip() for ln in (rm.stdout or '').splitlines() if (ln or '').strip()]
+            has_origin = ('origin' in names)
+            origin_url = None
+            if has_origin:
+                try:
+                    rurl = subprocess.run(['git', '-C', repo, 'remote', 'get-url', 'origin'], capture_output=True, text=True)
+                    if rurl.returncode == 0:
+                        origin_url = (rurl.stdout or '').strip() or None
+                except Exception:
+                    origin_url = None
+            result['remotes'] = {
+                'count': len(names),
+                'has_origin': has_origin,
+                'origin_url': origin_url,
+            }
+
+        # Working tree status counts
+        st = subprocess.run(['git', '-C', repo, 'status', '--porcelain'], capture_output=True, text=True)
+        if st.returncode == 0:
+            changed = 0
+            untracked = 0
+            for ln in (st.stdout or '').splitlines():
+                s = (ln or '').rstrip('\n')
+                if not s:
+                    continue
+                if s.startswith('?? '):
+                    untracked += 1
+                else:
+                    changed += 1
+            result['status']['changed'] = changed
+            result['status']['untracked'] = untracked
+
+        # Upstream ahead/behind (best-effort)
+        up = subprocess.run(['git', '-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
+        if up.returncode == 0:
+            ab = subprocess.run(['git', '-C', repo, 'rev-list', '--left-right', '--count', '@{u}...HEAD'], capture_output=True, text=True)
+            if ab.returncode == 0:
+                try:
+                    left_right = (ab.stdout or '').strip().split()
+                    behind = int(left_right[0]) if len(left_right) > 0 else 0
+                    ahead = int(left_right[1]) if len(left_right) > 1 else 0
+                    result['status']['ahead'] = ahead
+                    result['status']['behind'] = behind
+                except Exception:
+                    pass
+    except Exception:
+        # Return partials collected so far; never raise
+        return result
+
+    return result
+
+
 def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None = None, autocommit_paths: List[str] | None = None):
     """Serialize repo mutations with: safe pull -> mutate -> autocommit -> conditional push."""
     if _git_disabled():
@@ -857,6 +1011,202 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
         },
     }
     return metrics
+
+# -----------------------
+# Repository stats and validation
+# -----------------------
+
+def _compute_repo_sizes(datarepo_path: Path) -> dict:
+    """Scan key repository areas and compute file counts and total sizes.
+
+    Returns dict:
+      {
+        'root': str,
+        'entities': {'path': str, 'files': int, 'bytes': int},
+        'inventory': {'path': str, 'files': int, 'bytes': int},
+        'journals': {'path': str, 'files': int, 'bytes': int},
+        'config': {
+            'sfdatarepo_yml': {'path': str, 'exists': bool, 'bytes': int},
+            'gitattributes': {'path': str, 'exists': bool, 'bytes': int},
+        },
+        'total_bytes': int,
+      }
+    """
+    # Keep a min-heap of the largest files across key areas
+    top_n = 10
+    largest_heap = []  # (size, path, area, mtime)
+
+    def scan_dir(rel: str) -> dict:
+        base = datarepo_path / rel
+        count = 0
+        total = 0
+        if base.exists():
+            for root, _, files in os.walk(base):
+                for fname in files:
+                    try:
+                        p = Path(root) / fname
+                        st = p.stat()
+                        size = int(st.st_size)
+                        mtime = float(st.st_mtime)
+                        count += 1
+                        total += size
+                        # Track largest files across areas using a min-heap
+                        heapq.heappush(largest_heap, (size, str(p), rel, mtime))
+                        if len(largest_heap) > top_n:
+                            heapq.heappop(largest_heap)
+                    except Exception:
+                        # Ignore unreadable entries
+                        pass
+        return {
+            'path': str(base),
+            'files': int(count),
+            'bytes': int(total),
+        }
+
+    entities = scan_dir('entities')
+    inventory = scan_dir('inventory')
+    journals = scan_dir('journals')
+
+    cfg_path = datarepo_path / DATAREPO_CONFIG_FILENAME
+    cfg_bytes = 0
+    if cfg_path.exists():
+        try:
+            cfg_bytes = int(cfg_path.stat().st_size)
+        except Exception:
+            cfg_bytes = 0
+    gitattr_path = datarepo_path / '.gitattributes'
+    gitattr_bytes = 0
+    if gitattr_path.exists():
+        try:
+            gitattr_bytes = int(gitattr_path.stat().st_size)
+        except Exception:
+            gitattr_bytes = 0
+
+    total_bytes = int(entities['bytes'] + inventory['bytes'] + journals['bytes'] + cfg_bytes + gitattr_bytes)
+
+    # Disk usage for the filesystem hosting the data repo
+    try:
+        du = shutil.disk_usage(str(datarepo_path))
+        disk = {
+            'total': int(du.total),
+            'used': int(du.used),
+            'free': int(du.free),
+        }
+    except Exception:
+        disk = {'total': 0, 'used': 0, 'free': 0}
+
+    # Compute total size of the entire data repo directory (includes .git and all files)
+    repo_dir_bytes = 0
+    repo_dir_bytes_on_disk = 0
+    try:
+        for root, _, files in os.walk(datarepo_path):
+            for fname in files:
+                try:
+                    p = Path(root) / fname
+                    st = p.stat()
+                    size = int(st.st_size)
+                    repo_dir_bytes += size
+                    # Prefer allocated size on disk if available (POSIX st_blocks * 512)
+                    blocks = getattr(st, 'st_blocks', None)
+                    if blocks is not None and int(blocks) > 0:
+                        repo_dir_bytes_on_disk += int(blocks) * 512
+                    else:
+                        # Fallback: approximate with logical size when blocks is unavailable
+                        repo_dir_bytes_on_disk += size
+                except Exception:
+                    # Ignore unreadable entries
+                    pass
+    except Exception:
+        repo_dir_bytes = 0
+        repo_dir_bytes_on_disk = 0
+
+    # Materialize largest files in descending order
+    largest = sorted(largest_heap, key=lambda t: t[0], reverse=True)
+    largest_files = []
+    for size, path, area, mtime in largest:
+        try:
+            mod = datetime.fromtimestamp(mtime).isoformat()
+        except Exception:
+            mod = None
+        largest_files.append({'path': path, 'bytes': int(size), 'area': area, 'modified': mod})
+
+    # Git repository metrics (best-effort; tolerant of non-git dirs)
+    git_info = _compute_git_metrics(datarepo_path)
+
+    return {
+        'root': str(datarepo_path),
+        'entities': entities,
+        'inventory': inventory,
+        'journals': journals,
+        'config': {
+            'sfdatarepo_yml': {
+                'path': str(cfg_path),
+                'exists': bool(cfg_path.exists()),
+                'bytes': int(cfg_bytes),
+            },
+            'gitattributes': {
+                'path': str(gitattr_path),
+                'exists': bool(gitattr_path.exists()),
+                'bytes': int(gitattr_bytes),
+            },
+        },
+        'total_bytes': int(total_bytes),
+        'disk': disk,
+        'repo_dir_bytes': int(repo_dir_bytes),
+        'repo_dir_bytes_on_disk': int(repo_dir_bytes_on_disk),
+        'largest_files': largest_files,
+        'git': git_info,
+    }
+
+
+@app.route('/repo/stats', methods=['GET'])
+def repo_stats():
+    """Render repository stats page."""
+    try:
+        datarepo_path = get_datarepo_path()
+        stats = _compute_repo_sizes(datarepo_path)
+        return render_template('repo/stats.html', stats=stats, datarepo_path=str(datarepo_path))
+    except Exception as e:
+        return render_template('error.html', error=str(e))
+
+
+@app.route('/repo/stats/validate', methods=['POST'])
+def repo_stats_validate():
+    """Run repository validation and return JSON results."""
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(silent=True) or {}
+        # Fallback to form values if provided
+        def as_bool(val, default=True):
+            if val is None:
+                return bool(default)
+            try:
+                s = str(val).strip().lower()
+            except Exception:
+                return bool(default)
+            return s in ('1', 'true', 'yes', 'on')
+
+        include_entities = as_bool(payload.get('include_entities', request.form.get('include_entities')))
+        include_inventory = as_bool(payload.get('include_inventory', request.form.get('include_inventory')))
+        include_git = as_bool(payload.get('include_git', request.form.get('include_git')))
+        limit_raw = payload.get('git_commit_limit', request.form.get('git_commit_limit'))
+        git_commit_limit = 200
+        try:
+            if limit_raw is not None and str(limit_raw).strip() != '':
+                git_commit_limit = int(limit_raw)
+        except Exception:
+            git_commit_limit = 200
+
+        result = validate_repo(
+            datarepo_path,
+            include_entities=include_entities,
+            include_inventory=include_inventory,
+            include_git=include_git,
+            git_commit_limit=git_commit_limit,
+        )
+        return jsonify({'success': True, 'result': result})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
 
 @app.route('/')
 def index():

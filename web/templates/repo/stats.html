@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+
+{% block title %}Repository Stats - smallFactory{% endblock %}
+
+{% block content %}
+<div class="content-container">
+  <!-- Header -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between">
+      <h1 class="text-3xl font-bold text-gray-900 flex items-center">
+        <i class="fas fa-database text-purple-600 mr-3"></i>
+        Data Repository
+      </h1>
+      <div class="flex items-center gap-3">
+        <span id="validation-status" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800" aria-live="polite">Status: idle</span>
+        <button id="run-validation" class="inline-flex items-center px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-md shadow ring-1 ring-rose-700/50" style="background-color:#e11d48;color:#ffffff;">
+          <i class="fas fa-play mr-2"></i>Run Validation
+        </button>
+      </div>
+    </div>
+    <p class="text-sm text-gray-600 mt-2 break-all">{{ stats.root }}</p>
+  </div>
+
+  <!-- Validation Results -->
+  <div id="validation-panel" class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8 hidden">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-slate-100 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-clipboard-check text-slate-600 mr-2"></i>Validation Results</h2>
+      <span id="validation-summary" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">No results</span>
+    </div>
+    <div class="p-6 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="text-left text-gray-600">
+            <th class="py-2 pr-4">Severity</th>
+            <th class="py-2 pr-4">Code</th>
+            <th class="py-2 pr-4">Path</th>
+            <th class="py-2 pr-4">Message</th>
+          </tr>
+        </thead>
+        <tbody id="validation-tbody">
+          <tr class="text-gray-500">
+            <td class="py-2 pr-4" colspan="4">Run validation to see results.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Storage -->
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-purple-100 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-purple-900"><i class="fas fa-hard-drive text-purple-600 mr-2"></i>Storage</h2>
+    </div>
+    <div class="p-6">
+      {% set repo_bytes = (stats.repo_dir_bytes_on_disk or stats.repo_dir_bytes or stats.total_bytes or 0) %}
+      {% set e_bytes = (stats.entities.bytes or 0) %}
+      {% set i_bytes = (stats.inventory.bytes or 0) %}
+      {% set cfg_yml = (stats.config.sfdatarepo_yml.bytes if stats.config and stats.config.sfdatarepo_yml else 0) %}
+      {% set cfg_attr = (stats.config.gitattributes.bytes if stats.config and stats.config.gitattributes else 0) %}
+      {% set cfg_bytes = (cfg_yml or 0) + (cfg_attr or 0) %}
+      {% set data_total_logical = e_bytes + i_bytes + cfg_bytes %}
+      {% set repo_total_logical = (stats.repo_dir_bytes or data_total_logical) %}
+      {% set other_bytes = (repo_total_logical - data_total_logical) %}
+      {% if other_bytes < 0 %}{% set other_bytes = 0 %}{% endif %}
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Repo Size (on disk)</div>
+          <div class="text-2xl font-bold text-gray-900">{{ repo_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500 mt-1">Allocated bytes; may exceed logical total due to block sizes.</div>
+        </div>
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Logical Content Total</div>
+          <div class="text-2xl font-bold text-gray-900">{{ data_total_logical|human_bytes }}</div>
+          <div class="text-xs text-gray-500 mt-1">Entities + Inventory + Config</div>
+        </div>
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Other (logical)</div>
+          <div class="text-2xl font-bold text-gray-900">{{ other_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500 mt-1">Files outside key areas (e.g., .git, caches)</div>
+        </div>
+      </div>
+
+      {% set denom = (data_total_logical or 1) %}
+      {% set pct_e = (e_bytes * 100 // denom) %}
+      {% set pct_i = (i_bytes * 100 // denom) %}
+      {% set pct_cfg = (cfg_bytes * 100 // denom) %}
+      {% set pct_other = (other_bytes * 100 // (repo_total_logical or 1)) %}
+
+      
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="p-3 bg-gray-50 rounded">
+          <div class="text-xs text-gray-500">Entities</div>
+          <div class="text-sm font-semibold text-gray-900">{{ e_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500">{{ pct_e }}%</div>
+        </div>
+        <div class="p-3 bg-gray-50 rounded">
+          <div class="text-xs text-gray-500">Inventory</div>
+          <div class="text-sm font-semibold text-gray-900">{{ i_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500">{{ pct_i }}%</div>
+        </div>
+        <div class="p-3 bg-gray-50 rounded">
+          <div class="text-xs text-gray-500">Config</div>
+          <div class="text-sm font-semibold text-gray-900">{{ cfg_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500">{{ pct_cfg }}%</div>
+        </div>
+        <div class="p-3 bg-gray-50 rounded">
+          <div class="text-xs text-gray-500">Other</div>
+          <div class="text-sm font-semibold text-gray-900">{{ other_bytes|human_bytes }}</div>
+          <div class="text-xs text-gray-500">~ of repo</div>
+        </div>
+      </div>
+
+      {% set disk = stats.disk or {} %}
+      {% if disk.total %}
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-800">FS Total: {{ disk.total|human_bytes }}</span>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">Used: {{ disk.used|human_bytes }}</span>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-green-100 text-green-800">Free: {{ disk.free|human_bytes }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Largest Files -->
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-emerald-50 to-emerald-100 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-emerald-900"><i class="fas fa-file-alt text-emerald-600 mr-2"></i>Largest Files</h2>
+    </div>
+    <div class="p-6">
+      {% set files = stats.largest_files or [] %}
+      <div class="overflow-x-auto w-full">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Area</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Path</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modified</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            {% if files|length == 0 %}
+              <tr>
+                <td colspan="4" class="px-6 py-6 text-center text-sm text-gray-500">No files found.</td>
+              </tr>
+            {% else %}
+              {% for f in files %}
+              <tr>
+                <td class="px-6 py-4 text-sm text-gray-900">{{ f.area }}</td>
+                <td class="px-6 py-4 text-sm text-gray-500 break-all" title="{{ f.path }}">{{ f.path }}</td>
+                <td class="px-6 py-4 text-sm text-gray-900">{{ f.bytes|human_bytes }}</td>
+                <td class="px-6 py-4 text-sm text-gray-500">{{ f.modified or '' }}</td>
+              </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-indigo-100 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-folder-tree text-indigo-600 mr-2"></i>Entities</h2>
+      </div>
+      <div class="p-6">
+        <div class="text-sm text-gray-600 mb-2 break-all">{{ stats.entities.path }}</div>
+        <div class="text-2xl font-bold text-gray-900">{{ stats.entities.files }} <span class="text-base font-medium text-gray-500">files</span></div>
+        <div class="mt-1 text-sm text-gray-700"><span class="font-medium">Bytes:</span> {{ stats.entities.bytes|human_bytes }}</div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-green-50 to-green-100 flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-warehouse text-green-600 mr-2"></i>Inventory</h2>
+      </div>
+      <div class="p-6">
+        <div class="text-sm text-gray-600 mb-2 break-all">{{ stats.inventory.path }}</div>
+        <div class="text-2xl font-bold text-gray-900">{{ stats.inventory.files }} <span class="text-base font-medium text-gray-500">files</span></div>
+        <div class="mt-1 text-sm text-gray-700"><span class="font-medium">Bytes:</span> {{ stats.inventory.bytes|human_bytes }}</div>
+      </div>
+    </div>
+
+    
+  </div>
+
+  <!-- Git -->
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+    <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-gray-900"><i class="fab fa-git-alt text-blue-600 mr-2"></i>Git</h2>
+    </div>
+    <div class="p-6">
+      {% set git = stats.git or {} %}
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Repository</div>
+          <div class="mt-1 text-sm"><span class="font-medium">In Git:</span> {{ 'Yes' if git.is_repo else 'No' }}</div>
+          <div class="text-sm"><span class="font-medium">Branch:</span> {{ git.branch or '—' }}</div>
+          <div class="text-sm"><span class="font-medium">Commits:</span> {{ git.commits or 0 }}</div>
+        </div>
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Status</div>
+          <div class="text-sm"><span class="font-medium">Ahead/Behind:</span> {{ git.status.ahead if git.status else 0 }}/{{ git.status.behind if git.status else 0 }}</div>
+          <div class="text-sm"><span class="font-medium">Changed:</span> {{ git.status.changed if git.status else 0 }}</div>
+          <div class="text-sm"><span class="font-medium">Untracked:</span> {{ git.status.untracked if git.status else 0 }}</div>
+        </div>
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Latest Commit</div>
+          <div class="text-sm"><span class="font-mono">{{ git.latest.short or git.latest.hash or '—' }}</span> <span class="text-gray-500">{{ git.latest.date or '' }}</span></div>
+          <div class="text-sm text-gray-700 truncate" title="{{ git.latest.subject or '' }}">{{ git.latest.subject or '' }}</div>
+          <div class="text-xs text-gray-500">{{ git.latest.author or '' }}{{ ' <' ~ git.latest.email ~ '>' if git.latest and git.latest.email else '' }}</div>
+        </div>
+      </div>
+      <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="p-4 bg-gray-50 rounded">
+          <div class="text-sm text-gray-500">Remotes</div>
+          <div class="text-sm"><span class="font-medium">Count:</span> {{ git.remotes.count if git.remotes else 0 }}</div>
+          <div class="text-sm"><span class="font-medium">Has origin:</span> {{ 'Yes' if git.remotes and git.remotes.has_origin else 'No' }}</div>
+          {% set origin = git.remotes.origin_url if git.remotes else None %}
+          <div class="text-sm mt-1">
+            <span class="font-medium">Origin:</span>
+            {% if origin %}
+              {% if origin.startswith('http://') or origin.startswith('https://') %}
+                <a href="{{ origin }}" class="text-blue-600 hover:underline break-all" target="_blank" rel="noopener">{{ origin }}</a>
+              {% else %}
+                <span class="break-all">{{ origin }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-gray-500">—</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Validation panel removed -->
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  function el(id){ return document.getElementById(id); }
+  function setBadge(statusEl, text, kind){
+    const base = ['inline-flex','items-center','px-2.5','py-1','rounded-full','text-xs','font-medium'];
+    const kinds = {
+      idle: ['bg-gray-100','text-gray-800'],
+      running: ['bg-blue-100','text-blue-800'],
+      ok: ['bg-green-100','text-green-800'],
+      warn: ['bg-amber-100','text-amber-800'],
+      err: ['bg-rose-100','text-rose-800']
+    };
+    statusEl.className = base.concat(kinds[kind] || kinds.idle).join(' ');
+    statusEl.innerHTML = text;
+  }
+  function init(){
+    var btn = el('run-validation');
+    var status = el('validation-status');
+    var panel = el('validation-panel');
+    var tbody = el('validation-tbody');
+    var summary = el('validation-summary');
+    if (!btn || !status) return;
+    function sevBadge(sev){
+      const map = {
+        error: 'bg-rose-100 text-rose-800',
+        warning: 'bg-amber-100 text-amber-800'
+      };
+      const cls = map[String(sev||'').toLowerCase()] || 'bg-gray-100 text-gray-800';
+      return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${sev||'info'}</span>`;
+    }
+    function renderTable(issues){
+      if (!panel || !tbody || !summary) return;
+      panel.classList.remove('hidden');
+      // Clear tbody
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (!issues || !issues.length){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="py-2 pr-4 text-green-700" colspan="4"><i class='fas fa-check-circle mr-1'></i>No issues found.</td>`;
+        tbody.appendChild(tr);
+        summary.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800';
+        summary.textContent = 'No issues';
+        return;
+      }
+      issues.forEach(function(it){
+        const tr = document.createElement('tr');
+        tr.className = 'border-t border-gray-100';
+        tr.innerHTML = [
+          `<td class="py-2 pr-4">${sevBadge(it.severity)}</td>`,
+          `<td class="py-2 pr-4 font-mono text-xs">${it.code||''}</td>`,
+          `<td class="py-2 pr-4 font-mono text-xs">${it.path||''}</td>`,
+          `<td class="py-2 pr-4">${it.message||''}</td>`
+        ].join('');
+        tbody.appendChild(tr);
+      });
+    }
+    btn.addEventListener('click', async function(){
+      try {
+        btn.disabled = true;
+        btn.classList.add('opacity-50','cursor-not-allowed');
+        setBadge(status, '<i class="fas fa-spinner fa-spin mr-1"></i> Running…', 'running');
+        const payload = {
+          include_entities: true,
+          include_inventory: true,
+          include_git: true,
+          git_commit_limit: 200,
+        };
+        const resp = await fetch("{{ url_for('repo_stats_validate') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!data || !data.success) {
+          const msg = 'Failed: ' + (data && data.error ? data.error : 'unknown error');
+          setBadge(status, msg, 'err');
+          if (window.showToast) showToast(msg, { type: 'error' });
+          return;
+        }
+        const res = data.result || {};
+        const errors = Number(res.errors || 0);
+        const warnings = Number(res.warnings || 0);
+        const summary = 'Errors: ' + errors + ', Warnings: ' + warnings;
+        const kind = errors > 0 ? 'err' : (warnings > 0 ? 'warn' : 'ok');
+        setBadge(status, summary, kind);
+        // Render issues table
+        try { renderTable(res.issues || []); } catch(_) {}
+        // Update panel summary badge
+        if (el('validation-summary')) {
+          const sEl = el('validation-summary');
+          const t = `Errors: ${errors}, Warnings: ${warnings}`;
+          const cls = errors>0 ? 'bg-rose-100 text-rose-800' : (warnings>0 ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800');
+          sEl.className = `inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${cls}`;
+          sEl.textContent = t;
+        }
+        if (window.showToast) showToast('Validation complete — ' + summary, { type: (kind==='ok'?'success':(kind==='warn'?'info':'error')) });
+      } catch (e) {
+        const msg = 'Failed: ' + (e && e.message ? e.message : e);
+        setBadge(status, msg, 'err');
+        if (window.showToast) showToast(String(msg), { type: 'error' });
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50','cursor-not-allowed');
+      }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+{% endblock %}
