@@ -361,6 +361,108 @@ def inventory_onhand(
     return {"parts": parts, "total": grand_total}
 
 
+def inventory_onhand_readonly(
+    datarepo_path: Path,
+    part: Optional[str] = None,
+    location: Optional[str] = None,
+) -> Dict:
+    """Report on-hand quantities without writing cache files.
+
+    Pure read-only variant used by web GET endpoints and tests to avoid repo mutations.
+
+    - If part is provided: compute by reading the journal and entity meta; do not write caches.
+    - Else if location is provided: derive per-location map by reading existing per-part caches when present,
+      otherwise compute per-part onhand from the journal in-memory; do not write caches.
+    - Else: return summary over all parts similarly, without writing caches.
+    """
+    inv_dir = ensure_inventory_dir(datarepo_path)
+    if part:
+        validate_sfid(part)
+        if not _entity_exists(datarepo_path, part):
+            raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
+        journal = _journal_file(datarepo_path, part)
+        by_loc, total = _compute_part_onhand_from_journal(journal)
+        ent_meta = _read_entity_meta(datarepo_path, part)
+        uom = ent_meta.get("uom", "ea")
+        return {
+            "uom": uom,
+            "as_of": _now_iso(),
+            "by_location": dict(sorted(by_loc.items())),
+            "total": int(total),
+        }
+
+    if location:
+        _validate_location_sfid(location)
+        if not _entity_exists(datarepo_path, location):
+            raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
+        parts: Dict[str, int] = {}
+        uom = "ea"
+        for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+            part_sfid = pdir.name
+            cache_p = _part_onhand_file(datarepo_path, part_sfid)
+            cache: Dict = {}
+            if cache_p.exists():
+                try:
+                    cache = _read_yaml(cache_p)
+                except Exception:
+                    cache = {}
+            else:
+                # Compute in-memory from journal without writing
+                by_loc, total = _compute_part_onhand_from_journal(_journal_file(datarepo_path, part_sfid))
+                ent_meta = _read_entity_meta(datarepo_path, part_sfid)
+                cache = {
+                    "uom": ent_meta.get("uom", "ea"),
+                    "by_location": dict(sorted(by_loc.items())),
+                    "total": int(total),
+                }
+            try:
+                qty = int((cache.get("by_location", {}) or {}).get(location, 0) or 0)
+            except Exception:
+                qty = 0
+            if qty:
+                parts[part_sfid] = qty
+            uom = (cache.get("uom") or uom) or "ea"
+        total = int(sum(parts.values()))
+        return {
+            "uom": uom,
+            "as_of": _now_iso(),
+            "parts": dict(sorted(parts.items())),
+            "total": total,
+        }
+
+    # Summary over all parts (prefer caches if present; compute from journals otherwise)
+    parts_list = []
+    grand_total = 0
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
+        part_sfid = pdir.name
+        cache_p = _part_onhand_file(datarepo_path, part_sfid)
+        cache: Dict = {}
+        if cache_p.exists():
+            try:
+                cache = _read_yaml(cache_p)
+            except Exception:
+                cache = {}
+        else:
+            by_loc, total = _compute_part_onhand_from_journal(_journal_file(datarepo_path, part_sfid))
+            ent_meta = _read_entity_meta(datarepo_path, part_sfid)
+            cache = {
+                "uom": ent_meta.get("uom", "ea"),
+                "by_location": dict(sorted(by_loc.items())),
+                "total": int(total),
+            }
+        try:
+            total_i = int(cache.get("total", 0) or 0)
+        except Exception:
+            total_i = 0
+        parts_list.append({
+            "sfid": part_sfid,
+            "uom": cache.get("uom", "ea") or "ea",
+            "total": total_i,
+        })
+        grand_total += total_i
+    return {"parts": parts_list, "total": grand_total}
+
+
 def inventory_rebuild(datarepo_path: Path) -> Dict:
     """Rebuild all onhand caches from journals (per-part and per-location)."""
     inv_dir = ensure_inventory_dir(datarepo_path)

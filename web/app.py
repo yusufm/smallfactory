@@ -29,6 +29,7 @@ from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_s
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
+    inventory_onhand_readonly,
 )
 from smallfactory.core.v1.entities import (
     list_entities,
@@ -693,7 +694,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
     # Inventory summary (from caches; computes missing from journals as needed)
     inv_summary = {}
     try:
-        inv_summary = inventory_onhand(datarepo_path) or {}
+        inv_summary = inventory_onhand_readonly(datarepo_path) or {}
     except Exception:
         inv_summary = {}
     inv_parts = list(inv_summary.get('parts') or [])
@@ -882,7 +883,7 @@ def inventory_list():
     try:
         datarepo_path = get_datarepo_path()
         # Inventory summary (existing parts with journals/caches)
-        summary = inventory_onhand(datarepo_path)
+        summary = inventory_onhand_readonly(datarepo_path)
         summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
         inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
 
@@ -903,7 +904,7 @@ def inventory_list():
             if sfid in inv_totals:
                 # Populate full cache details (by-location, uom, as_of) for parts that have inventory
                 try:
-                    cache = inventory_onhand(datarepo_path, part=sfid)
+                    cache = inventory_onhand_readonly(datarepo_path, part=sfid)
                 except Exception:
                     cache = {}
                 uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
@@ -943,7 +944,7 @@ def inventory_view(item_id):
     """View details of a specific inventory item."""
     try:
         datarepo_path = get_datarepo_path()
-        cache = inventory_onhand(datarepo_path, part=item_id)
+        cache = inventory_onhand_readonly(datarepo_path, part=item_id)
         # Combine with entity metadata for UX if desired
         entity = get_entity(datarepo_path, item_id)
         field_specs = get_inventory_field_specs()
@@ -1013,7 +1014,7 @@ def inventory_adjust():
         if pre_sfid:
             try:
                 datarepo_path = get_datarepo_path()
-                cache = inventory_onhand(datarepo_path, part=pre_sfid)
+                cache = inventory_onhand_readonly(datarepo_path, part=pre_sfid)
                 by_loc = cache.get('by_location', {}) or {}
                 # Resolve default location if not provided
                 loc = pre_l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
@@ -1054,7 +1055,7 @@ def inventory_adjust():
 
             datarepo_path = get_datarepo_path()
             # Compute current quantity at target location (resolving default if needed)
-            cache = inventory_onhand(datarepo_path, part=sfid)
+            cache = inventory_onhand_readonly(datarepo_path, part=sfid)
             by_loc = cache.get('by_location', {}) or {}
             loc = location or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
             if not loc:
@@ -1088,7 +1089,7 @@ def inventory_adjust():
             l_sfid = form_data.get('l_sfid') or form_data.get('location')
             if sfid:
                 datarepo_path = get_datarepo_path()
-                cache = inventory_onhand(datarepo_path, part=sfid)
+                cache = inventory_onhand_readonly(datarepo_path, part=sfid)
                 by_loc = cache.get('by_location', {}) or {}
                 loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
                 if loc:
@@ -1173,7 +1174,7 @@ def entities_view(sfid):
         # Inventory on-hand for this entity (if part)
         inv_cache = {}
         try:
-            inv = inventory_onhand(datarepo_path, part=sfid)
+            inv = inventory_onhand_readonly(datarepo_path, part=sfid)
             if isinstance(inv, dict):
                 inv_cache = {
                     'uom': inv.get('uom'),
@@ -1563,7 +1564,7 @@ def api_inventory_adjust():
                 return jsonify({'success': False, 'error': 'quantity must be an integer'}), 400
             if new_qty < 0:
                 return jsonify({'success': False, 'error': 'quantity must be >= 0'}), 400
-            cache = inventory_onhand(datarepo_path, part=sfid)
+            cache = inventory_onhand_readonly(datarepo_path, part=sfid)
             by_loc = cache.get('by_location', {}) or {}
             try:
                 cur_qty = int(by_loc.get(loc, 0) or 0)
@@ -1578,7 +1579,7 @@ def api_inventory_adjust():
 
         if delta == 0:
             # No-op; return current state
-            cache = inventory_onhand(datarepo_path, part=sfid)
+            cache = inventory_onhand_readonly(datarepo_path, part=sfid)
             by_loc = cache.get('by_location', {}) or {}
             new_qty = int(by_loc.get(loc, 0) or 0)
             return jsonify({
@@ -1608,7 +1609,7 @@ def api_inventory_adjust():
             _mutate,
         )
 
-        cache = inventory_onhand(datarepo_path, part=sfid)
+        cache = inventory_onhand_readonly(datarepo_path, part=sfid)
         by_loc = cache.get('by_location', {}) or {}
         new_qty = int(by_loc.get(loc, 0) or 0)
         return jsonify({
@@ -1637,7 +1638,7 @@ def api_inventory_onhand():
             return jsonify({'success': False, 'error': 'Missing required parameter: sfid'}), 400
         l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
         datarepo_path = get_datarepo_path()
-        cache = inventory_onhand(datarepo_path, part=sfid)
+        cache = inventory_onhand_readonly(datarepo_path, part=sfid)
         by_loc = cache.get('by_location', {}) or {}
         # Resolve default location if not provided
         loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
@@ -2098,7 +2099,7 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
         if sfid in onhand_cache:
             return onhand_cache[sfid]
         try:
-            oh = inventory_onhand(datarepo_path, part=sfid)
+            oh = inventory_onhand_readonly(datarepo_path, part=sfid)
             total = int(oh.get('total', 0)) if isinstance(oh, dict) else None
             onhand_cache[sfid] = total
             return total
