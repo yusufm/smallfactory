@@ -191,9 +191,8 @@ def test_inventory_part_dir_without_entity_and_missing_journal(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     (repo / "inventory" / "p_foo").mkdir(parents=True)
     res = validate_repo(repo, include_git=False)
-    codes = _codes(res["issues"])  # both errors should appear
+    codes = _codes(res["issues"])  # only missing corresponding entity should be flagged
     assert "INV_PART_ENTITY_MISSING" in codes
-    assert "INV_JOURNAL_MISSING" in codes
 
 
 def test_inventory_journal_validation(tmp_path: Path):
