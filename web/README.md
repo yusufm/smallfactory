@@ -93,10 +93,10 @@ The web UI is built as a Flask application that uses the smallFactory core v1 AP
 
 ## API Integration
 
-The web UI directly imports the smallFactory core v1 API for consistency with the CLI, e.g.:
+The web UI directly imports the smallFactory core v1 API:
 
 ```python
-from smallfactory.core.v1.inventory import inventory_onhand, inventory_post
+from smallfactory.core.v1.inventory import inventory_onhand_readonly, inventory_post
 from smallfactory.core.v1.entities import (
     get_entity, create_entity, update_entity_fields,
     get_revisions, bump_revision, release_revision,
@@ -108,6 +108,13 @@ from smallfactory.core.v1.vision import ask_image, extract_invoice_part
 ```
 
 This ensures feature parity with the CLI while keeping storage Git-native and YAML-based. The working area root for entity files is `files/`.
+
+## GET endpoints are pure (no side effects)
+
+- All HTTP GET routes must be side-effect free: no cache writes and no Git mutations.
+- Inventory reads in GET paths use the read-only helper `inventory_onhand_readonly()` to avoid writing onhand caches.
+- Mutations happen only via POST routes, which are wrapped in a transaction helper that can autocommit and optionally push.
+- CLI parity: use `sf inventory onhand --readonly` to compute on-hand without writing caches from the command line.
 
 ## Future Extensions
 
