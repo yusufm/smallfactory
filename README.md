@@ -103,6 +103,12 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 - **Custom fields & tags** — Capture the details that matter to your business.
 - **Simple onboarding** — Start in minutes with an example repository.
 
+## GET endpoints are pure (no side effects)
+
+- All HTTP GET routes avoid cache writes and Git mutations.
+- Inventory reads in the web app use the read‑only helper `inventory_onhand_readonly()`.
+- CLI parity: use `sf inventory onhand --readonly` to compute on‑hand without writing caches.
+
 ---
 
 ## What to read next

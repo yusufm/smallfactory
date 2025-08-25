@@ -15,6 +15,7 @@ from smallfactory.core.v1 import repo as repo_ops
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
+    inventory_onhand_readonly,
     inventory_rebuild,
 )
 
@@ -105,6 +106,7 @@ def main():
     grp = inv_onhand.add_mutually_exclusive_group(required=False)
     grp.add_argument("--part", metavar="sfid", help="Part SFID to report on")
     grp.add_argument("--l_sfid", metavar="l_sfid", help="Location SFID to report on")
+    inv_onhand.add_argument("--readonly", action="store_true", help="Read-only mode: compute without writing caches")
 
     # rebuild: rebuild caches from journals
     inv_rebuild = inv_sub.add_parser("rebuild", help="Rebuild inventory on-hand caches from journals")
@@ -676,11 +678,18 @@ def main():
     def cmd_inventory_onhand(args):
         datarepo_path = _repo_path()
         try:
-            res = inventory_onhand(
-                datarepo_path,
-                part=getattr(args, "part", None),
-                location=getattr(args, "l_sfid", None),
-            )
+            if getattr(args, "readonly", False):
+                res = inventory_onhand_readonly(
+                    datarepo_path,
+                    part=getattr(args, "part", None),
+                    location=getattr(args, "l_sfid", None),
+                )
+            else:
+                res = inventory_onhand(
+                    datarepo_path,
+                    part=getattr(args, "part", None),
+                    location=getattr(args, "l_sfid", None),
+                )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)

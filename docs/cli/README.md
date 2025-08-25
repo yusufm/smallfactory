@@ -142,7 +142,15 @@ python3 sf.py inventory onhand --l_sfid l_inbox
 
 # Machine-readable
 python3 sf.py -F json inventory onhand --part p_m3x10
+
+# Read-only computation (no cache writes)
+python3 sf.py inventory onhand --readonly
+
+# Read-only for a specific part
+python3 sf.py inventory onhand --part p_m3x10 --readonly
 ```
+
+Note: By default, computing on-hand may write cache files. Use `--readonly` to prevent any writes (pure read).
 
 ### rebuild
 
