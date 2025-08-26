@@ -324,7 +324,7 @@ def cut_revision(
 
     # Build and persist a resolved BOM tree for this snapshot before hashing artifacts
     try:
-        bom_nodes = _build_bom_tree_nodes(datarepo_path, sfid)
+        bom_nodes = _build_bom_tree_nodes(datarepo_path, sfid, root_rev=label)
         bom_doc = {
             "format": "bom_tree.v1",
             "root": sfid,
@@ -430,7 +430,13 @@ def _resolve_rev_for_child(datarepo_path: Path, child_sfid: str, rev_spec) -> Op
     return s
 
 
-def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Optional[int] = None) -> List[Dict]:
+def _build_bom_tree_nodes(
+    datarepo_path: Path,
+    root_sfid: str,
+    *,
+    max_depth: Optional[int] = None,
+    root_rev: Optional[str] = None,
+) -> List[Dict]:
     """Walk the BOM starting at root_sfid and return flat list of resolved nodes.
 
     Node fields: parent, use, name, qty, rev_spec, rev (resolved), level, is_alt,
@@ -446,6 +452,40 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
             name = sfid
         return name
 
+    def _get_name_at_rev(sfid: str, rev_label: Optional[str]) -> str:
+        """Best-effort name lookup honoring a specific revision if provided."""
+        if rev_label:
+            try:
+                snap_fp = _revisions_dir(datarepo_path, sfid) / str(rev_label) / "entity.yml"
+                if snap_fp.exists():
+                    data = _read_yaml(snap_fp) or {}
+                    val = data.get("name")
+                    if isinstance(val, str) and val.strip():
+                        return val
+            except Exception:
+                pass
+        return _get_name(sfid)
+
+    def _bom_list_at_rev(parent_sfid: str, rev_label: Optional[str]) -> List[dict]:
+        """Return the parent's BOM lines from a specific revision snapshot if provided.
+
+        Falls back to live entity.yml if the snapshot is missing or unreadable.
+        """
+        if rev_label:
+            try:
+                snap_fp = _revisions_dir(datarepo_path, parent_sfid) / str(rev_label) / "entity.yml"
+                if snap_fp.exists():
+                    data = _read_yaml(snap_fp) or {}
+                    return _bom_list_from_entity(data)
+            except Exception:
+                # fall through to live
+                pass
+        # live/current entity BOM
+        try:
+            return bom_list(datarepo_path, parent_sfid)
+        except Exception:
+            return []
+
     def _to_int_or_none(val):
         try:
             if isinstance(val, bool):
@@ -454,13 +494,10 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
         except Exception:
             return None
 
-    def recurse(parent_sfid: str, level: int, parent_mult: Optional[int], path_stack: List[str]):
+    def recurse(parent_sfid: str, level: int, parent_mult: Optional[int], path_stack: List[str], parent_rev: Optional[str]):
         if max_depth is not None and level > max_depth:
             return
-        try:
-            lines = bom_list(datarepo_path, parent_sfid)
-        except Exception:
-            return
+        lines = _bom_list_at_rev(parent_sfid, parent_rev)
         for line in lines or []:
             if not isinstance(line, dict):
                 continue
@@ -474,13 +511,14 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
             qty_int = _to_int_or_none(qty)
             cum = qty_int if parent_mult is None else (qty_int * parent_mult if (qty_int is not None and parent_mult is not None) else None)
             cycle = child in path_stack
+            child_resolved_rev = _resolve_rev_for_child(datarepo_path, child, rev_spec)
             node = {
                 "parent": parent_sfid,
                 "use": child,
-                "name": _get_name(child),
+                "name": _get_name_at_rev(child, child_resolved_rev),
                 "qty": qty,
                 "rev_spec": rev_spec,
-                "rev": _resolve_rev_for_child(datarepo_path, child, rev_spec),
+                "rev": child_resolved_rev,
                 "level": level,
                 "is_alt": False,
                 "alternates_group": alt_group,
@@ -489,18 +527,19 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
             }
             nodes.append(node)
             if not cycle and child.startswith("p_"):
-                recurse(child, level + 1, cum if (cum is not None) else parent_mult, path_stack + [child])
+                recurse(child, level + 1, cum if (cum is not None) else parent_mult, path_stack + [child], child_resolved_rev)
             for alt in alts:
                 alt_use = str((alt or {}).get("use", "")).strip()
                 if not alt_use:
                     continue
+                alt_resolved_rev = _resolve_rev_for_child(datarepo_path, alt_use, rev_spec)
                 alt_node = {
                     "parent": parent_sfid,
                     "use": alt_use,
-                    "name": _get_name(alt_use),
+                    "name": _get_name_at_rev(alt_use, alt_resolved_rev),
                     "qty": qty,
                     "rev_spec": rev_spec,
-                    "rev": _resolve_rev_for_child(datarepo_path, alt_use, rev_spec),
+                    "rev": alt_resolved_rev,
                     "level": level + 1,
                     "is_alt": True,
                     "alternates_group": alt_group,
@@ -509,9 +548,9 @@ def _build_bom_tree_nodes(datarepo_path: Path, root_sfid: str, *, max_depth: Opt
                 }
                 nodes.append(alt_node)
                 if alt_use.startswith("p_") and alt_use not in path_stack:
-                    recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use])
+                    recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use], alt_resolved_rev)
 
-    recurse(root_sfid, 0, 1, [root_sfid])
+    recurse(root_sfid, 0, 1, [root_sfid], root_rev)
     return nodes
 
 
