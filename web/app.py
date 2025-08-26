@@ -2996,6 +2996,7 @@ from smallfactory.core.v1.files import (
     delete_file as files_delete,
     move_file as files_move_file,
     move_dir as files_move_dir,
+    stream_file as files_stream_file,
 )
 
 def _files_root_name(datarepo_path: Path, sfid: str) -> str:
@@ -3140,6 +3141,26 @@ def api_files_move(sfid):
             autocommit_paths=stage_paths
         )
         return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/entities/<sfid>/files/download', methods=['GET'])
+def api_files_download(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        path = (request.args.get('path') or '').strip()
+        if not path:
+            return jsonify({'success': False, 'error': 'Missing path'}), 400
+        res = files_stream_file(datarepo_path, sfid, path=path)
+        b = res.get('bytes') or b''
+        mt = res.get('mimetype') or 'application/octet-stream'
+        fn = res.get('filename') or 'download'
+        return Response(b, mimetype=mt, headers={
+            'Content-Disposition': f'attachment; filename="{fn}"',
+            'Content-Length': str(len(b)),
+        })
+    except FileNotFoundError:
+        return jsonify({'success': False, 'error': 'File not found'}), 404
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 

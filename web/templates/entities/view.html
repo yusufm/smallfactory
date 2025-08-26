@@ -1001,7 +1001,15 @@ function dfRenderList(items){
   }
   items.forEach(it => {
     const isDir = it.type === 'dir';
-    const nameHtml = isDir ? `<button type="button" class="text-blue-700 hover:underline" onclick="dfGoto('${(it.path||'').replace(/'/g, "\\'")}')">${it.name}</button>` : `<span>${it.name}</span>`;
+    const dlUrl = `/api/entities/${encodeURIComponent(SFID)}/files/download?path=${encodeURIComponent(it.path||'')}`;
+    const nameHtml = isDir
+      ? `<button type="button" class="text-blue-700 hover:underline" onclick="dfGoto('${(it.path||'').replace(/'/g, "\\'")}')">${it.name}</button>`
+      : `<span class="inline-flex items-center gap-2">
+           ${it.name}
+           <a class="text-gray-400 hover:text-blue-700" href="${dlUrl}" title="Download" aria-label="Download" download>
+             <i class="fas fa-download"></i>
+           </a>
+         </span>`;
     const size = isDir ? '—' : (it.size!=null?it.size:'—');
     const mtime = it.mtime||'—';
     const actions = isDir
