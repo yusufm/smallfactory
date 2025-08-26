@@ -1159,7 +1159,11 @@ function renderRevisionsRows(list){
     const ca = r.created_at||'—';
     const notesRaw = r.notes ? String(r.notes) : '';
     const notesHtml = notesRaw ? _nl2br(_escapeHtml(notesRaw)) : '';
-    const actions = '<span class="text-gray-400">—</span>';
+    const actions = (id && id !== '—')
+      ? `<a class="text-gray-400 hover:text-blue-700" href="/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(id)}/download" title="Download revision" aria-label="Download revision" download>
+           <i class="fas fa-download"></i>
+         </a>`
+      : '<span class="text-gray-400">—</span>';
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50">
         <td class="px-3 py-1.5 font-mono text-blue-700">${id}</td>
