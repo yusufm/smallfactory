@@ -23,6 +23,7 @@ from typing import List
 import time
 import atexit
 from contextlib import contextmanager
+import tarfile
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -2169,6 +2170,38 @@ def api_revisions_release(sfid, rev):
             autocommit_paths=[f"entities/{sfid}"]
         )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/entities/<sfid>/revisions/<rev>/download', methods=['GET'])
+def api_revisions_download(sfid, rev):
+    """Download a gzipped archive (.tar.gz) of the revision directory.
+
+    Packs the directory at entities/<sfid>/revisions/<rev>/ into a tar.gz and streams it.
+    """
+    try:
+        datarepo_path = get_datarepo_path()
+        # Validate numeric revision label (per spec)
+        try:
+            rev_str = str(int(str(rev).strip()))
+        except Exception:
+            return jsonify({'success': False, 'error': 'Invalid revision id'}), 400
+        rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / rev_str
+        if not rev_dir.exists() or not rev_dir.is_dir():
+            return jsonify({'success': False, 'error': 'Revision not found'}), 404
+        # Create tar.gz in memory
+        buf = io.BytesIO()
+        with tarfile.open(mode='w:gz', fileobj=buf) as tf:
+            arc_root = f"{sfid}_rev{rev_str}"
+            tf.add(str(rev_dir), arcname=arc_root)
+        buf.seek(0)
+        filename = f"{sfid}_rev{rev_str}.tar.gz"
+        return send_file(
+            buf,
+            mimetype='application/gzip',
+            as_attachment=True,
+            download_name=filename,
+        )
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
