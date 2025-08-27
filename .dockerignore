@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache
+.venv
+venv
+.env
+
+# OS/editor
+.DS_Store
+.idea
+.vscode
+
+# Tests and debug scripts (not needed in runtime image)
+tests/
+debug/
+
+# Local data and build artifacts
+*.log
+build/
+dist/
+*.egg-info/
+
+# Node/npm cache if any
+node_modules/
+
+# Images and docs can be copied but not needed to run server (keep small context)
+docs/
+web/static/img/screenshots/

@@ -216,6 +216,68 @@ If you see an error, ensure Ollama is running and the model is pulled. You can a
   - Remote host: `export SF_OLLAMA_BASE_URL=http://<host>:11434`
   - Model name: set/confirm `SF_VISION_MODEL` (default `qwen2.5vl:3b`).
 
+## Container
+
+The web UI can run in Docker for easy deployment.
+
+- **Build**
+  ```bash
+  docker build -t smallfactory-web:latest .
+  ```
+
+- **Run (init new repo)**
+  ```bash
+  docker run --rm -p 8080:8080 \
+    -e SF_WEB_SECRET=replace-me \
+    -v $PWD/datarepo:/datarepo \
+    smallfactory-web:latest
+  ```
+
+- **Run (clone existing datarepo)**
+  ```bash
+  docker run --rm -p 8080:8080 \
+    -e SF_WEB_SECRET=replace-me \
+    -e SF_REPO_GIT_URL=https://github.com/you/your-datarepo.git \
+    -v $PWD/datarepo:/datarepo \
+    smallfactory-web:latest
+  ```
+
+- **Environment variables**
+  - `PORT` (default 8080)
+  - `SF_REPO_PATH` (default `/datarepo`) – container-side path to the data repo
+  - `SF_REPO_GIT_URL` – if set and the repo path is empty, the container will `git clone` here
+  - `SF_REPO_NAME` – name used when initializing a new repo (default `datarepo`)
+  - `SF_WEB_SECRET` – Flask secret key (required for non-dev)
+  - `SF_WEB_AUTOCOMMIT`, `SF_WEB_AUTOPUSH`, `SF_GIT_PULL_ALLOW_UNTRACKED` – Git orchestration knobs
+  - `SF_OLLAMA_BASE_URL`, `SF_VISION_MODEL` – Vision integration
+
+- **docker-compose.yml (example)**
+  ```yaml
+  services:
+    web:
+      image: smallfactory-web:latest
+      build: .
+      ports:
+        - "8080:8080"
+      environment:
+        SF_WEB_SECRET: change-me
+        SF_OLLAMA_BASE_URL: http://ollama:11434
+      volumes:
+        - datarepo:/datarepo
+      healthcheck:
+        test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+        interval: 30s
+        timeout: 5s
+        retries: 3
+        start_period: 10s
+  volumes:
+    datarepo:
+  ```
+
+Notes:
+- The container entrypoint writes `.smallfactory.yml` setting `default_datarepo: /datarepo` and prepares the repo (clone or init).
+- Mount `/datarepo` as a persistent volume in production.
+
 ## Routes and API Reference
   
   - **UI Routes**
