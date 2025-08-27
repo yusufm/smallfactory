@@ -17,6 +17,11 @@ export GIT_AUTHOR_EMAIL="$SF_GIT_USER_EMAIL"
 export GIT_COMMITTER_NAME="$SF_GIT_USER_NAME"
 export GIT_COMMITTER_EMAIL="$SF_GIT_USER_EMAIL"
 
+# Ensure new repos default to 'main' branch (not 'master')
+if command -v git >/dev/null 2>&1; then
+  git config --global init.defaultBranch main || true
+fi
+
 cd /app
 
 # Ensure .smallfactory.yml points to SF_REPO_PATH
