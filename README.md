@@ -16,6 +16,8 @@ A Git-native toolset for small teams to manage the things they make.
 
 ## Why smallFactory
 
+Read the [smallFactory Story](docs/meta/the-smallfactory-story.md)
+
 - Built for small teams: minimal setup, low overhead, fast workflows.
 - Git-native and portable: plain files under Git; diffs, reviews, history. No database, no lock‑in.
 - Opinionated, simple standard: Entities, BOMs, Revisions, Inventory, Files in a consistent layout.
@@ -112,6 +114,7 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 ---
 
 ## What to read next
+- [The smallFactory Story](docs/meta/the-smallfactory-story.md)
 - [Start Here](docs/START_HERE.md)
 - [Users docs](docs/users/README.md)
 - [Developers docs](docs/developers/README.md)
