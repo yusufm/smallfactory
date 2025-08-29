@@ -45,7 +45,10 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=sha
-            {{ inputs.tags }}
+            type=ref,event=tag
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{}', github.event.repository.default_branch) }}
+            ${{ format('type=raw,value={0}', inputs.tags) }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
