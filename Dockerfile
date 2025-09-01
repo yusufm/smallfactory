@@ -6,7 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8080 \
-    SF_REPO_PATH=/datarepo
+    SF_REPO_ROOT=/datarepos \
+    SF_REPO_NAME=datarepo \
+    SF_CONFIG_PATH=/datarepos/.smallfactory.yml \
+    SF_REPO_PATH=/datarepos/datarepo
 
 # Install system dependencies (git, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,8 +33,8 @@ COPY . .
 
 # Create a non-root user and ensure writable dirs
 RUN useradd -u 10001 -m sf && \
-    mkdir -p /datarepo && \
-    chown -R sf:sf /app /datarepo
+    mkdir -p /datarepos /datarepos/datarepo && \
+    chown -R sf:sf /app /datarepos
 
 # Copy entrypoint
 COPY docker/entrypoint.sh /entrypoint.sh

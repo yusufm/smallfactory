@@ -3,9 +3,14 @@ set -euo pipefail
 
 # Defaults
 : "${PORT:=8080}"
-: "${SF_REPO_PATH:=/datarepo}"
+: "${SF_REPO_ROOT:=/datarepos}"
 : "${SF_REPO_GIT_URL:=}"
 : "${SF_REPO_NAME:=datarepo}"
+: "${SF_CONFIG_PATH:=$SF_REPO_ROOT/.smallfactory.yml}"
+# If SF_REPO_PATH not provided, default it under SF_REPO_ROOT/SF_REPO_NAME
+if [ -z "${SF_REPO_PATH+x}" ] || [ -z "${SF_REPO_PATH}" ]; then
+  SF_REPO_PATH="$SF_REPO_ROOT/$SF_REPO_NAME"
+fi
 
 # Git identity defaults (can be overridden via env)
 : "${SF_GIT_USER_NAME:=smallFactory Web}"
@@ -22,11 +27,9 @@ if command -v git >/dev/null 2>&1; then
   git config --global init.defaultBranch main || true
 fi
 
-cd /app
-
-# Ensure datarepos/.smallfactory.yml points to SF_REPO_PATH
-mkdir -p datarepos
-CONFIG_FILE="datarepos/.smallfactory.yml"
+# Ensure /datarepos/.smallfactory.yml (or SF_CONFIG_PATH) points to SF_REPO_PATH
+mkdir -p "$SF_REPO_ROOT"
+CONFIG_FILE="$SF_CONFIG_PATH"
 if [ ! -f "$CONFIG_FILE" ]; then
   printf "default_datarepo: %s\n" "$SF_REPO_PATH" > "$CONFIG_FILE"
 else

@@ -229,7 +229,7 @@ The web UI can run in Docker for easy deployment.
   ```bash
   docker run --rm -p 8080:8080 \
     -e SF_WEB_SECRET=replace-me \
-    -v $PWD/datarepo:/datarepo \
+    -v $PWD/datarepos:/datarepos \
     smallfactory-web:latest
   ```
 
@@ -238,13 +238,16 @@ The web UI can run in Docker for easy deployment.
   docker run --rm -p 8080:8080 \
     -e SF_WEB_SECRET=replace-me \
     -e SF_REPO_GIT_URL=https://github.com/you/your-datarepo.git \
-    -v $PWD/datarepo:/datarepo \
+    -v $PWD/datarepos:/datarepos \
     smallfactory-web:latest
   ```
 
 - **Environment variables**
   - `PORT` (default 8080)
-  - `SF_REPO_PATH` (default `/datarepo`) – container-side path to the data repo
+  - `SF_REPO_ROOT` (default `/datarepos`) – parent directory containing config and repos
+  - `SF_REPO_NAME` (default `datarepo`) – subdirectory name for new repo initialization
+  - `SF_CONFIG_PATH` (default `/datarepos/.smallfactory.yml`) – user config with `default_datarepo`
+  - `SF_REPO_PATH` (default `/datarepos/datarepo`) – container-side path to the data repo (overrides name/root)
   - `SF_REPO_GIT_URL` – if set and the repo path is empty, the container will `git clone` here
   - `SF_REPO_NAME` – name used when initializing a new repo (default `datarepo`)
   - `SF_WEB_SECRET` – Flask secret key (required for non-dev)
@@ -263,7 +266,7 @@ The web UI can run in Docker for easy deployment.
         SF_WEB_SECRET: change-me
         SF_OLLAMA_BASE_URL: http://ollama:11434
       volumes:
-        - datarepo:/datarepo
+        - datarepos:/datarepos
       healthcheck:
         test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
         interval: 30s
@@ -271,12 +274,12 @@ The web UI can run in Docker for easy deployment.
         retries: 3
         start_period: 10s
   volumes:
-    datarepo:
+    datarepos:
   ```
 
 Notes:
-- The container entrypoint writes `datarepos/.smallfactory.yml` setting `default_datarepo: /datarepo` and prepares the repo (clone or init).
-- Mount `/datarepo` as a persistent volume in production.
+- The container entrypoint writes `/datarepos/.smallfactory.yml` setting `default_datarepo: /datarepos/datarepo` (by default) and prepares the repo (clone or init) under `/datarepos/<name>`.
+- Mount `/datarepos` as a persistent volume so both the config and the repo persist across restarts.
 
 ## Routes and API Reference
   

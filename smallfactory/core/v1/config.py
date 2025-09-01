@@ -5,7 +5,7 @@ import os
 
 SF_TOOL_VERSION = "1.0"
 # Store user/local config inside the workspace datarepos/ directory
-CONFIG_FILENAME = "datarepos/.smallfactory.yml"
+CONFIG_FILENAME = os.environ.get("SF_CONFIG_PATH", "datarepos/.smallfactory.yml")
 DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
 # -------------------------------
