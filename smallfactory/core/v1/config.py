@@ -44,13 +44,36 @@ def validate_sfid(sfid: str) -> None:
         )
 
 
+def _resolve_config_path() -> pathlib.Path:
+    """Resolve the path to .smallfactory.yml with environment overrides.
+
+    Precedence:
+      1) SF_CONFIG_FILE = absolute or relative path to the config file
+      2) SF_CONFIG_DIR = directory containing the config file
+      3) SF_DATA_PATH  = parent data path (config at $SF_DATA_PATH/.smallfactory.yml)
+      4) Fallback to CWD: ./ .smallfactory.yml (backward compatible)
+    """
+    env_file = os.environ.get("SF_CONFIG_FILE")
+    if env_file:
+        return pathlib.Path(env_file).expanduser().resolve()
+    env_dir = os.environ.get("SF_CONFIG_DIR") or os.environ.get("SF_DATA_PATH")
+    if env_dir:
+        return pathlib.Path(env_dir).expanduser().resolve() / CONFIG_FILENAME
+    return pathlib.Path(CONFIG_FILENAME).expanduser().resolve()
+
+
 def ensure_config() -> pathlib.Path:
     """Ensure local .smallfactory.yml exists; create with defaults if missing.
 
     Returns the path to the config file.
     """
-    config_path = pathlib.Path(CONFIG_FILENAME)
+    config_path = _resolve_config_path()
     if not config_path.exists():
+        # Ensure parent directory exists when using SF_CONFIG_DIR / SF_DATA_PATH
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
         config = {
             "default_datarepo": None,
         }
@@ -66,7 +89,12 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
-    config_path = pathlib.Path(CONFIG_FILENAME)
+    config_path = _resolve_config_path()
+    # Ensure parent directory exists in case of custom location
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     with open(config_path, "w") as f:
         yaml.safe_dump(config, f)
 

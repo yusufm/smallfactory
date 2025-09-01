@@ -3,7 +3,10 @@ set -euo pipefail
 
 # Defaults
 : "${PORT:=8080}"
-: "${SF_REPO_PATH:=/datarepo}"
+# Parent data path to colocate config and repo
+: "${SF_DATA_PATH:=/data}"
+# Datarepo path defaults under the parent data path
+: "${SF_REPO_PATH:=${SF_DATA_PATH%/}/datarepo}"
 : "${SF_REPO_GIT_URL:=}"
 : "${SF_REPO_NAME:=datarepo}"
 
@@ -24,8 +27,10 @@ fi
 
 cd /app
 
-# Ensure .smallfactory.yml points to SF_REPO_PATH
-CONFIG_FILE=".smallfactory.yml"
+# Ensure .smallfactory.yml under the shared parent data path
+export SF_CONFIG_DIR="${SF_DATA_PATH%/}"
+CONFIG_FILE="$SF_CONFIG_DIR/.smallfactory.yml"
+mkdir -p "$SF_CONFIG_DIR"
 if [ ! -f "$CONFIG_FILE" ]; then
   printf "default_datarepo: %s\n" "$SF_REPO_PATH" > "$CONFIG_FILE"
 else
