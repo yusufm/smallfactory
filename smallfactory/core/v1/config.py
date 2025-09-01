@@ -4,7 +4,8 @@ import re
 import os
 
 SF_TOOL_VERSION = "1.0"
-CONFIG_FILENAME = ".smallfactory.yml"
+# Store user/local config inside the workspace datarepos/ directory
+CONFIG_FILENAME = "datarepos/.smallfactory.yml"
 DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
 # -------------------------------
@@ -45,11 +46,17 @@ def validate_sfid(sfid: str) -> None:
 
 
 def ensure_config() -> pathlib.Path:
-    """Ensure local .smallfactory.yml exists; create with defaults if missing.
+    """Ensure local datarepos/.smallfactory.yml exists; create with defaults if missing.
 
     Returns the path to the config file.
     """
     config_path = pathlib.Path(CONFIG_FILENAME)
+    # Ensure parent directory (datarepos/) exists
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Non-fatal; will likely fail on write below and surface to caller
+        pass
     if not config_path.exists():
         config = {
             "default_datarepo": None,
@@ -67,6 +74,11 @@ def load_config() -> dict:
 
 def save_config(config: dict) -> None:
     config_path = pathlib.Path(CONFIG_FILENAME)
+    # Ensure parent directory exists in case callers write without prior ensure_config()
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     with open(config_path, "w") as f:
         yaml.safe_dump(config, f)
 

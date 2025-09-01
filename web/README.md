@@ -275,7 +275,7 @@ The web UI can run in Docker for easy deployment.
   ```
 
 Notes:
-- The container entrypoint writes `.smallfactory.yml` setting `default_datarepo: /datarepo` and prepares the repo (clone or init).
+- The container entrypoint writes `datarepos/.smallfactory.yml` setting `default_datarepo: /datarepo` and prepares the repo (clone or init).
 - Mount `/datarepo` as a persistent volume in production.
 
 ## Routes and API Reference

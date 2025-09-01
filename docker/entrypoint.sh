@@ -24,8 +24,9 @@ fi
 
 cd /app
 
-# Ensure .smallfactory.yml points to SF_REPO_PATH
-CONFIG_FILE=".smallfactory.yml"
+# Ensure datarepos/.smallfactory.yml points to SF_REPO_PATH
+mkdir -p datarepos
+CONFIG_FILE="datarepos/.smallfactory.yml"
 if [ ! -f "$CONFIG_FILE" ]; then
   printf "default_datarepo: %s\n" "$SF_REPO_PATH" > "$CONFIG_FILE"
 else
