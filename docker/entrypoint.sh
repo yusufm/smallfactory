@@ -3,7 +3,10 @@ set -euo pipefail
 
 # Defaults
 : "${PORT:=8080}"
-: "${SF_REPO_PATH:=/datarepo}"
+# Parent directory to hold both config and datarepo so a single volume can be mounted
+: "${SF_HOME:=/sfdata}"
+# If SF_REPO_PATH not provided, default to a subdir of SF_HOME
+: "${SF_REPO_PATH:=${SF_HOME}/datarepo}"
 : "${SF_REPO_GIT_URL:=}"
 : "${SF_REPO_NAME:=datarepo}"
 
@@ -24,18 +27,24 @@ fi
 
 cd /app
 
-# Ensure .smallfactory.yml points to SF_REPO_PATH
-CONFIG_FILE=".smallfactory.yml"
-if [ ! -f "$CONFIG_FILE" ]; then
-  printf "default_datarepo: %s\n" "$SF_REPO_PATH" > "$CONFIG_FILE"
+# Ensure SF_HOME exists (mounted volume target)
+mkdir -p "$SF_HOME"
+
+# Ensure config is stored under SF_HOME and symlinked into /app for compatibility
+HOME_CONFIG_FILE="${SF_HOME}/.smallfactory.yml"
+APP_CONFIG_LINK=".smallfactory.yml"
+if [ ! -f "$HOME_CONFIG_FILE" ]; then
+  printf "default_datarepo: %s\n" "$SF_REPO_PATH" > "$HOME_CONFIG_FILE"
 else
-  # Idempotently set/update default_datarepo
-  if grep -q '^default_datarepo:' "$CONFIG_FILE"; then
-    sed -i "s#^default_datarepo:.*#default_datarepo: ${SF_REPO_PATH//#/\\#}#" "$CONFIG_FILE"
+  # Idempotently set/update default_datarepo in the persisted config
+  if grep -q '^default_datarepo:' "$HOME_CONFIG_FILE"; then
+    sed -i "s#^default_datarepo:.*#default_datarepo: ${SF_REPO_PATH//#/\\#}#" "$HOME_CONFIG_FILE"
   else
-    printf "default_datarepo: %s\n" "$SF_REPO_PATH" >> "$CONFIG_FILE"
+    printf "default_datarepo: %s\n" "$SF_REPO_PATH" >> "$HOME_CONFIG_FILE"
   fi
 fi
+# Create/refresh a symlink so core code reading /app/.smallfactory.yml still works
+ln -sf "$HOME_CONFIG_FILE" "$APP_CONFIG_LINK"
 
 # Prepare datarepo: clone if URL provided and directory empty; else init if empty
 mkdir -p "$SF_REPO_PATH"

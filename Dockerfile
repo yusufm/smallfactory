@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8080 \
-    SF_REPO_PATH=/datarepo
+    # Parent directory for persistent state (config + datarepo)
+    SF_HOME=/sfdata
 
 # Install system dependencies (git, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,8 +31,8 @@ COPY . .
 
 # Create a non-root user and ensure writable dirs
 RUN useradd -u 10001 -m sf && \
-    mkdir -p /datarepo && \
-    chown -R sf:sf /app /datarepo
+    mkdir -p /sfdata && \
+    chown -R sf:sf /app /sfdata
 
 # Copy entrypoint
 COPY docker/entrypoint.sh /entrypoint.sh
@@ -40,6 +41,9 @@ RUN chmod +x /entrypoint.sh
 USER sf
 
 EXPOSE 8080
+
+# Advertise parent data directory as a volume for persistence
+VOLUME ["/sfdata"]
 
 # Healthcheck: basic GET on root (adjust as needed)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
