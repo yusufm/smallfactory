@@ -71,4 +71,16 @@ if command -v git >/dev/null 2>&1; then
 fi
 
 # Run the web server
-exec python3 sf.py web --host 0.0.0.0 --port "$PORT" ${SF_WEB_DEBUG:+--debug}
+if [ -n "${SF_WEB_DEBUG:-}" ]; then
+  # Debug mode: use Flask's development server with auto-reload
+  exec python3 sf.py web --host 0.0.0.0 --port "$PORT" --debug
+else
+  # Production: use Gunicorn (threaded workers configurable via env)
+  exec gunicorn \
+    -w ${WEB_CONCURRENCY:-2} \
+    -k gthread \
+    --threads ${WEB_THREADS:-4} \
+    --timeout ${WEB_TIMEOUT:-120} \
+    --bind 0.0.0.0:"$PORT" \
+    web.app:app
+fi
