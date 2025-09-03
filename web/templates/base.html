@@ -56,6 +56,8 @@
                     </div>
                 </div>
                 <div class="flex items-center">
+                    {# SaaS desktop partial (if provided by SF_EXTRA_TEMPLATES) #}
+                    {% include 'saas/nav.html' ignore missing %}
                     <button id="mobile-menu-button" class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -81,6 +83,8 @@
                 <a href="{{ url_for('stickers_index') }}" class="{% if request.endpoint and request.endpoint.startswith('stickers') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-qrcode mr-2"></i>Stickers
                 </a>
+                {# SaaS mobile partial (if provided by SF_EXTRA_TEMPLATES) #}
+                {% include 'saas/mobile_nav.html' ignore missing %}
             </div>
         </div>
     </nav>
