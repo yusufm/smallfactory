@@ -2,3 +2,4 @@ pyyaml
 pillow
 qrcode[pil]
 pytest
+prometheus-client==0.20.0

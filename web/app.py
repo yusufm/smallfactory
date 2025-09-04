@@ -4,7 +4,7 @@ smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response, g, session
 from pathlib import Path
 import json
 import sys
@@ -25,6 +25,9 @@ import atexit
 from contextlib import contextmanager
 import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
+
+# Prometheus metrics
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -88,6 +91,61 @@ if _extra_tpl_dir and os.path.isdir(_extra_tpl_dir):
 # -----------------------
 # Jinja Filters / Helpers
 # -----------------------
+
+# -----------------------
+# Prometheus instrumentation
+# -----------------------
+_METRICS_ENV = os.environ.get('METRICS_ENV', 'prod')
+_SERVICE_NAME = os.environ.get('SERVICE_NAME', 'app')
+
+HTTP_REQUESTS_TOTAL = Counter(
+    'sf_web_http_requests_total',
+    'Total HTTP requests',
+    ['method', 'path', 'status', 'env', 'service'],
+)
+
+HTTP_REQUEST_DURATION_SECONDS = Histogram(
+    'sf_web_http_request_duration_seconds',
+    'HTTP request duration in seconds',
+    ['method', 'path', 'status', 'env', 'service'],
+    buckets=(0.05, 0.1, 0.3, 1, 3, 10),
+)
+
+@app.before_request
+def _metrics_before_request():
+    try:
+        g._metrics_t0 = time.time()
+    except Exception:
+        pass
+
+@app.after_request
+def _metrics_after_request(response: Response):
+    try:
+        t0 = getattr(g, '_metrics_t0', None)
+        dt = (time.time() - t0) if t0 is not None else None
+        method = str(request.method or 'GET')
+        # Prefer route rule (stable cardinality); fallback to path
+        try:
+            rule = request.url_rule.rule if getattr(request, 'url_rule', None) else None
+        except Exception:
+            rule = None
+        path_label = str(rule or request.path or '/')
+        status = str(getattr(response, 'status_code', 0))
+        HTTP_REQUESTS_TOTAL.labels(method, path_label, status, _METRICS_ENV, _SERVICE_NAME).inc()
+        if dt is not None:
+            HTTP_REQUEST_DURATION_SECONDS.labels(method, path_label, status, _METRICS_ENV, _SERVICE_NAME).observe(dt)
+    except Exception:
+        # Never break responses on metrics errors
+        pass
+    return response
+
+@app.get('/metrics')
+def _metrics_endpoint():
+    try:
+        data = generate_latest()  # default registry
+        return Response(response=data, status=200, mimetype=CONTENT_TYPE_LATEST)
+    except Exception:
+        return Response(response=b'metrics error', status=500, mimetype='text/plain')
 
 def _human_bytes(num: int) -> str:
     """Format a byte count into a human-readable string (KB, MB, GB...)."""
