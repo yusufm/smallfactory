@@ -4,7 +4,7 @@ smallFactory Web UI - Flask application providing a modern web interface
 for the Git-native PLM system.
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response, g
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response, g, session
 from pathlib import Path
 import json
 import sys
@@ -24,6 +24,7 @@ import time
 import atexit
 from contextlib import contextmanager
 import tarfile
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 # Prometheus metrics
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -69,6 +70,23 @@ from smallfactory.core.v1.validate import validate_repo
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
+
+# Optionally allow an extra templates directory for SaaS-provided partials
+# If SF_EXTRA_TEMPLATES is not set, fall back to the standard mount path.
+_extra_tpl_dir = os.environ.get('SF_EXTRA_TEMPLATES') or '/var/lib/smallfactory-saas/templates'
+if _extra_tpl_dir and os.path.isdir(_extra_tpl_dir):
+    try:
+        app.jinja_loader = ChoiceLoader([  # type: ignore[attr-defined]
+            app.jinja_loader,              # default loader
+            FileSystemLoader(_extra_tpl_dir),
+        ])
+        try:
+            app.logger.info(f"[smallFactory] Added extra templates directory: {_extra_tpl_dir}")
+        except Exception:
+            pass
+    except Exception:
+        # If loader setup fails, continue with default loader
+        pass
 
 # -----------------------
 # Jinja Filters / Helpers
@@ -150,6 +168,25 @@ def _human_bytes(num: int) -> str:
 @app.template_filter('human_bytes')
 def _human_bytes_filter(value):
     return _human_bytes(value)
+
+# -----------------------
+# Auth / Session helpers
+# -----------------------
+
+@app.route('/logout', methods=['GET'])
+def http_logout():
+    """Clear any server-side session and redirect to a sign-out URL.
+
+    SaaS can set SF_LOGOUT_REDIRECT_URL to an oauth2-proxy sign-out URL, e.g.:
+    https://auth.example.com/oauth2/sign_out?rd=https://t-tenant.example.com
+    If not set, redirect to '/'.
+    """
+    try:
+        session.clear()
+    except Exception:
+        pass
+    target = os.environ.get('SF_LOGOUT_REDIRECT_URL') or '/'
+    return redirect(target)
 
 # -----------------------
 # Optional Git auto-commit support (ON by default)
