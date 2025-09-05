@@ -198,9 +198,9 @@ DATAREPO_TOTAL_FILES = Gauge(
     ['env', 'service'],
 )
 
-DATAREPO_SIZE_BYTES = Gauge(
-    'sf_datarepo_size_bytes',
-    'Approximate size in bytes of the working tree (excludes .git)',
+DATAREPO_SIZE_ONDISK_BYTES = Gauge(
+    'sf_datarepo_size_bytes_on_disk',
+    'Approximate total size in bytes of the data repository on disk (includes .git)',
     ['env', 'service'],
 )
 
@@ -231,52 +231,42 @@ def _compute_internal_metrics(datarepo_path: Path) -> dict:
         commits = 0
 
     total_files = 0
-    size_bytes = 0
 
-    # Walk working tree excluding .git to count files and sizes
+    # Walk working tree excluding .git to count files only (cheap)
     try:
         for dirpath, dirnames, filenames in os.walk(root):
             # skip .git entirely
             dirnames[:] = [d for d in dirnames if d != '.git']
-            # lightweight count and size sum
+            # lightweight count
             total_files += len(filenames)
-            for fn in filenames:
-                try:
-                    fp = os.path.join(dirpath, fn)
-                    # Using os.path.getsize is cheap and avoids opening file
-                    size_bytes += os.path.getsize(fp)
-                except Exception:
-                    # Ignore inaccessible files
-                    pass
     except Exception:
         pass
 
-    # Count entities: prefer directory layout with entity.yml; also count legacy top-level *.yml
+    # Compute total on-disk size via 'du -sk' (fast, includes .git and honors FS blocks)
+    size_bytes_on_disk = 0
+    try:
+        du = subprocess.run(['du', '-sk', str(root)], capture_output=True, text=True)
+        if du.returncode == 0:
+            # output: "<kilobytes>\t<path>"
+            kb = (du.stdout or '').strip().split()[0]
+            size_bytes_on_disk = int(kb) * 1024
+    except Exception:
+        size_bytes_on_disk = 0
+
+    # Count entities using core API for consistency
     entities_total = 0
     try:
-        ent_dir = root / 'entities'
-        if ent_dir.is_dir():
-            # Count directories that contain entity.yml
-            try:
-                for entry in ent_dir.iterdir():
-                    try:
-                        if entry.is_dir():
-                            if (entry / 'entity.yml').is_file():
-                                entities_total += 1
-                        elif entry.is_file() and entry.suffix.lower() == '.yml':
-                            # legacy flat layout support
-                            entities_total += 1
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        # list_entities expects a Path to the datarepo root
+        ents = list_entities(root)
+        entities_total = len(ents) if isinstance(ents, list) else 0
     except Exception:
-        pass
+        # Fallback to 0 on any error
+        entities_total = 0
 
     return {
         'commits': commits,
         'total_files': total_files,
-        'size_bytes': size_bytes,
+        'size_bytes_on_disk': size_bytes_on_disk,
         'entities_total': entities_total,
     }
 
@@ -301,7 +291,7 @@ def _update_internal_gauges() -> None:
     try:
         REPO_COMMITS_TOTAL.labels(*lbls).set(float(vals.get('commits') or 0))
         DATAREPO_TOTAL_FILES.labels(*lbls).set(float(vals.get('total_files') or 0))
-        DATAREPO_SIZE_BYTES.labels(*lbls).set(float(vals.get('size_bytes') or 0))
+        DATAREPO_SIZE_ONDISK_BYTES.labels(*lbls).set(float(vals.get('size_bytes_on_disk') or 0))
         ENTITIES_TOTAL.labels(*lbls).set(float(vals.get('entities_total') or 0))
     except Exception:
         # Do not raise in metrics path
