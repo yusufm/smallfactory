@@ -27,7 +27,7 @@ import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
 
 # Prometheus metrics
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -142,6 +142,12 @@ def _metrics_after_request(response: Response):
 @app.get('/metrics')
 def _metrics_endpoint():
     try:
+        # Update lightweight internal gauges before scraping
+        try:
+            _update_internal_gauges()
+        except Exception:
+            # Never fail the metrics endpoint if internal gauge update errors
+            pass
         data = generate_latest()  # default registry
         return Response(response=data, status=200, mimetype=CONTENT_TYPE_LATEST)
     except Exception:
@@ -168,6 +174,138 @@ def _human_bytes(num: int) -> str:
 @app.template_filter('human_bytes')
 def _human_bytes_filter(value):
     return _human_bytes(value)
+
+# -----------------------
+# Internal metrics (low-cost, TTL-cached)
+# -----------------------
+
+# TTL for recomputing internal gauges (in seconds). Override via SF_METRICS_TTL_SEC
+try:
+    _METRICS_TTL_SEC = int(os.environ.get('SF_METRICS_TTL_SEC', '15') or '15')
+except Exception:
+    _METRICS_TTL_SEC = 15
+
+# Gauges requested
+REPO_COMMITS_TOTAL = Gauge(
+    'sf_repo_commits_total',
+    'Total git commits in the data repository',
+    ['env', 'service'],
+)
+
+DATAREPO_TOTAL_FILES = Gauge(
+    'sf_datarepo_total_files',
+    'Total number of files in the data repository (excludes .git)',
+    ['env', 'service'],
+)
+
+DATAREPO_SIZE_BYTES = Gauge(
+    'sf_datarepo_size_bytes',
+    'Approximate size in bytes of the working tree (excludes .git)',
+    ['env', 'service'],
+)
+
+ENTITIES_TOTAL = Gauge(
+    'sf_entities_total',
+    'Total number of entities',
+    ['env', 'service'],
+)
+
+# Simple module-level cache to avoid repeated filesystem scans per scrape
+_SIMPLE_METRICS_CACHE: dict[str, float | dict] = {
+    'ts': 0.0,
+    'values': {},
+}
+
+
+def _compute_internal_metrics(datarepo_path: Path) -> dict:
+    """Compute low-cost repository metrics.
+
+    Returns a dict with keys: commits, total_files, size_bytes, entities_total.
+    """
+    root = Path(datarepo_path)
+    commits = 0
+    try:
+        gm = _compute_git_metrics(root)
+        commits = int(gm.get('commits') or 0)
+    except Exception:
+        commits = 0
+
+    total_files = 0
+    size_bytes = 0
+
+    # Walk working tree excluding .git to count files and sizes
+    try:
+        for dirpath, dirnames, filenames in os.walk(root):
+            # skip .git entirely
+            dirnames[:] = [d for d in dirnames if d != '.git']
+            # lightweight count and size sum
+            total_files += len(filenames)
+            for fn in filenames:
+                try:
+                    fp = os.path.join(dirpath, fn)
+                    # Using os.path.getsize is cheap and avoids opening file
+                    size_bytes += os.path.getsize(fp)
+                except Exception:
+                    # Ignore inaccessible files
+                    pass
+    except Exception:
+        pass
+
+    # Count entities: prefer directory layout with entity.yml; also count legacy top-level *.yml
+    entities_total = 0
+    try:
+        ent_dir = root / 'entities'
+        if ent_dir.is_dir():
+            # Count directories that contain entity.yml
+            try:
+                for entry in ent_dir.iterdir():
+                    try:
+                        if entry.is_dir():
+                            if (entry / 'entity.yml').is_file():
+                                entities_total += 1
+                        elif entry.is_file() and entry.suffix.lower() == '.yml':
+                            # legacy flat layout support
+                            entities_total += 1
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return {
+        'commits': commits,
+        'total_files': total_files,
+        'size_bytes': size_bytes,
+        'entities_total': entities_total,
+    }
+
+
+def _update_internal_gauges() -> None:
+    """Update internal Prometheus gauges with TTL caching."""
+    now = time.time()
+    try:
+        ts = float(_SIMPLE_METRICS_CACHE.get('ts') or 0.0)
+    except Exception:
+        ts = 0.0
+    if now - ts < _METRICS_TTL_SEC:
+        vals = _SIMPLE_METRICS_CACHE.get('values') or {}
+    else:
+        repo_path = get_datarepo_path()
+        vals = _compute_internal_metrics(repo_path)
+        _SIMPLE_METRICS_CACHE['ts'] = now
+        _SIMPLE_METRICS_CACHE['values'] = vals
+
+    # Apply to gauges
+    lbls = ( _METRICS_ENV, _SERVICE_NAME )
+    try:
+        REPO_COMMITS_TOTAL.labels(*lbls).set(float(vals.get('commits') or 0))
+        DATAREPO_TOTAL_FILES.labels(*lbls).set(float(vals.get('total_files') or 0))
+        DATAREPO_SIZE_BYTES.labels(*lbls).set(float(vals.get('size_bytes') or 0))
+        ENTITIES_TOTAL.labels(*lbls).set(float(vals.get('entities_total') or 0))
+    except Exception:
+        # Do not raise in metrics path
+        pass
 
 # -----------------------
 # Auth / Session helpers
