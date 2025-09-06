@@ -115,6 +115,17 @@
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <div class="text-center text-gray-500 text-sm">
                 <p>smallFactory - Git-native PLM System</p>
+                <p class="mt-1 text-xs text-gray-400">
+                    {% set v = app_version or {} %}
+                    {% if v.short %}
+                        Version: <span class="font-mono">{{ v.short }}</span>
+                        {% if v.branch %}<span class="ml-1">({{ v.branch }})</span>{% endif %}
+                        {% if v.dirty %}<span class="ml-1 text-rose-500" title="Uncommitted changes">• dirty</span>{% endif %}
+                        {% if v.date %}<span class="ml-2">{{ v.date }}</span>{% endif %}
+                    {% else %}
+                        Version: not a git checkout
+                    {% endif %}
+                </p>
             </div>
         </div>
     </footer>
