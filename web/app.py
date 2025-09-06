@@ -9,7 +9,6 @@ from pathlib import Path
 import json
 import sys
 import os
-import shutil
 import heapq
 import csv
 import re
@@ -915,24 +914,7 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
             except Exception:
                 result['commits'] = 0
 
-        # Latest commit metadata
-        lg = subprocess.run(
-            ['git', '-C', repo, 'log', '-1', '--format=%H|%h|%cI|%an|%ae|%s'],
-            capture_output=True,
-            text=True,
-        )
-        if lg.returncode == 0:
-            line = (lg.stdout or '').strip()
-            parts = line.split('|', 5)
-            if len(parts) >= 6:
-                result['latest'] = {
-                    'hash': parts[0] or None,
-                    'short': parts[1] or None,
-                    'date': parts[2] or None,  # ISO 8601
-                    'author': parts[3] or None,
-                    'email': parts[4] or None,
-                    'subject': parts[5] or None,
-                }
+        # Latest commit metadata skipped (UI no longer displays it)
 
         # Remotes info
         rm = subprocess.run(['git', '-C', repo, 'remote'], capture_output=True, text=True)
@@ -1308,16 +1290,6 @@ def _compute_repo_sizes(datarepo_path: Path) -> dict:
 
     total_bytes = int(entities['bytes'] + inventory['bytes'] + journals['bytes'] + cfg_bytes + gitattr_bytes)
 
-    # Disk usage for the filesystem hosting the data repo
-    try:
-        du = shutil.disk_usage(str(datarepo_path))
-        disk = {
-            'total': int(du.total),
-            'used': int(du.used),
-            'free': int(du.free),
-        }
-    except Exception:
-        disk = {'total': 0, 'used': 0, 'free': 0}
 
     # Compute total size of the entire data repo directory (includes .git and all files)
     repo_dir_bytes = 0
@@ -1375,7 +1347,6 @@ def _compute_repo_sizes(datarepo_path: Path) -> dict:
             },
         },
         'total_bytes': int(total_bytes),
-        'disk': disk,
         'repo_dir_bytes': int(repo_dir_bytes),
         'repo_dir_bytes_on_disk': int(repo_dir_bytes_on_disk),
         'largest_files': largest_files,
