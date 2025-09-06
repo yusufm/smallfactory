@@ -149,6 +149,50 @@ def _read_app_version() -> dict:
     except Exception:
         pass
 
+    # 3) Local development fallback: derive from Git metadata if available
+    try:
+        # Ensure we are in a git work tree
+        ck = subprocess.run(['git', '-C', str(root), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
+        if ck.returncode == 0 and (ck.stdout or '').strip() == 'true':
+            # Short hash
+            sh = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True)
+            short_hash = (sh.stdout or '').strip() if sh.returncode == 0 else None
+
+            # Branch name (may be HEAD in detached state)
+            br = subprocess.run(['git', '-C', str(root), 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True)
+            branch = (br.stdout or '').strip() if br.returncode == 0 else None
+
+            # Dirty flag
+            st = subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True, text=True)
+            dirty = bool((st.stdout or '').strip()) if st.returncode == 0 else False
+
+            # Commit date (ISO-8601, UTC if available)
+            cd = subprocess.run(['git', '-C', str(root), 'log', '-1', '--date=iso-strict', '--format=%cd'], capture_output=True, text=True)
+            date_iso = (cd.stdout or '').strip() if cd.returncode == 0 else None
+
+            # Compose a user-friendly short string
+            if short_hash:
+                disp_branch = branch if branch and branch.lower() != 'head' else None
+                disp_date = date_iso
+                suffix = '+dirty' if dirty else ''
+                short_str = f"{short_hash}"
+                if disp_branch:
+                    short_str += f" ({disp_branch})"
+                if disp_date:
+                    short_str += f" {disp_date}"
+                short_str += suffix
+
+                info['hash'] = short_hash
+                info['short'] = short_str
+                info['date'] = disp_date
+                info['dirty'] = dirty
+                info['branch'] = disp_branch
+                _APP_VERSION_CACHE = info
+                return info
+    except Exception:
+        # Ignore git errors and fall through
+        pass
+
     _APP_VERSION_CACHE = info
     return info
 
