@@ -9,6 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SF_DATA_PATH=/data \
     SF_REPO_PATH=/data/datarepo
 
+# Build-time version (baked into image; optional)
+ARG BUILD_VERSION=unknown
+ENV SF_APP_VERSION=${BUILD_VERSION}
+
 # Install system dependencies (git, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
@@ -28,6 +32,9 @@ RUN pip install --upgrade pip && \
 
 # Copy the rest of the source
 COPY . .
+
+# Bake version string into a file inside the image so the app can read it
+RUN printf "%s\n" "${BUILD_VERSION}" > web/VERSION || true
 
 # Create a non-root user and ensure writable dirs
 RUN useradd -u 10001 -m sf && \

@@ -88,7 +88,7 @@ if _extra_tpl_dir and os.path.isdir(_extra_tpl_dir):
         pass
 
 # -----------------------
-# App Version (Git) helper
+# App Version helper (container-friendly)
 # -----------------------
 _APP_VERSION_CACHE: dict | None = None
 
@@ -99,10 +99,16 @@ def _get_project_root() -> Path:
         return Path.cwd()
 
 def _read_app_version() -> dict:
-    """Best-effort: read running code git version (hash/date/dirty/branch).
+    """Read the baked version string for the running app.
 
-    Returns a dict with keys: hash, short, date, dirty, branch. Empty values
-    on failure or when not in a git repo. Cached at module level.
+    Preferred sources (in order):
+      1) SF_APP_VERSION env var (baked via Docker build args)
+      2) VERSION files (e.g., web/VERSION)
+
+    Returns a dict with keys: hash, short, date, dirty, branch.
+    For the simplified container workflow, we primarily populate 'short'
+    with the display string, and leave others empty.
+    Cached at module level for efficiency.
     """
     global _APP_VERSION_CACHE
     if _APP_VERSION_CACHE is not None:
@@ -115,35 +121,34 @@ def _read_app_version() -> dict:
         'branch': None,
     }
     root = _get_project_root()
+
+    # 1) Environment variable baked at build time
     try:
-        # Ensure this codebase is a git repo
-        ck = subprocess.run(['git', '-C', str(root), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
-        if ck.returncode != 0:
+        generic = os.environ.get('SF_APP_VERSION')
+        if generic:
+            info['short'] = generic.strip()
             _APP_VERSION_CACHE = info
             return info
-        # Full and short hash
-        h_full = subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True)
-        if h_full.returncode == 0:
-            info['hash'] = (h_full.stdout or '').strip() or None
-        h_short = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True)
-        if h_short.returncode == 0:
-            info['short'] = (h_short.stdout or '').strip() or None
-        # Commit date (ISO)
-        dt = subprocess.run(['git', '-C', str(root), 'show', '-s', '--format=%cI', 'HEAD'], capture_output=True, text=True)
-        if dt.returncode == 0:
-            info['date'] = (dt.stdout or '').strip() or None
-        # Branch (may be detached)
-        br = subprocess.run(['git', '-C', str(root), 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True)
-        if br.returncode == 0:
-            info['branch'] = (br.stdout or '').strip() or None
-        # Dirty flag
-        st = subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True, text=True)
-        if st.returncode == 0:
-            dirty = bool((st.stdout or '').strip())
-            info['dirty'] = dirty
     except Exception:
-        # Leave defaults
         pass
+
+    # 2) VERSION file(s) baked into the image (preferred)
+    try:
+        candidates = [
+            root / 'VERSION',
+            root / 'web' / 'VERSION',
+            root / 'web' / 'static' / 'version.txt',
+        ]
+        for vf in candidates:
+            if vf.is_file():
+                txt = (vf.read_text(encoding='utf-8', errors='ignore') or '').strip()
+                if txt:
+                    info['short'] = txt
+                    _APP_VERSION_CACHE = info
+                    return info
+    except Exception:
+        pass
+
     _APP_VERSION_CACHE = info
     return info
 
@@ -154,6 +159,12 @@ def inject_app_version():
     except Exception:
         ver = {'hash': None, 'short': None, 'date': None, 'dirty': False, 'branch': None}
     return {'app_version': ver}
+
+# Warm the cache at startup so the first request doesn't pay the cost
+try:
+    _ = _read_app_version()
+except Exception:
+    pass
 
 # -----------------------
 # Jinja Filters / Helpers
