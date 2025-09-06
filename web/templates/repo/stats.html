@@ -112,14 +112,6 @@
         </div>
       </div>
 
-      {% set disk = stats.disk or {} %}
-      {% if disk.total %}
-      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs">
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-800">FS Total: {{ disk.total|human_bytes }}</span>
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 text-blue-800">Used: {{ disk.used|human_bytes }}</span>
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full bg-green-100 text-green-800">Free: {{ disk.free|human_bytes }}</span>
-      </div>
-      {% endif %}
     </div>
   </div>
 
@@ -195,7 +187,7 @@
     </div>
     <div class="p-6">
       {% set git = stats.git or {} %}
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div class="p-4 bg-gray-50 rounded">
           <div class="text-sm text-gray-500">Repository</div>
           <div class="mt-1 text-sm"><span class="font-medium">In Git:</span> {{ 'Yes' if git.is_repo else 'No' }}</div>
@@ -207,12 +199,6 @@
           <div class="text-sm"><span class="font-medium">Ahead/Behind:</span> {{ git.status.ahead if git.status else 0 }}/{{ git.status.behind if git.status else 0 }}</div>
           <div class="text-sm"><span class="font-medium">Changed:</span> {{ git.status.changed if git.status else 0 }}</div>
           <div class="text-sm"><span class="font-medium">Untracked:</span> {{ git.status.untracked if git.status else 0 }}</div>
-        </div>
-        <div class="p-4 bg-gray-50 rounded">
-          <div class="text-sm text-gray-500">Latest Commit</div>
-          <div class="text-sm"><span class="font-mono">{{ git.latest.short or git.latest.hash or '—' }}</span> <span class="text-gray-500">{{ git.latest.date or '' }}</span></div>
-          <div class="text-sm text-gray-700 truncate" title="{{ git.latest.subject or '' }}">{{ git.latest.subject or '' }}</div>
-          <div class="text-xs text-gray-500">{{ git.latest.author or '' }}{{ ' <' ~ git.latest.email ~ '>' if git.latest and git.latest.email else '' }}</div>
         </div>
       </div>
       <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
