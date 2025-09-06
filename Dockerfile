@@ -1,13 +1,23 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
+# Accept build-time version metadata (optional)
+ARG SF_APP_VERSION_SHORT
+ARG SF_APP_VERSION_HASH
+ARG SF_APP_VERSION_BRANCH
+ARG SF_APP_VERSION_DATE
+
 # Set environment
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PORT=8080 \
     SF_DATA_PATH=/data \
-    SF_REPO_PATH=/data/datarepo
+    SF_REPO_PATH=/data/datarepo \
+    SF_APP_VERSION_SHORT=${SF_APP_VERSION_SHORT} \
+    SF_APP_VERSION_HASH=${SF_APP_VERSION_HASH} \
+    SF_APP_VERSION_BRANCH=${SF_APP_VERSION_BRANCH} \
+    SF_APP_VERSION_DATE=${SF_APP_VERSION_DATE}
 
 # Install system dependencies (git, curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,6 +38,18 @@ RUN pip install --upgrade pip && \
 
 # Copy the rest of the source
 COPY . .
+
+# Bake version metadata file for runtime (if args provided)
+RUN set -e; \
+    V_SHORT="${SF_APP_VERSION_SHORT}"; \
+    V_HASH="${SF_APP_VERSION_HASH}"; \
+    V_BRANCH="${SF_APP_VERSION_BRANCH}"; \
+    V_DATE="${SF_APP_VERSION_DATE}"; \
+    if [ -n "${V_SHORT}${V_HASH}${V_BRANCH}${V_DATE}" ]; then \
+      printf '{\n  "short": "%s",\n  "hash": "%s",\n  "branch": "%s",\n  "date": "%s"\n}\n' \
+        "${V_SHORT}" "${V_HASH}" "${V_BRANCH}" "${V_DATE}" \
+        > /app/.app_version.json; \
+    fi
 
 # Create a non-root user and ensure writable dirs
 RUN useradd -u 10001 -m sf && \

@@ -119,6 +119,51 @@ def _read_app_version() -> dict:
         # Ensure this codebase is a git repo
         ck = subprocess.run(['git', '-C', str(root), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
         if ck.returncode != 0:
+            # Not a git checkout (e.g., running in a container). Try fallbacks.
+            try:
+                env = os.environ
+                short = (env.get('SF_APP_VERSION_SHORT') or env.get('GITHUB_SHA_SHORT') or env.get('RELEASE') or env.get('IMAGE_TAG') or '').strip()
+                full = (env.get('SF_APP_VERSION_HASH') or env.get('GITHUB_SHA') or '').strip()
+                branch = (env.get('SF_APP_VERSION_BRANCH') or env.get('GITHUB_REF_NAME') or env.get('GIT_BRANCH') or '').strip()
+                date = (env.get('SF_APP_VERSION_DATE') or '').strip()
+                if short or full or branch or date:
+                    info['short'] = short or (full[:7] if full else None)
+                    info['hash'] = full or (short if short and len(short) > 7 else None)
+                    info['branch'] = branch or None
+                    info['date'] = date or None
+                    _APP_VERSION_CACHE = info
+                    return info
+            except Exception:
+                pass
+
+            # Fallback 2: look for baked-in version files
+            try:
+                # JSON file preferred
+                ver_json = Path('/app/.app_version.json')
+                if ver_json.is_file():
+                    with ver_json.open('r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        info['short'] = (data.get('short') or data.get('version') or '').strip() or None
+                        info['hash'] = (data.get('hash') or '').strip() or None
+                        info['date'] = (data.get('date') or '').strip() or None
+                        info['branch'] = (data.get('branch') or '').strip() or None
+                        _APP_VERSION_CACHE = info
+                        return info
+            except Exception:
+                pass
+            try:
+                # Plain text file with a short version string
+                ver_txt = Path('/app/VERSION')
+                if ver_txt.is_file():
+                    txt = ver_txt.read_text(encoding='utf-8').strip()
+                    if txt:
+                        info['short'] = txt
+                        _APP_VERSION_CACHE = info
+                        return info
+            except Exception:
+                pass
+
             _APP_VERSION_CACHE = info
             return info
         # Full and short hash
