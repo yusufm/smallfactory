@@ -50,6 +50,17 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
             ${{ format('type=raw,value={0}', inputs.tags) }}
 
+      - name: Compute version metadata
+        id: ver
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "hash=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "branch=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "date=${DATE_ISO}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -59,3 +70,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            SF_APP_VERSION_SHORT=${{ steps.ver.outputs.short }}
+            SF_APP_VERSION_HASH=${{ steps.ver.outputs.hash }}
+            SF_APP_VERSION_BRANCH=${{ steps.ver.outputs.branch }}
+            SF_APP_VERSION_DATE=${{ steps.ver.outputs.date }}
