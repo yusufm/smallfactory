@@ -88,6 +88,74 @@ if _extra_tpl_dir and os.path.isdir(_extra_tpl_dir):
         pass
 
 # -----------------------
+# App Version (Git) helper
+# -----------------------
+_APP_VERSION_CACHE: dict | None = None
+
+def _get_project_root() -> Path:
+    try:
+        return Path(__file__).parent.parent  # repo root directory (parent of web/)
+    except Exception:
+        return Path.cwd()
+
+def _read_app_version() -> dict:
+    """Best-effort: read running code git version (hash/date/dirty/branch).
+
+    Returns a dict with keys: hash, short, date, dirty, branch. Empty values
+    on failure or when not in a git repo. Cached at module level.
+    """
+    global _APP_VERSION_CACHE
+    if _APP_VERSION_CACHE is not None:
+        return _APP_VERSION_CACHE
+    info = {
+        'hash': None,
+        'short': None,
+        'date': None,
+        'dirty': False,
+        'branch': None,
+    }
+    root = _get_project_root()
+    try:
+        # Ensure this codebase is a git repo
+        ck = subprocess.run(['git', '-C', str(root), 'rev-parse', '--is-inside-work-tree'], capture_output=True, text=True)
+        if ck.returncode != 0:
+            _APP_VERSION_CACHE = info
+            return info
+        # Full and short hash
+        h_full = subprocess.run(['git', '-C', str(root), 'rev-parse', 'HEAD'], capture_output=True, text=True)
+        if h_full.returncode == 0:
+            info['hash'] = (h_full.stdout or '').strip() or None
+        h_short = subprocess.run(['git', '-C', str(root), 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True)
+        if h_short.returncode == 0:
+            info['short'] = (h_short.stdout or '').strip() or None
+        # Commit date (ISO)
+        dt = subprocess.run(['git', '-C', str(root), 'show', '-s', '--format=%cI', 'HEAD'], capture_output=True, text=True)
+        if dt.returncode == 0:
+            info['date'] = (dt.stdout or '').strip() or None
+        # Branch (may be detached)
+        br = subprocess.run(['git', '-C', str(root), 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True)
+        if br.returncode == 0:
+            info['branch'] = (br.stdout or '').strip() or None
+        # Dirty flag
+        st = subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True, text=True)
+        if st.returncode == 0:
+            dirty = bool((st.stdout or '').strip())
+            info['dirty'] = dirty
+    except Exception:
+        # Leave defaults
+        pass
+    _APP_VERSION_CACHE = info
+    return info
+
+@app.context_processor
+def inject_app_version():
+    try:
+        ver = _read_app_version()
+    except Exception:
+        ver = {'hash': None, 'short': None, 'date': None, 'dirty': False, 'branch': None}
+    return {'app_version': ver}
+
+# -----------------------
 # Jinja Filters / Helpers
 # -----------------------
 
