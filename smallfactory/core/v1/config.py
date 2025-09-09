@@ -232,8 +232,39 @@ def get_ollama_base_url() -> str:
 
 
 def get_vision_model() -> str:
-    """Return the vision model id to use with Ollama.
+    """Return the vision model id to use with the active provider.
 
-    Env var: SF_VISION_MODEL; default: qwen2.5vl:3b
+    Env var: SF_VISION_MODEL; defaults to an Ollama-capable model ('qwen2.5vl:3b').
+    When using OpenRouter, set this to a provider-qualified model id, e.g. 'openai/gpt-4o-mini'.
     """
     return os.environ.get("SF_VISION_MODEL", "qwen2.5vl:3b")
+
+
+def get_vision_provider() -> str:
+    """Return the configured Vision provider.
+
+    Env var: SF_VISION_PROVIDER; supported values: 'ollama' (default), 'openrouter'.
+    """
+    try:
+        val = (os.environ.get("SF_VISION_PROVIDER") or "ollama").strip().lower()
+    except Exception:
+        val = "ollama"
+    if val not in ("ollama", "openrouter"):
+        return "ollama"
+    return val
+
+
+def get_openrouter_base_url() -> str:
+    """Return the OpenRouter base URL.
+
+    Env var: SF_OPENROUTER_BASE_URL; default: https://openrouter.ai/api/v1
+    """
+    return os.environ.get("SF_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+
+def get_openrouter_api_key() -> str:
+    """Return the OpenRouter API key from env.
+
+    Env var: SF_OPENROUTER_API_KEY
+    """
+    return os.environ.get("SF_OPENROUTER_API_KEY", "")

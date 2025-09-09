@@ -31,7 +31,7 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config, DATAREPO_CONFIG_FILENAME
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config, DATAREPO_CONFIG_FILENAME, get_vision_provider
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -3615,13 +3615,26 @@ def api_vision_ask():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        # Friendly guidance for Ollama not running / model not pulled
-        hint = (
-            "Ensure Ollama is running and the model is available.\n"
-            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
-            "Pull model: `ollama pull qwen2.5vl:3b`\n"
-            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
-        )
+        # Friendly guidance depending on configured provider
+        try:
+            prov = get_vision_provider()
+        except Exception:
+            prov = 'ollama'
+        if prov == 'openrouter':
+            hint = (
+                "Ensure OpenRouter is configured and your API key is set.\n"
+                "Set API key: export SF_OPENROUTER_API_KEY=...\n"
+                "Optional: export SF_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1\n"
+                "Choose a model (e.g., 'google/gemma-3-12b-it:free') via SF_VISION_MODEL.\n"
+                "Docs: https://openrouter.ai/" 
+            )
+        else:
+            hint = (
+                "Ensure Ollama is running and the model is available.\n"
+                "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+                "Pull model: `ollama pull qwen2.5vl:3b`\n"
+                "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+            )
         return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
 
 
@@ -3635,12 +3648,25 @@ def api_vision_extract_part():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
-        hint = (
-            "Ensure Ollama is running and the model is available.\n"
-            "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
-            "Pull model: `ollama pull qwen2.5vl:3b`\n"
-            "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
-        )
+        try:
+            prov = get_vision_provider()
+        except Exception:
+            prov = 'ollama'
+        if prov == 'openrouter':
+            hint = (
+                "Ensure OpenRouter is configured and your API key is set.\n"
+                "Set API key: export SF_OPENROUTER_API_KEY=...\n"
+                "Optional: export SF_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1\n"
+                "Choose a model (e.g., 'openai/gpt-4o-mini') via SF_VISION_MODEL.\n"
+                "Docs: https://openrouter.ai/" 
+            )
+        else:
+            hint = (
+                "Ensure Ollama is running and the model is available.\n"
+                "Install/start: `brew install ollama && ollama serve` (mac) or see https://ollama.com/download\n"
+                "Pull model: `ollama pull qwen2.5vl:3b`\n"
+                "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
+            )
         return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
 
 # -----------------------

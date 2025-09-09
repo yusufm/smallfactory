@@ -5,7 +5,13 @@ from typing import Optional, Type
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from .config import get_ollama_base_url, get_vision_model
+from .config import (
+    get_ollama_base_url,
+    get_vision_model,
+    get_vision_provider,
+    get_openrouter_base_url,
+    get_openrouter_api_key,
+)
 
 
 class InvoicePart(BaseModel):
@@ -68,19 +74,88 @@ def ask_image(
     base_url: Optional[str] = None,
     temperature: float = 0.1,
 ) -> dict:
-    """Send an image + prompt to the configured VLM via Ollama.
+    """Send an image + prompt to the configured VLM provider.
 
+    Providers: 'ollama' (default) and 'openrouter'.
     If schema is provided, enforce JSON-only output and validate via Pydantic before returning.
     Returns a dict: if schema is None => {"text": str, "model": str};
     else => {"data": dict, "model": str}.
     """
+    provider = get_vision_provider()
+    model_name = model or get_vision_model()
+
+    if provider == "openrouter":
+        # Lazy import to avoid hard dependency when not using OpenRouter
+        try:
+            import requests  # type: ignore
+        except Exception as e:
+            raise RuntimeError("Python 'requests' package not installed. Install with: pip install requests") from e
+        # Use OpenAI-compatible Chat Completions API via OpenRouter
+        api_key = (get_openrouter_api_key() or "").strip()
+        if not api_key:
+            raise RuntimeError("OpenRouter API key not set. Set SF_OPENROUTER_API_KEY.")
+        base = base_url or get_openrouter_base_url()
+        # Normalize URL
+        url = base.rstrip("/") + "/chat/completions"
+
+        img_b64 = base64.b64encode(image_bytes).decode("ascii")
+        sys_msg = (
+            "You are a precise information extraction engine. " + _build_schema_instruction()
+            if schema is not None
+            else "You are a helpful vision assistant. Answer concisely."
+        )
+        messages = [
+            {"role": "system", "content": sys_msg},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{img_b64}"},
+                    },
+                ],
+            },
+        ]
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": float(temperature),
+        }
+        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=60)
+        if r.status_code != 200:
+            raise RuntimeError(f"OpenRouter error {r.status_code}: {r.text[:200]}")
+        data = r.json() if r.text else {}
+        content = (
+            (data.get("choices") or [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+        if schema is None:
+            return {"text": content, "model": model_name}
+        json_text = _ensure_json_only(content)
+        try:
+            obj = json.loads(json_text)
+        except Exception as e:
+            raise ValueError(f"Failed to parse model JSON: {e}")
+        try:
+            parsed = schema.model_validate(obj)
+        except Exception as e:
+            raise ValueError(f"Response did not match expected schema: {e}")
+        return {"data": parsed.model_dump(mode="python"), "model": model_name}
+
+    # Default: Ollama provider
     try:
         import ollama
         from ollama import Client
     except Exception as e:
         raise RuntimeError("Ollama client is not installed. Install with: pip install ollama") from e
 
-    model_name = model or get_vision_model()
     host = base_url or get_ollama_base_url()
     client = Client(host=host)
 
