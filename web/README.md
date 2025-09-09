@@ -17,7 +17,7 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
   - BOM: add, remove, set lines, and manage alternates; `rev: released` resolves via pointer
   - Files working area: manage under `entities/<sfid>/files/` (list, mkdir, upload, move, delete)
 - **Stickers**: Batch PDF generation of QR code labels for multiple SFIDs
-- **Vision (Ollama)**: Generic image Q&A and invoice part extraction
+- **Vision (Ollama/OpenRouter)**: Generic image Q&A and invoice part extraction
 - **Modern UI**: Clean, responsive Tailwind CSS design
 - **Git-native**: Optional auto-commit on writes (configurable)
 
@@ -59,8 +59,10 @@ FLASK_ENV=development python3 sf.py web --port 8080 --debug
 - **SF_WEB_AUTOCOMMIT**: Enable/disable Git auto-commit on writes. Default ON. Disable with `SF_WEB_AUTOCOMMIT=0`.
 - **PORT** / `--port`: Port for the web server (default 8080).
 - **FLASK_ENV** / `--debug`: Set `development` or pass `--debug` for auto-reload.
-- **SF_OLLAMA_BASE_URL**: Base URL for the Ollama server (default `http://localhost:11434`).
-- **SF_VISION_MODEL**: Vision model name (default `qwen2.5vl:3b`).
+- **SF_VISION_PROVIDER**: Vision provider. Supported values: `ollama` (default) or `openrouter`.
+- **SF_VISION_MODEL**: Vision model identifier. For Ollama, defaults to `qwen2.5vl:3b`. For OpenRouter, set to a provider-qualified name (e.g., `google/gemma-3-12b-it:free`).
+- If using Ollama: **SF_OLLAMA_BASE_URL** (default `http://localhost:11434`).
+- If using OpenRouter: **SF_OPENROUTER_API_KEY** (required), **SF_OPENROUTER_BASE_URL** (default `https://openrouter.ai/api/v1`).
 - Optional: **SF_REPO** to point to a specific data repository path (follows the same resolution as the CLI).
 
 ### Proxy-auth user identity for Git commits (web only)
@@ -127,9 +129,14 @@ The UI is designed to be extensible for additional PLM modules:
 
 Each new module can follow the same pattern with its own template directory and routes.
 
-## Vision (Ollama)
+## Vision (configurable provider: Ollama or OpenRouter)
 
-The web UI can call a local or remote Visual LLM (VLM) hosted by Ollama. We recommend `qwen2.5vl:3b` for a lightweight, high-quality model.
+The web UI can call a local or remote Visual LLM (VLM) via either:
+
+- Ollama (self-hosted, local inference)
+- OpenRouter (hosted API compatible with OpenAI chat API)
+
+We recommend `qwen2.5vl:3b` on Ollama for a lightweight, high-quality local model; or a vision-capable model on OpenRouter such as `google/gemma-3-12b-it:free`.
 
 ### 1) Start Ollama and pull the model
 
@@ -154,13 +161,27 @@ Verify the API:
 curl http://localhost:11434/api/tags
 ```
 
-### 2) Configure smallFactory to talk to Ollama
+### 2a) Configure smallFactory to use Ollama
 
 Defaults assume a local Ollama at `http://localhost:11434`. To override, set:
 
 ```bash
+export SF_VISION_PROVIDER=ollama
 export SF_OLLAMA_BASE_URL=http://<ollama-host>:11434
 export SF_VISION_MODEL=qwen2.5vl:3b
+
+### 2b) Configure smallFactory to use OpenRouter
+
+Sign up and obtain an API key at https://openrouter.ai/
+
+```bash
+export SF_VISION_PROVIDER=openrouter
+export SF_OPENROUTER_API_KEY=sk-or-...
+# Optional override; defaults to https://openrouter.ai/api/v1
+export SF_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+# Choose a model identifier supported by OpenRouter
+export SF_VISION_MODEL=google/gemma-3-12b-it:free
+```
 ```
 
 ### 3) Install web deps and run
@@ -187,9 +208,14 @@ curl -s -X POST http://localhost:8080/api/vision/extract/part \
   -F "file=@/path/to/invoice.jpg" | jq
 ```
 
-If you see an error, ensure Ollama is running and the model is pulled. You can also open the web Vision page at `/vision` for a camera/upload UI.
+If you see an error, ensure the provider is correctly configured:
 
-## Troubleshooting: Vision (Ollama)
+- For Ollama: verify the service is running and the model is pulled.
+- For OpenRouter: verify `SF_OPENROUTER_API_KEY` is set and the model id is valid.
+
+You can also open the Vision page at `/vision` for a camera/upload UI.
+
+## Troubleshooting: Vision
 
 - **Missing prompt (400)**
   - Error: `Missing prompt`
@@ -207,14 +233,17 @@ If you see an error, ensure Ollama is running and the model is pulled. You can a
   - Error: `Image too large (max 10MB).`
   - Fix: Reduce the image size below 10MB.
 
-- **Ollama not running or model missing (500)**
-  - Symptom: 500 with hint to start/pull model.
-  - Fix:
+- **Provider not configured / runtime error (500)**
+  - If using Ollama:
     - Start Ollama: `ollama serve`
     - Pull model: `ollama pull qwen2.5vl:3b`
     - Verify: `curl http://localhost:11434/api/tags`
-  - Remote host: `export SF_OLLAMA_BASE_URL=http://<host>:11434`
-  - Model name: set/confirm `SF_VISION_MODEL` (default `qwen2.5vl:3b`).
+    - Remote host: `export SF_OLLAMA_BASE_URL=http://<host>:11434`
+    - Model name: set/confirm `SF_VISION_MODEL` (default `qwen2.5vl:3b`).
+  - If using OpenRouter:
+    - Ensure API key is set: `export SF_OPENROUTER_API_KEY=...`
+    - Confirm base URL (optional): `export SF_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`
+    - Choose a valid model id (e.g., `google/gemma-3-12b-it:free`) via `SF_VISION_MODEL`
 
 ## Container
 

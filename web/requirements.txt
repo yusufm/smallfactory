@@ -16,6 +16,7 @@ reportlab
 # Vision (Ollama client + schema)
 ollama
 pydantic>=2
+requests
 
 # Production WSGI server
 gunicorn
