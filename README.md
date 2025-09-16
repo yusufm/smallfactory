@@ -28,12 +28,6 @@ Read the [smallFactory Story](docs/meta/the-smallfactory-story.md)
 
 Want everything smallFactory offers without running servers? smallFactory Cloud is our fully managed, multi-tenant hosting—so you can focus on building, not babysitting infrastructure.
 
-- Secure, SSO-ready multi‑tenant environment
-- Automatic updates, monitoring, and backups
-- Keep your data portable: still Git‑native under the hood
-- Same modern web UI and CLI workflows
-- Priority support for your team
-
 Get started: https://www.exploresf.com
 
 ## Quickstart
