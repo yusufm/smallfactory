@@ -50,7 +50,10 @@ $ python3 -m pip install -r requirements.txt
 $ python3 -m pip install -r web/requirements.txt
 
 # Initialize by cloning the example datarepo
-$ python3 sf.py init --github-url git@github.com:yusufm/smallfactory_test_datarepo.git
+# 1. Fork the sample data repository on GitHub by going to this URL (or through the fork button on the sample repo):
+https://github.com/yusufm/smallfactory_test_datarepo/fork
+# 2. Clone using YOUR fork of the sample data repo
+$ python3 sf.py init --github-url git@github.com:<YOUR-USERNAME-HERE>/smallfactory_test_datarepo.git
 
 # Start the web server
 $ python3 sf.py web
