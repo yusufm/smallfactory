@@ -306,7 +306,13 @@ def cut_revision(
     label = rev or _compute_next_label_from_fs(datarepo_path, sfid)
     snap_dir = _revisions_dir(datarepo_path, sfid) / label
     if snap_dir.exists():
-        raise FileExistsError(f"Revision '{label}' already exists for {sfid}")
+        # Ok, it exists.  But maybe it's a draft, and we can blow it away.
+        meta = _read_meta(snap_dir / "meta.yml")
+        if meta != {} and meta.get("status", "draft") != "draft":
+            raise FileExistsError(f"Revision '{label}' already exists for {sfid} and is not draft")
+        commit_paths = [snap_dir]
+        msg = f"[smallFactory] Delete stale draft revision {sfid} {label}\n::sfid::{sfid}\n::sf-rev::{label}\n::sf-op::rev-delete"
+        git_commit_paths(datarepo_path, commit_paths, msg, delete=True)
     (snap_dir).mkdir(parents=True, exist_ok=True)
 
     # Copy entire entity directory excluding the 'revisions' subtree
@@ -320,7 +326,7 @@ def cut_revision(
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(child, dest)
         elif child.is_dir():
-            shutil.copytree(child, dest)
+            shutil.copytree(child, dest, dirs_exist_ok=True)
 
     # Build and persist a resolved BOM tree for this snapshot before hashing artifacts
     try:

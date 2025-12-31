@@ -27,6 +27,7 @@ from smallfactory.core.v1.entities import (
     update_entity_fields as ent_update_entity_fields,
     retire_entity as ent_retire_entity,
     # Revisions APIs
+    cut_revision as ent_cut_revision,
     bump_revision as ent_bump_revision,
     release_revision as ent_release_revision,
     # BOM APIs
@@ -169,6 +170,11 @@ def main():
     ent_rev_bump.add_argument("sfid", help="Part SFID (e.g., p_widget)")
     ent_rev_bump.add_argument("--notes", default=None, help="Optional notes for revision metadata (applied to snapshot and release)")
     ent_rev_bump.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
+
+    ent_rev_new = rev_sub.add_parser("new", help="Create a new draft revision")
+    ent_rev_new.add_argument("sfid", help="Part SFID (e.g., p_widget)")
+    ent_rev_new.add_argument("rev", help="Revision label to create (e.g., A, B, ...)")
+    ent_rev_new.add_argument("--notes", default=None, help="Optional release notes")
 
     ent_rev_release = rev_sub.add_parser("release", help="Mark a revision as released and update the 'released' pointer")
     ent_rev_release.add_argument("sfid", help="Part SFID (e.g., p_widget)")
@@ -1001,6 +1007,26 @@ def main():
         else:
             print(f"[smallFactory] Created and released revision '{res.get('rev')}' for '{args.sfid}'")
 
+    def cmd_entities_rev_new(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_cut_revision(
+                datarepo_path,
+                args.sfid,
+                args.rev,
+                notes=getattr(args, "notes", None),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+        else:
+            print(f"[smallFactory] Created revision '{args.rev}' for '{args.sfid}'")
+
     def cmd_entities_rev_release(args):
         datarepo_path = _repo_path()
         try:
@@ -1315,6 +1341,7 @@ def main():
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
         ("entities", "revision:bump"): cmd_entities_rev_bump,
+        ("entities", "revision:new"): cmd_entities_rev_new,
         ("entities", "revision:release"): cmd_entities_rev_release,
         ("entities", "files:ls"): cmd_entities_files_ls,
         ("entities", "files:mkdir"): cmd_entities_files_mkdir,

@@ -1147,15 +1147,16 @@ function renderRevisionsRows(list){
   const tbody = document.getElementById('revisions-tbody');
   if(!tbody) return;
   tbody.innerHTML = '';
-  const releasedOnly = Array.isArray(list) ? list.filter(r => r && r.released_at) : [];
-  if(releasedOnly.length===0){
+  const releases = Array.isArray(list) ? list : [];
+  if(releases.length===0){
     tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-2 text-sm text-gray-500">No releases yet.</td></tr>';
     return;
   }
-  releasedOnly.forEach(r => {
+  releases.forEach(r => {
     const id = r.id||'—';
     const ra = r.released_at||'—';
     const st = (r && r.released_at) ? 'released' : (r && r.status ? r.status : '—');
+    const st_color = st == 'released' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800';
     const ca = r.created_at||'—';
     const notesRaw = r.notes ? String(r.notes) : '';
     const notesHtml = notesRaw ? _nl2br(_escapeHtml(notesRaw)) : '';
@@ -1167,7 +1168,7 @@ function renderRevisionsRows(list){
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50">
         <td class="px-3 py-1.5 font-mono text-blue-700">${id}</td>
-        <td class="px-3 py-1.5 text-gray-800">${st}</td>
+        <td class="px-3 py-1.5"><span class="px-2 py-0.5 rounded-full text-xs ${st_color}">${st}</span></td>
         <td class="px-3 py-1.5 text-gray-700">${ca}</td>
         <td class="px-3 py-1.5 text-gray-700">${ra}</td>
         <td class="px-3 py-1.5 text-gray-700 whitespace-pre-wrap break-words">${notesHtml || '<span class=\'text-gray-400\'>—</span>'}</td>
