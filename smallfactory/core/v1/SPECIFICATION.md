@@ -64,7 +64,7 @@ Validation coverage:
 
 • **`files/`** — Working area for in‑progress files (e.g., CAD and documentation). Included in snapshots when you cut a revision. There is no prescribed substructure under `files/`; organize as needed.
 
-• **`revisions/<rev>/`** — Immutable snapshot for a specific revision label. Treat contents as read‑only once created (and especially once released).
+• **`revisions/<rev>/`** — Snapshot for a specific revision label. Once released, becomes immutable, and contents should be treated as read-only.  (Conversely, a draft revision must not be incorporated into a released revision.)
 
   • **`revisions/<rev>/meta.yml`** — Snapshot metadata (rev, status, source commit, notes, artifact list, hashes, etc.).
 
@@ -440,6 +440,7 @@ Algorithm (conceptual):
    - Determine target revision:
      - If `rev` is a **label** (e.g., "B"), use it.
      - If `rev` is **`released`**, read `entities/<use>/refs/released`. If this file is missing and the part has `policy: buy` with no `revisions/`, treat it as an implicit released snapshot.
+     - If releasing, all child BOM lines must point to released versions.
    - If the chosen rev does not exist or `status` ≠ `released`:
      - Try `alternates` in order, then `alternates_group` (pick any **released** member).
      - If none valid → error.
@@ -476,7 +477,7 @@ sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty
   - The `files/` workspace is free-form; no default subfolders are created. Users may create folders as needed via the Files APIs/CLI/UI.
   - No legacy aliases: the `children` key MUST NOT appear.
   - For `policy: buy` parts, `revisions/` and `refs/` may be omitted; such parts are treated as having an implicit released snapshot.
-- Revision directories under `revisions/` are **immutable** once released.
+- Revision directories under `revisions/` are **immutable** once released.  Revisions can be replaced while still a draft.
 - `refs/released` is the **only pointer** you flip to advance the world.
 - Large binaries (`*.step`, `*.stl`, `*.pdf`) should be tracked with **Git LFS**.
 - SFIDs MUST be globally unique and never reused; prefixes recommended (e.g., `p_`, `l_`, `b_`).
