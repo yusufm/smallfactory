@@ -16,7 +16,7 @@ def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: b
             if delete:
                 if p.exists():
                     # git rm will remove from working tree and stage deletion
-                    subprocess.run(["git", "rm", "-f", str(p)], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.run(["git", "rm", "-fr", str(p)], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 else:
                     # If it doesn't exist, nothing to stage; ignore
                     continue
