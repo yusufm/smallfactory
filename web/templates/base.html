@@ -58,6 +58,16 @@
                 <div class="flex items-center">
                     {# SaaS desktop partial (if provided by SF_EXTRA_TEMPLATES) #}
                     {% include 'saas/nav.html' ignore missing %}
+                    <div class="relative hidden md:block">
+                        <button id="sf-ann-btn" type="button" class="relative inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500" aria-label="Messages">
+                            <i class="fas fa-message"></i>
+                            <span id="sf-ann-dot" class="absolute -top-0.5 -right-0.5 hidden h-2.5 w-2.5 rounded-full bg-red-600"></span>
+                        </button>
+                        <div id="sf-ann-dd" class="hidden absolute right-0 mt-2 w-96 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                            <div id="sf-ann-empty" class="hidden px-4 py-3 text-sm text-gray-600">No messages.</div>
+                            <div id="sf-ann-body" class="max-h-96 overflow-auto"></div>
+                        </div>
+                    </div>
                     <button id="mobile-menu-button" class="md:hidden inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -82,6 +92,9 @@
                 </a>
                 <a href="{{ url_for('stickers_index') }}" class="{% if request.endpoint and request.endpoint.startswith('stickers') %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-qrcode mr-2"></i>Stickers
+                </a>
+                <a href="{{ url_for('announcements') }}" class="{% if request.endpoint == 'announcements' %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-message mr-2"></i>Messages
                 </a>
                 {# SaaS mobile partial (if provided by SF_EXTRA_TEMPLATES) #}
                 {% include 'saas/mobile_nav.html' ignore missing %}
@@ -136,6 +149,161 @@
             const menu = document.getElementById('mobile-menu');
             menu.classList.toggle('hidden');
         });
+
+        (function(){
+            // This URL is defined in announcements.html as well. Modify there if you change this.
+            const ANN_URL = 'https://raw.githubusercontent.com/yusufm/smallfactory/main/announcements.txt';
+            const READ_HASH_KEY = 'sf_announcements_read_hash';
+            const CACHE_KEY = 'sf_announcements_cache';
+            const CACHE_TS_KEY = 'sf_announcements_cache_ts';
+            const ONE_HOUR = 60 * 60 * 1000; // Change to 60 * 1000 for 1-minute testing
+
+            function simpleHash(str){
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash;
+                }
+                return hash.toString();
+            }
+            function getLastReadHash(){
+                try {
+                    return localStorage.getItem(READ_HASH_KEY) || '';
+                } catch(e) {
+                    return '';
+                }
+            }
+            function markAsRead(hash){
+                try {
+                    localStorage.setItem(READ_HASH_KEY, hash);
+                } catch(e) {}
+            }
+            function getCachedData(){
+                try {
+                    const ts = localStorage.getItem(CACHE_TS_KEY);
+                    if (!ts) return null;
+                    const age = Date.now() - parseInt(ts, 10);
+                    if (age > ONE_HOUR) return null;
+                    const cached = localStorage.getItem(CACHE_KEY);
+                    return cached ? JSON.parse(cached) : null;
+                } catch(e) {
+                    return null;
+                }
+            }
+            function setCachedData(data){
+                try {
+                    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+                    localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
+                } catch(e) {}
+            }
+            function parseMarkdown(text){
+                if (!text) return '';
+                return text
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-700 hover:text-blue-900 underline">$1</a>')
+                    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+            }
+            async function fetchMessages(){
+                try {
+                    const res = await fetch(ANN_URL, { cache: 'no-store' });
+                    if (!res.ok) return { messages: [], hash: '' };
+                    const text = await res.text();
+                    const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+                    const hash = simpleHash(text);
+                    return { messages: lines, hash };
+                } catch(e) {
+                    return { messages: [], hash: '' };
+                }
+            }
+
+            const btn = document.getElementById('sf-ann-btn');
+            const dot = document.getElementById('sf-ann-dot');
+
+            function _el(id){ try { return document.getElementById(id); } catch(e) { return null; } }
+            function isDropdownOpen(){ const d = _el('sf-ann-dd'); return d && !d.classList.contains('hidden'); }
+            function openDropdown(){ const d = _el('sf-ann-dd'); if (d) d.classList.remove('hidden'); }
+            function closeDropdown(){ const d = _el('sf-ann-dd'); if (d) d.classList.add('hidden'); }
+            function toggleDropdown(){ isDropdownOpen() ? closeDropdown() : openDropdown(); }
+
+            function setDotVisible(visible){
+                if (!btn || !dot) return;
+                if (visible) dot.classList.remove('hidden');
+                else dot.classList.add('hidden');
+            }
+
+            function renderMessages(msgs){
+                const body = _el('sf-ann-body');
+                const empty = _el('sf-ann-empty');
+                if (!body || !empty) return;
+                body.innerHTML = '';
+                if (!msgs || !msgs.length){
+                    empty.classList.remove('hidden');
+                    return;
+                }
+                empty.classList.add('hidden');
+
+                msgs.forEach((line) => {
+                    const item = document.createElement('div');
+                    item.className = 'px-4 py-3 border-b border-gray-100 text-sm text-gray-700';
+                    item.innerHTML = parseMarkdown(line);
+                    body.appendChild(item);
+                });
+            }
+
+            let lastData = { messages: [], hash: '' };
+            function updateDotAndRerender(){
+                const lastRead = getLastReadHash();
+                const hasUnread = lastData.hash && lastData.hash !== lastRead;
+                setDotVisible(hasUnread);
+                renderMessages(lastData.messages);
+            }
+
+            async function loadAnnouncements(){
+                if (!btn) return;
+                btn.classList.remove('hidden');
+                
+                const cached = getCachedData();
+                if (cached) {
+                    console.log('[announcements] using cached data');
+                    lastData = cached;
+                    updateDotAndRerender();
+                    return;
+                }
+                
+                console.log('[announcements] fetching fresh data');
+                lastData = await fetchMessages();
+                console.log('[announcements] fetched:', lastData);
+                if (lastData.hash) {
+                    setCachedData(lastData);
+                }
+                updateDotAndRerender();
+            }
+
+            if (btn){
+                btn.addEventListener('click', function(){
+                    toggleDropdown();
+                    if (isDropdownOpen()) {
+                        markAsRead(lastData.hash);
+                        updateDotAndRerender();
+                    }
+                });
+            }
+            document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeDropdown(); });
+            document.addEventListener('click', (e)=>{
+                try {
+                    if (!isDropdownOpen()) return;
+                    const dd = _el('sf-ann-dd');
+                    if (!dd) return;
+                    if (btn && (btn === e.target || btn.contains(e.target))) return;
+                    if (dd === e.target || dd.contains(e.target)) return;
+                    closeDropdown();
+                } catch(err) {}
+            });
+            document.addEventListener('DOMContentLoaded', function(){
+                try { loadAnnouncements(); } catch(e) {}
+            });
+        })();
 
         // Auto-hide flash messages after 5 seconds (only actual flash messages)
         setTimeout(function() {

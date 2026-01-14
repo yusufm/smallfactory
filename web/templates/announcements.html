@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Messages{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">Messages</h1>
+    </div>
+    
+    <div id="announcements-content" class="space-y-4">
+        <div class="text-center py-8">
+            <div class="inline-flex items-center justify-center w-8 h-8">
+                <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            </div>
+            <p class="text-gray-500 mt-2">Loading messages...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+(function(){
+    // This URL is defined in base.html as well. Modify there if you change this.
+    const ANN_URL = 'https://raw.githubusercontent.com/yusufm/smallfactory/main/announcements.txt';
+    const READ_HASH_KEY = 'sf_announcements_read_hash';
+    
+    function simpleHash(str){
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return hash.toString();
+    }
+    
+    function markAsRead(hash){
+        try {
+            localStorage.setItem(READ_HASH_KEY, hash);
+        } catch(e) {}
+    }
+    
+    function parseMarkdown(text){
+        if (!text) return '';
+        return text
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-700 hover:text-blue-900 underline">$1</a>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    }
+    
+    async function loadAnnouncements(){
+        try {
+            const res = await fetch(ANN_URL, { cache: 'no-store' });
+            if (!res.ok) {
+                document.getElementById('announcements-content').innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fas fa-inbox text-gray-400 text-3xl mb-2"></i>
+                        <p class="text-gray-500">No messages.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const text = await res.text();
+            const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+            const hash = simpleHash(text);
+            
+            // Mark as read since user is viewing the page
+            markAsRead(hash);
+            
+            const content = document.getElementById('announcements-content');
+            if (!lines || !lines.length) {
+                content.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fas fa-inbox text-gray-400 text-3xl mb-2"></i>
+                        <p class="text-gray-500">No messages</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            content.innerHTML = lines.map(line => `
+                <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                    <div class="text-gray-700 whitespace-pre-wrap">${parseMarkdown(line)}</div>
+                </div>
+            `).join('');
+            
+        } catch(e) {
+            document.getElementById('announcements-content').innerHTML = `
+                <div class="text-center py-8">
+                    <i class="fas fa-inbox text-gray-400 text-3xl mb-2"></i>
+                    <p class="text-gray-500">No messages.</p>
+                </div>
+            `;
+        }
+    }
+    
+    // Load when page loads
+    document.addEventListener('DOMContentLoaded', loadAnnouncements);
+})();
+</script>
+{% endblock %}

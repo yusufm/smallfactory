@@ -1535,6 +1535,11 @@ def vision_page():
     """Mobile-friendly page to capture/upload an image and extract part info."""
     return render_template('vision.html')
 
+@app.route('/announcements')
+def announcements():
+    """Simple page showing announcements as markdown."""
+    return render_template('announcements.html')
+
 @app.route('/inventory')
 def inventory_list():
     """Display all inventory items in a table."""
