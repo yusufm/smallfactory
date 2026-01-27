@@ -645,6 +645,23 @@ def _bom_list_from_entity(ent: dict) -> List[dict]:
     return list(bom) if isinstance(bom, list) else []
 
 
+def _assert_unique_bom_uses(bom: List[dict]) -> None:
+    seen: Dict[str, int] = {}
+    for i, line in enumerate(bom or []):
+        if not isinstance(line, dict):
+            continue
+        use = line.get("use")
+        if not isinstance(use, str):
+            continue
+        u = use.strip()
+        if not u:
+            continue
+        prev = seen.get(u)
+        if prev is not None:
+            raise ValueError(f"Duplicate BOM 'use' SFID '{u}' (already present at index {prev})")
+        seen[u] = i
+
+
 def bom_list(datarepo_path: Path, parent_sfid: str) -> List[dict]:
     ent = _ensure_part(datarepo_path, parent_sfid)
     return _bom_list_from_entity(ent)
@@ -683,6 +700,14 @@ def bom_add_line(
     if alternates_group:
         line["alternates_group"] = alternates_group
     bom = _bom_list_from_entity(ent)
+    _assert_unique_bom_uses(bom)
+    for i, existing in enumerate(bom):
+        try:
+            eu = str((existing or {}).get("use") or "").strip()
+        except Exception:
+            eu = ""
+        if eu and eu == use:
+            raise ValueError(f"Duplicate BOM 'use' SFID '{use}' (already present at index {i})")
     # Insert
     if index is None or index >= len(bom):
         bom.append(line)
@@ -784,6 +809,22 @@ def bom_set_line(
         validate_sfid(new_use)
         if check_exists and not _entity_file(datarepo_path, new_use).exists():
             raise FileNotFoundError(f"Referenced entity '{new_use}' does not exist under entities/")
+        cur_use = None
+        try:
+            cur_use = str((line or {}).get("use") or "").strip() or None
+        except Exception:
+            cur_use = None
+        if cur_use != str(new_use).strip():
+            _assert_unique_bom_uses(bom)
+            for i, existing in enumerate(bom):
+                if i == index or not isinstance(existing, dict):
+                    continue
+                try:
+                    eu = str(existing.get("use") or "").strip()
+                except Exception:
+                    eu = ""
+                if eu and eu == str(new_use).strip():
+                    raise ValueError(f"Duplicate BOM 'use' SFID '{eu}' (already present at index {i})")
     if "alternates" in updates and updates["alternates"] is not None and not isinstance(updates["alternates"], list):
         raise ValueError("'alternates' must be a list of objects if provided")
     line.update({k: v for k, v in updates.items() if v is not None})

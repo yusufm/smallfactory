@@ -122,6 +122,68 @@ def test_bom_set_invalid_index_and_unsupported_field(web_mod):
     assert r_bad_use.get_json().get("success") is False
 
 
+def test_bom_add_duplicate_use_rejected(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+
+    create_entity(repo, "p_parent", {"name": "Parent"})
+    create_entity(repo, "p_c1", {"name": "Child1"})
+
+    client = app.test_client()
+
+    ok1 = client.post(
+        "/api/entities/p_parent/bom/add",
+        json={"use": "p_c1", "qty": 1, "rev": "released"},
+    )
+    assert ok1.status_code == 200
+    assert ok1.get_json().get("success") is True
+
+    dup = client.post(
+        "/api/entities/p_parent/bom/add",
+        json={"use": "p_c1", "qty": 2, "rev": "released"},
+    )
+    assert dup.status_code == 400
+    jd = dup.get_json() or {}
+    assert jd.get("success") is False
+    assert "Duplicate BOM" in (jd.get("error") or "")
+    bom = bom_list(repo, "p_parent")
+    assert [ln.get("use") for ln in bom] == ["p_c1"]
+
+
+def test_bom_set_change_use_to_duplicate_rejected(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+
+    create_entity(repo, "p_parent", {"name": "Parent"})
+    create_entity(repo, "p_c1", {"name": "Child1"})
+    create_entity(repo, "p_c2", {"name": "Child2"})
+
+    client = app.test_client()
+
+    assert client.post(
+        "/api/entities/p_parent/bom/add",
+        json={"use": "p_c1", "qty": 1, "rev": "released"},
+    ).get_json().get("success") is True
+    assert client.post(
+        "/api/entities/p_parent/bom/add",
+        json={"use": "p_c2", "qty": 1, "rev": "released"},
+    ).get_json().get("success") is True
+
+    # Attempt to change line 1 from p_c2 -> p_c1 (duplicate)
+    r = client.post(
+        "/api/entities/p_parent/bom/set",
+        json={"index": 1, "use": "p_c1"},
+    )
+    assert r.status_code == 400
+    jd = r.get_json() or {}
+    assert jd.get("success") is False
+    assert "Duplicate BOM" in (jd.get("error") or "")
+    bom = bom_list(repo, "p_parent")
+    assert [ln.get("use") for ln in bom] == ["p_c1", "p_c2"]
+
+
 def test_bom_remove_invalid_params_and_not_found(web_mod):
     mod = web_mod
     app = mod.app
