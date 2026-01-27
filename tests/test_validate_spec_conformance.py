@@ -253,6 +253,21 @@ def test_git_commit_token_required(tmp_path: Path):
     assert any(i["code"] == "GIT_TOKEN_REQUIRED" for i in res["issues"])  # must include ::sfid:: token when touching PLM
 
 
+def test_git_commit_token_present_allows_plm_commit(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    _init_git_repo(repo)
+
+    # Use a core API that commits with ::sfid::<sfid> in the message
+    from smallfactory.core.v1.entities import create_entity
+
+    create_entity(repo, "p_ok", {"name": "Ok"})
+
+    res = validate_repo(repo, include_git=True)
+    codes = _codes(res["issues"])
+    assert "GIT_TOKEN_REQUIRED" not in codes
+
+
 def test_entity_yml_invalid_yaml(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     # Invalid YAML (just a colon)
