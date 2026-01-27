@@ -196,9 +196,36 @@
         </div>
         <div class="p-4 bg-gray-50 rounded">
           <div class="text-sm text-gray-500">Status</div>
-          <div class="text-sm"><span class="font-medium">Ahead/Behind:</span> {{ git.status.ahead if git.status else 0 }}/{{ git.status.behind if git.status else 0 }}</div>
+          {% set st = git.status if git and git.status else None %}
+          <div class="text-sm">
+            <span class="font-medium">Ahead/Behind:</span>
+            {% if st and st.ahead is not none and st.behind is not none %}
+              {{ st.ahead }}/{{ st.behind }}
+            {% else %}
+              <span class="text-gray-500">—/—</span>
+            {% endif %}
+          </div>
           <div class="text-sm"><span class="font-medium">Changed:</span> {{ git.status.changed if git.status else 0 }}</div>
           <div class="text-sm"><span class="font-medium">Untracked:</span> {{ git.status.untracked if git.status else 0 }}</div>
+          {% if st and st.ahead is none and st.behind is none %}
+            {% if st.upstream_error %}
+              <div class="mt-2 p-3 rounded-md border border-rose-200 bg-rose-50 text-rose-800">
+                <div class="flex items-start gap-2">
+                  <i class="fas fa-exclamation-triangle mt-0.5 text-rose-600" style="color:#e11d48;"></i>
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold uppercase tracking-wide">Upstream status</div>
+                    <div class="text-sm font-mono break-all">{{ st.upstream_error }}</div>
+                  </div>
+                </div>
+              </div>
+            {% elif st.upstream_ok and st.upstream %}
+              <div class="text-xs text-amber-700 mt-2">
+                Upstream: <span class="font-mono">{{ st.upstream }}</span> (ahead/behind unknown)
+              </div>
+            {% else %}
+              <div class="text-xs text-amber-700 mt-2">Upstream unknown</div>
+            {% endif %}
+          {% endif %}
         </div>
       </div>
       <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">

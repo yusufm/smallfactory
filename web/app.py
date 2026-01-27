@@ -972,7 +972,7 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
     Returns a dict with keys: is_repo, branch, commits, latest, remotes, status.
     """
     repo = str(datarepo_path)
-    result: dict = {
+    result = {
         'is_repo': False,
         'branch': None,
         'commits': 0,
@@ -994,6 +994,9 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
             'untracked': 0,
             'ahead': 0,
             'behind': 0,
+            'upstream': None,
+            'upstream_ok': False,
+            'upstream_error': None,
         },
     }
 
@@ -1053,10 +1056,21 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
             result['status']['changed'] = changed
             result['status']['untracked'] = untracked
 
-        # Upstream ahead/behind (best-effort)
-        up = subprocess.run(['git', '-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], capture_output=True, text=True)
+        # Upstream ahead/behind (best-effort; no fetch here)
+        up = subprocess.run(
+            ['git', '-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+            capture_output=True,
+            text=True,
+        )
         if up.returncode == 0:
-            ab = subprocess.run(['git', '-C', repo, 'rev-list', '--left-right', '--count', '@{u}...HEAD'], capture_output=True, text=True)
+            upstream = (up.stdout or '').strip() or None
+            result['status']['upstream'] = upstream
+            result['status']['upstream_ok'] = True
+            ab = subprocess.run(
+                ['git', '-C', repo, 'rev-list', '--left-right', '--count', '@{u}...HEAD'],
+                capture_output=True,
+                text=True,
+            )
             if ab.returncode == 0:
                 try:
                     left_right = (ab.stdout or '').strip().split()
@@ -1065,7 +1079,20 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
                     result['status']['ahead'] = ahead
                     result['status']['behind'] = behind
                 except Exception:
-                    pass
+                    result['status']['ahead'] = None
+                    result['status']['behind'] = None
+                    result['status']['upstream_error'] = 'Failed to parse ahead/behind output'
+            else:
+                result['status']['ahead'] = None
+                result['status']['behind'] = None
+                msg = ((ab.stderr or ab.stdout) or '').strip() or None
+                result['status']['upstream_error'] = msg or 'Failed to compute ahead/behind'
+        else:
+            # No upstream configured (or detached HEAD). Avoid showing misleading 0/0.
+            result['status']['ahead'] = None
+            result['status']['behind'] = None
+            msg = ((up.stderr or up.stdout) or '').strip() or None
+            result['status']['upstream_error'] = msg or 'No upstream configured'
     except Exception:
         # Return partials collected so far; never raise
         return result
