@@ -210,13 +210,31 @@ def inject_app_version():
 _METRICS_ENV = os.environ.get('METRICS_ENV', 'prod')
 _SERVICE_NAME = os.environ.get('SERVICE_NAME', 'app')
 
-HTTP_REQUESTS_TOTAL = Counter(
+# Module-level cache for metrics to handle re-import (e.g., in tests using exec_module).
+# This dict persists in the prometheus_client module's namespace to survive re-imports.
+if not hasattr(Counter, '_sf_metrics_cache'):
+    Counter._sf_metrics_cache = {}
+_SF_METRICS_CACHE = Counter._sf_metrics_cache
+
+
+def _get_or_create_metric(metric_cls, name, description, labelnames, **kwargs):
+    """Get existing metric or create new one. Handles re-import gracefully."""
+    if name in _SF_METRICS_CACHE:
+        return _SF_METRICS_CACHE[name]
+    metric = metric_cls(name, description, labelnames, **kwargs)
+    _SF_METRICS_CACHE[name] = metric
+    return metric
+
+
+HTTP_REQUESTS_TOTAL = _get_or_create_metric(
+    Counter,
     'sf_web_http_requests_total',
     'Total HTTP requests',
     ['method', 'path', 'status', 'env', 'service'],
 )
 
-HTTP_REQUEST_DURATION_SECONDS = Histogram(
+HTTP_REQUEST_DURATION_SECONDS = _get_or_create_metric(
+    Histogram,
     'sf_web_http_request_duration_seconds',
     'HTTP request duration in seconds',
     ['method', 'path', 'status', 'env', 'service'],
@@ -298,25 +316,29 @@ except Exception:
     _METRICS_TTL_SEC = 15
 
 # Gauges requested
-REPO_COMMITS_TOTAL = Gauge(
+REPO_COMMITS_TOTAL = _get_or_create_metric(
+    Gauge,
     'sf_repo_commits_total',
     'Total git commits in the data repository',
     ['env', 'service'],
 )
 
-DATAREPO_TOTAL_FILES = Gauge(
+DATAREPO_TOTAL_FILES = _get_or_create_metric(
+    Gauge,
     'sf_datarepo_total_files',
     'Total number of files in the data repository (excludes .git)',
     ['env', 'service'],
 )
 
-DATAREPO_SIZE_ONDISK_BYTES = Gauge(
+DATAREPO_SIZE_ONDISK_BYTES = _get_or_create_metric(
+    Gauge,
     'sf_datarepo_size_bytes_on_disk',
     'Approximate total size in bytes of the data repository on disk (includes .git)',
     ['env', 'service'],
 )
 
-ENTITIES_TOTAL = Gauge(
+ENTITIES_TOTAL = _get_or_create_metric(
+    Gauge,
     'sf_entities_total',
     'Total number of entities',
     ['env', 'service'],
