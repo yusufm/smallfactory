@@ -1,6 +1,23 @@
 import subprocess
 from pathlib import Path
 
+
+class GitError(RuntimeError):
+    def __init__(self, message: str, *, cmd: list[str] | None = None, returncode: int | None = None, stdout: str | None = None, stderr: str | None = None):
+        super().__init__(message)
+        self.cmd = cmd
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+class GitCommitError(GitError):
+    pass
+
+
+class GitPushError(GitError):
+    pass
+
 # Note: git_commit_and_push was removed. Use git_commit_paths (commit-only)
 # and orchestrate push via higher-level transaction guard in web/CLI.
 def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: bool = False) -> None:
@@ -11,21 +28,70 @@ def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: b
     - If delete is True, we run `git rm -f <path>` for each existing path to stage deletions.
       Missing paths are ignored.
     """
+    if not paths:
+        return
     try:
         for p in paths:
             if delete:
-                if p.exists():
-                    # git rm will remove from working tree and stage deletion
-                    subprocess.run(["git", "rm", "-fr", str(p)], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                else:
-                    # If it doesn't exist, nothing to stage; ignore
-                    continue
+                # Stage removals and remove from working tree; ignore if path is untracked.
+                r = subprocess.run(
+                    ["git", "rm", "-fr", "--ignore-unmatch", "--", str(p)],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if r.returncode != 0:
+                    raise GitCommitError(
+                        "git rm failed",
+                        cmd=r.args if isinstance(r.args, list) else None,
+                        returncode=r.returncode,
+                        stdout=r.stdout,
+                        stderr=r.stderr,
+                    )
             else:
-                if p.exists():
-                    subprocess.run(["git", "add", str(p)], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "commit", "-m", message], cwd=repo_path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError:
-        print("[smallFactory] Warning: Failed to commit changes to git.")
+                # Use -A so deletions under a directory are staged as well.
+                r = subprocess.run(
+                    ["git", "add", "-A", "--", str(p)],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if r.returncode != 0:
+                    raise GitCommitError(
+                        "git add failed",
+                        cmd=r.args if isinstance(r.args, list) else None,
+                        returncode=r.returncode,
+                        stdout=r.stdout,
+                        stderr=r.stderr,
+                    )
+
+        cm = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if cm.returncode != 0:
+            out = (cm.stdout or "") + "\n" + (cm.stderr or "")
+            low = out.lower()
+            nothing_to_commit = (
+                "nothing to commit" in low
+                or "no changes added to commit" in low
+                or "nothing added to commit" in low
+            )
+            if nothing_to_commit:
+                return
+            raise GitCommitError(
+                "git commit failed",
+                cmd=cm.args if isinstance(cm.args, list) else None,
+                returncode=cm.returncode,
+                stdout=cm.stdout,
+                stderr=cm.stderr,
+            )
+    except GitError:
+        raise
+    except Exception as e:
+        raise GitCommitError(str(e))
 
 
 def git_push(repo_path: Path, remote: str = "origin", ref: str = "HEAD") -> bool:
@@ -34,17 +100,25 @@ def git_push(repo_path: Path, remote: str = "origin", ref: str = "HEAD") -> bool
     Returns True if a push was attempted (and succeeded), False if remote missing.
     Prints a warning on failure and returns False.
     """
-    try:
-        remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
-        if remotes.returncode != 0:
-            return False
-        if remote not in remotes.stdout.split():
-            return False
-        r = subprocess.run(["git", "push", remote, ref], cwd=repo_path, capture_output=True, text=True)
-        if r.returncode != 0:
-            print("[smallFactory] Warning: git push failed:", (r.stderr or r.stdout or "").strip())
-            return False
-        return True
-    except Exception:
-        print("[smallFactory] Warning: Unexpected error during git push.")
+    remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
+    if remotes.returncode != 0:
+        raise GitPushError(
+            "git remote failed",
+            cmd=remotes.args if isinstance(remotes.args, list) else None,
+            returncode=remotes.returncode,
+            stdout=remotes.stdout,
+            stderr=remotes.stderr,
+        )
+    if remote not in (remotes.stdout or "").split():
         return False
+
+    r = subprocess.run(["git", "push", remote, ref], cwd=repo_path, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise GitPushError(
+            "git push failed",
+            cmd=r.args if isinstance(r.args, list) else None,
+            returncode=r.returncode,
+            stdout=r.stdout,
+            stderr=r.stderr,
+        )
+    return True

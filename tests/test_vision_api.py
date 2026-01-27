@@ -38,7 +38,6 @@ def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     # Keep network/push side effects off by default
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "0")
 
     return mod
 

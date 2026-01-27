@@ -51,6 +51,27 @@ def test_git_commit_paths_commit_only(tmp_path: Path):
     assert "commit-only" in last
 
 
+def test_git_commit_paths_noop_when_nothing_to_commit(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    _init_git_repo(repo)
+
+    entities_dir = repo / "entities" / "p_widget"
+    entities_dir.mkdir(parents=True)
+    f = entities_dir / "entity.yml"
+    f.write_text("name: Widget\n")
+
+    msg = "[test] first commit"
+    git_commit_paths(repo, [entities_dir], msg)
+    assert _git_has_commit(repo)
+    first = _git_last_commit_message(repo)
+
+    # Re-commit without changes should be a no-op and should not raise
+    git_commit_paths(repo, [entities_dir], "[test] second commit")
+    second = _git_last_commit_message(repo)
+    assert second == first
+
+
 @pytest.mark.skipif(pytest.importorskip("flask", reason="Flask not installed; web txn tests skipped") is None, reason="Flask not installed")
 def test_run_repo_txn_autocommit_on_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Dynamically import web/app.py to access _run_repo_txn without starting the server
@@ -81,15 +102,13 @@ def test_run_repo_txn_autocommit_on_off(tmp_path: Path, monkeypatch: pytest.Monk
     # Ensure no remote to avoid pull/push side-effects
     # By default, repo has no remotes; autopush should be a no-op
 
-    # Case 1: Autocommit OFF => no commits created
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "0")
+    # Web txn wrapper should not create commits on its own.
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
-    res = mod._run_repo_txn(repo, mutate, autocommit_message="[test] mutate", autocommit_paths=["entities/p_test"])
+    res = mod._run_repo_txn(repo, mutate)
     assert res["ok"]
-    assert not _git_has_commit(repo), "Autocommit OFF should not create commits"
+    assert not _git_has_commit(repo), "Web txn wrapper should not create commits"
 
-    # Case 2: Autocommit ON => commit created
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
+    # Still should not create commits.
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
 
     def mutate2():
@@ -97,8 +116,6 @@ def test_run_repo_txn_autocommit_on_off(tmp_path: Path, monkeypatch: pytest.Monk
         target_file.write_text("name: Test 2\n")
         return {"ok": True}
 
-    res2 = mod._run_repo_txn(repo, mutate2, autocommit_message="[test] mutate", autocommit_paths=["entities/p_test"])
+    res2 = mod._run_repo_txn(repo, mutate2)
     assert res2["ok"]
-    assert _git_has_commit(repo), "Autocommit ON should create a commit"
-    last = _git_last_commit_message(repo)
-    assert "[test] mutate" in last
+    assert not _git_has_commit(repo), "Web layer should not create commits; core APIs must commit explicitly"

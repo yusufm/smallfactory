@@ -450,43 +450,6 @@ def http_logout():
     target = os.environ.get('SF_LOGOUT_REDIRECT_URL') or '/'
     return redirect(target)
 
-# -----------------------
-# Optional Git auto-commit support (ON by default)
-# Disable by setting environment variable: SF_WEB_AUTOCOMMIT=0
-# -----------------------
-def _autocommit_enabled() -> bool:
-    val = os.environ.get('SF_WEB_AUTOCOMMIT')
-    if val is None:
-        return True
-    return val.lower() in ('1', 'true', 'yes', 'on')
-
-
-def _maybe_git_autocommit(datarepo_path: Path, message: str, paths: List[str]) -> bool:
-    """If enabled and inside a git repo, stage the given paths (with -A) and commit.
-
-    Returns True if a commit was created, False otherwise. Never raises.
-    """
-    try:
-        if not _autocommit_enabled():
-            return False
-        # Ensure we are inside a git repo
-        ck = subprocess.run(['git', '-C', str(datarepo_path), 'rev-parse', '--is-inside-work-tree'], capture_output=True)
-        if ck.returncode != 0:
-            return False
-        # Stage with -A to capture deletions within the specified paths
-        for p in (paths or []):
-            subprocess.run(['git', '-C', str(datarepo_path), 'add', '-A', '--', p], check=False)
-        # Create commit
-        ts = datetime.now().isoformat(timespec='seconds')
-        msg = f"{message} ({ts})"
-        cm = subprocess.run(['git', '-C', str(datarepo_path), 'commit', '-m', msg], capture_output=True)
-        # If nothing to commit, exit quietly
-        if cm.returncode != 0:
-            return False
-        return True
-    except Exception:
-        return False
-
 
 # -----------------------
 # Git orchestration helpers (safe pull + txn + autopush)
@@ -886,8 +849,12 @@ def _push_worker(datarepo_path: Path) -> None:
     try:
         with _PUSH_LOCK:
             ok = git_push(datarepo_path)
-    except Exception:
+    except Exception as e:
         ok = False
+        try:
+            _dgit(f'async push: failed ({e})')
+        except Exception:
+            pass
     finally:
         dt = int((time.time() - t0) * 1000)
         # Update last-push time on success and clear any scheduled timer for this repo
@@ -1106,8 +1073,8 @@ def _compute_git_metrics(datarepo_path: Path) -> dict:
     return result
 
 
-def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None = None, autocommit_paths: List[str] | None = None):
-    """Serialize repo mutations with: safe pull -> mutate -> autocommit -> conditional push."""
+def _run_repo_txn(datarepo_path: Path, mutate_fn):
+    """Serialize repo mutations with: safe pull -> mutate -> conditional push."""
     if _git_disabled():
         return mutate_fn()
     need_async_push = False
@@ -1118,17 +1085,13 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
             raise RuntimeError(f"Pre-mutation git pull failed: {err}")
         # Extract per-request identity from proxy headers (if present)
         name, email = _extract_identity_from_headers(request)
-        def _do_mutate_and_autocommit():
-            r = mutate_fn()
-            # Ensure a commit exists if web autocommit is enabled and paths provided
-            if autocommit_paths:
-                _maybe_git_autocommit(datarepo_path, autocommit_message or '[smallFactory][web] Autocommit', autocommit_paths)
-            return r
+        def _do_mutate():
+            return mutate_fn()
         if name and email:
             with _with_git_identity(name, email):
-                result = _do_mutate_and_autocommit()
+                result = _do_mutate()
         else:
-            result = _do_mutate_and_autocommit()
+            result = _do_mutate()
         # Conditional push
         if _autopush_enabled():
             ttl = _get_push_ttl_sec()
@@ -1146,9 +1109,12 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | N
                         _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
                         if okp:
                             _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
-                    except Exception:
-                        # Non-fatal; leave a warning via stderr for logs
-                        print('[smallFactory] Warning: autopush failed')
+                    except Exception as e:
+                        try:
+                            _dgit(f'sync push: failed ({e})')
+                        except Exception:
+                            pass
+                        raise RuntimeError(f"Post-mutation git push failed: {e}")
     # If async push is enabled, run it after releasing the txn lock
     if need_async_push:
         _spawn_async_push(datarepo_path)
@@ -1989,8 +1955,6 @@ def entities_build(sfid):
                 _ = _run_repo_txn(
                     datarepo_path,
                     _mutate,
-                    autocommit_message=f"[smallFactory][web] Create build record {build_sfid} for {sfid}",
-                    autocommit_paths=[f"entities/{build_sfid}"]
                 )
                 flash(f"Created build record '{build_sfid}' for {sfid}", 'success')
                 return redirect(url_for('entities_view', sfid=build_sfid))
@@ -2051,8 +2015,6 @@ def entities_build_create_revision(sfid):
         info = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Create draft revision for {target}",
-            autocommit_paths=[f"entities/{target}"]
         )
         new_rev = info.get('new_rev') or ''
         if new_rev:
@@ -2122,8 +2084,6 @@ def entities_add():
             entity = _run_repo_txn(
                 datarepo_path,
                 _mutate,
-                autocommit_message=f"[smallFactory][web] Create entity {sfid}",
-                autocommit_paths=[f"entities/{sfid}"]
             )
             flash(f"Successfully created entity: {sfid}", 'success')
             # If the user clicked "Save & Create Another", return to add form
@@ -2184,8 +2144,6 @@ def entities_retire(sfid):
         _ = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Retire entity {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         flash('Entity retired successfully', 'success')
     except Exception as e:
@@ -2448,8 +2406,6 @@ def api_entities_update(sfid):
         updated = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Update entity {sfid} fields",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         return jsonify({'success': True, 'entity': updated})
     except Exception as e:
@@ -2481,8 +2437,6 @@ def api_revisions_bump(sfid):
         ent = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Bump+release revision for {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
@@ -2500,8 +2454,6 @@ def api_revisions_release(sfid, rev):
         ent = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] Release revision {rev} for {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
@@ -2785,8 +2737,6 @@ def api_bom_import_apply(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM import apply (sync) for {sfid} remove_missing={remove_missing} update_existing={update_existing}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
 
         bom = res.get('bom')
@@ -3285,8 +3235,6 @@ def api_bom_add(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM add {use} x{qty} rev {rev} -> {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -3317,8 +3265,6 @@ def api_bom_remove(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM remove index={index} use={use or ''} from {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -3343,8 +3289,6 @@ def api_bom_set(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM set index={index} for {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -3398,10 +3342,8 @@ def api_files_mkdir(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"web: mkdir {sfid} {root_name}/{path}",
-            autocommit_paths=[rel]
         )
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -3421,10 +3363,8 @@ def api_files_rmdir(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"web: rmdir {sfid} {root_name}/{path}",
-            autocommit_paths=[stage_target]
         )
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -3446,10 +3386,8 @@ def api_files_upload(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"web: upload {sfid} {root_name}/{path}",
-            autocommit_paths=[rel]
         )
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -3469,10 +3407,8 @@ def api_files_delete(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"web: delete {sfid} {root_name}/{path}",
-            autocommit_paths=[rel]
         )
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -3504,10 +3440,8 @@ def api_files_move(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"web: move {sfid} {root_name}: {src} -> {dst}",
-            autocommit_paths=stage_paths
         )
-        return jsonify({'success': True, 'result': res, 'autocommit': bool(_autocommit_enabled())})
+        return jsonify({'success': True, 'result': res})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -3546,8 +3480,6 @@ def api_bom_alt_add(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM alt-add {alt_use} at index={index} for {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
@@ -3572,8 +3504,6 @@ def api_bom_alt_remove(sfid):
         res = _run_repo_txn(
             datarepo_path,
             _mutate,
-            autocommit_message=f"[smallFactory][web] BOM alt-remove index={index} alt_index={alt_index} for {sfid}",
-            autocommit_paths=[f"entities/{sfid}"]
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})

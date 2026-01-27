@@ -49,8 +49,6 @@ def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     # Disable autopush by default to keep tests deterministic
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
-    # Enable autocommit by default
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
 
     return mod
 

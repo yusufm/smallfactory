@@ -47,8 +47,6 @@ def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     _init_git_repo(repo)
     mod = _import_web_app_module()
     monkeypatch.setattr(mod, "get_datarepo_path", lambda: repo)
-    monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
     return mod
 
 
@@ -127,9 +125,10 @@ def test_post_routes_delegate_to_core_and_fail_without_mutation_on_core_error(we
         assert _capture_state() == (head2, bom2)
 
     # Prepare for alt tests: re-add a line
-    assert client.post(
-        "/api/entities/p_parent/bom/add", json={"use": "p_c1", "qty": 1, "rev": "released"}
-    ).get_json().get("success") is True
+    if not any((ln or {}).get("use") == "p_c1" for ln in (bom_list(repo, "p_parent") or [])):
+        assert client.post(
+            "/api/entities/p_parent/bom/add", json={"use": "p_c1", "qty": 1, "rev": "released"}
+        ).get_json().get("success") is True
 
     # 4) bom/alt-add
     head3, bom3 = _capture_state()

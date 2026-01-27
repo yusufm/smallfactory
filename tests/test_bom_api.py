@@ -47,7 +47,7 @@ def _import_web_app_module() -> object:
 
 
 @pytest.fixture()
-def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def web_mod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Create temp git repo to act as datarepo
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
@@ -61,8 +61,6 @@ def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     # Disable autopush by default to keep tests deterministic
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
-    # Enable autocommit by default
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
 
     return mod
 
@@ -217,7 +215,7 @@ def test_bom_import_apply_update_existing_toggle(web_mod):
     assert line2 and int(line2.get("qty", 0)) == 3
 
 
-def test_run_repo_txn_autopush_async_triggers_spawn(monkeypatch: pytest.MonkeyPatch, web_mod, tmp_path: Path):
+def test_run_repo_txn_autopush_async_ttl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, web_mod):
     mod = web_mod
     repo = mod.get_datarepo_path()
 
@@ -225,7 +223,6 @@ def test_run_repo_txn_autopush_async_triggers_spawn(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "1")
     monkeypatch.setenv("SF_WEB_AUTOPUSH_ASYNC", "1")
     monkeypatch.setenv("SF_GIT_PUSH_TTL_SEC", "0")
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
 
     called = {"n": 0}
 
@@ -241,25 +238,24 @@ def test_run_repo_txn_autopush_async_triggers_spawn(monkeypatch: pytest.MonkeyPa
         target.write_text("name: Async Test\n")
         return {"ok": True}
 
-    res = mod._run_repo_txn(repo, mutate, autocommit_message="[test] async", autocommit_paths=["entities/p_async"])
+    res = mod._run_repo_txn(repo, mutate)
     assert res["ok"] is True
     # Should have requested an async push exactly once
     assert called["n"] == 1
 
 
-def test_run_repo_txn_pull_failure_raises(monkeypatch: pytest.MonkeyPatch, web_mod, tmp_path: Path):
+def test_run_repo_txn_safe_git_pull_failure_returns_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, web_mod):
     mod = web_mod
     repo = mod.get_datarepo_path()
 
-    # Ensure git is enabled and autocommit on
+    # Ensure git is enabled
     monkeypatch.setenv("SF_GIT_DISABLED", "0")
-    monkeypatch.setenv("SF_WEB_AUTOCOMMIT", "1")
 
     # Force _safe_git_pull to fail
     monkeypatch.setattr(mod, "_safe_git_pull", lambda p: (False, "boom"))
 
     with pytest.raises(RuntimeError):
-        mod._run_repo_txn(repo, lambda: {"ok": True}, autocommit_message="x", autocommit_paths=["."])
+        mod._run_repo_txn(repo, lambda: {"ok": True})
 
 
 def test_bom_preview_passes_extra_fields_and_apply_persists_attrs(web_mod):

@@ -8,7 +8,6 @@ All mutation endpoints in the web app must use the transaction guard `_run_repo_
 
 - Safe pull orchestration with background-only fetch by default
 - Serialized mutations via a process-wide lock
-- Optional autocommit against the mutated paths
 - Conditional push to the remote (if configured), performed asynchronously by default
 
 Core mutation functions (e.g., in `smallfactory/core/v1/entities.py` and `inventory.py`) are responsible only for making filesystem changes and performing commit-only operations via `git_commit_paths`. They must never push. Push orchestration is handled at the web/CLI layer.
@@ -16,13 +15,11 @@ Core mutation functions (e.g., in `smallfactory/core/v1/entities.py` and `invent
 ## `_run_repo_txn` signature
 
 ```
-_run_repo_txn(datarepo_path: Path, mutate_fn, *, autocommit_message: str | None = None, autocommit_paths: List[str] | None = None)
+_run_repo_txn(datarepo_path: Path, mutate_fn)
 ```
 
 - `datarepo_path`: Path to the root of the git data repository.
 - `mutate_fn`: A no-arg function that performs the mutation and returns a result.
-- `autocommit_message`: Message to use if autocommit is enabled.
-- `autocommit_paths`: Relative paths (under `datarepo_path`) to stage and commit. Prefer top-level directories when multiple files are touched (e.g., `entities/<sfid>` or `inventory/<part>`).
 
 Behavior:
 1. If `SF_GIT_DISABLED=1`, `mutate_fn()` is executed directly with no git operations.
@@ -34,15 +31,12 @@ Behavior:
      - Default ON (`SF_GIT_PULL_ALLOW_UNTRACKED=1`): untracked files are allowed; other local changes abort the pull.
      - OFF (`SF_GIT_PULL_ALLOW_UNTRACKED=0`): any local changes (including untracked) abort the pull.
 3. Run `mutate_fn()`.
-4. If `SF_WEB_AUTOCOMMIT` is enabled (default ON), stage `autocommit_paths` and commit with `autocommit_message`.
-5. If `SF_WEB_AUTOPUSH` is enabled (default ON), push is performed. By default it happens asynchronously and can be coalesced by a TTL (see below). Failures are non-fatal and logged.
+4. If `SF_WEB_AUTOPUSH` is enabled (default ON), push is performed. By default it happens asynchronously and can be coalesced by a TTL (see below). Failures are non-fatal and logged.
 
 ## Environment Variables (knobs and defaults)
 
-- `SF_WEB_AUTOCOMMIT` (default ON)
-  - Perform autocommit after mutation. Disable with `SF_WEB_AUTOCOMMIT=0`.
 - `SF_WEB_AUTOPUSH` (default ON)
-  - Push after autocommit. Disable with `SF_WEB_AUTOPUSH=0`.
+  - Push after mutation. Disable with `SF_WEB_AUTOPUSH=0`.
 - `SF_WEB_AUTOPUSH_ASYNC` (default ON)
   - If ON, push runs in a background thread off the request path.
   - Set `SF_WEB_AUTOPUSH_ASYNC=0` to force synchronous pushes on the request path.
@@ -70,7 +64,9 @@ Behavior:
   - Stages the specified paths (or removes with `git rm` if `delete=True`) and commits with the message.
   - Commit-only; does not push.
 - `git_push(repo_path: Path, remote: str = "origin", ref: str = "HEAD") -> bool`
-  - Pushes to the given remote if it exists. Returns False if remote missing or on failure.
+  - Pushes to the given remote if it exists.
+  - Returns False if the remote is missing.
+  - Raises on push failure.
 
 Note: The deprecated `git_commit_and_push` function has been removed. Use `git_commit_paths` in core, and orchestrate pushes in the web/CLI layer via `_run_repo_txn`.
 
@@ -85,15 +81,10 @@ def _mutate():
 _ = _run_repo_txn(
     datarepo_path,
     _mutate,
-    autocommit_message=f"[smallFactory][web] Update entity {sfid} fields",
-    autocommit_paths=[f"entities/{sfid}"]
 )
 ```
 
 ## Guidance
-
-- Always pass a minimal set of `autocommit_paths` to scope the commit to the module being mutated.
-- Prefer directory scopes (e.g., `entities/<sfid>`) to capture additions/deletions reliably.
 - Keep core mutation functions idempotent and commit-only; do not call `git push` from core.
 - For future endpoints, always wrap mutations with `_run_repo_txn` to ensure safety and consistency.
 
@@ -101,7 +92,7 @@ _ = _run_repo_txn(
 
 - Do not set any git-related env vars; defaults are optimized for low latency and safety:
   - Background fetch enabled by default; no blocking fetch/pull on request path.
-  - Autocommit ON; Autopush ON and async by default.
+  - Autopush ON and async by default.
   - `SF_GIT_PULL_TTL_SEC=10` keeps remote refs reasonably fresh.
   - `SF_GIT_PULL_ALLOW_UNTRACKED=1` avoids false positives from untracked files.
 

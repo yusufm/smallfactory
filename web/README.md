@@ -19,7 +19,7 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 - **Stickers**: Batch PDF generation of QR code labels for multiple SFIDs
 - **Vision (Ollama/OpenRouter)**: Generic image Q&A and invoice part extraction
 - **Modern UI**: Clean, responsive Tailwind CSS design
-- **Git-native**: Optional auto-commit on writes (configurable)
+- **Git-native**: Core APIs commit on writes; web can optionally autopush
 
 ## Quick Start
 
@@ -56,7 +56,6 @@ FLASK_ENV=development python3 sf.py web --port 8080 --debug
 ## Configuration
 
 - **SF_WEB_SECRET**: Flask secret key. Defaults to an insecure dev value.
-- **SF_WEB_AUTOCOMMIT**: Enable/disable Git auto-commit on writes. Default ON. Disable with `SF_WEB_AUTOCOMMIT=0`.
 - **PORT** / `--port`: Port for the web server (default 8080).
 - **FLASK_ENV** / `--debug`: Set `development` or pass `--debug` for auto-reload.
 - **SF_VISION_PROVIDER**: Vision provider. Supported values: `ollama` (default) or `openrouter`.
@@ -115,7 +114,7 @@ This ensures feature parity with the CLI while keeping storage Git-native and YA
 
 - All HTTP GET routes must be side-effect free: no cache writes and no Git mutations.
 - Inventory reads in GET paths use the read-only helper `inventory_onhand_readonly()` to avoid writing onhand caches.
-- Mutations happen only via POST routes, which are wrapped in a transaction helper that can autocommit and optionally push.
+- Mutations happen only via POST routes, which are wrapped in a transaction helper that can optionally push.
 - CLI parity: use `sf inventory onhand --readonly` to compute on-hand without writing caches from the command line.
 
 ## Future Extensions
@@ -277,7 +276,7 @@ The web UI can run in Docker for easy deployment.
   - `SF_REPO_GIT_URL` – if set and the repo path is empty, the container will `git clone` here
   - `SF_REPO_NAME` – name used when initializing a new repo (default `datarepo`)
   - `SF_WEB_SECRET` – Flask secret key (required for non-dev)
-  - `SF_WEB_AUTOCOMMIT`, `SF_WEB_AUTOPUSH`, `SF_GIT_PULL_ALLOW_UNTRACKED` – Git orchestration knobs
+  - `SF_WEB_AUTOPUSH`, `SF_WEB_AUTOPUSH_ASYNC`, `SF_GIT_PUSH_TTL_SEC`, `SF_GIT_PULL_ALLOW_UNTRACKED` – Git orchestration knobs
   - `SF_OLLAMA_BASE_URL`, `SF_VISION_MODEL` – Vision integration
 
 - **docker-compose.yml (example)**
