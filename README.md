@@ -1,6 +1,12 @@
 # smallFactory
- 
- ![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
+
+[![GitHub stars](https://img.shields.io/github/stars/yusufm/smallfactory?style=flat-square)](https://github.com/yusufm/smallfactory/stargazers)
+[![License](https://img.shields.io/github/license/yusufm/smallfactory?style=flat-square)](https://github.com/yusufm/smallfactory/blob/main/LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/yusufm/smallfactory?style=flat-square)](https://github.com/yusufm/smallfactory/commits/main)
+
+**For solo founders and tiny hardware teams who are tired of spreadsheet chaos but don't need enterprise PLM.**
+
+![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
 
 ## What is smallFactory
 
