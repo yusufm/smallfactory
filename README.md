@@ -71,6 +71,11 @@ http://127.0.0.1:8080
 # Commit messages include machine-readable tokens like ::sfid::<SFID>.
 ```
 
+## Community
+
+Join the smallFactory Discord:
+https://discord.gg/g3QSuVmvBt
+
 ## Features at a glance
 
 ### Design
