@@ -37,9 +37,9 @@ Welcome to smallFactory — a Git‑native toolset to manage the things you make
 Add images under `docs/img/screenshots/` and they will render here:
 
 ![Dashboard](img/screenshots/dashboard.png)
-![Entity detail](img/screenshots/entity.png)
-![Quick Adjust](img/screenshots/quick_adjust.png)
-![Stickers](img/screenshots/stickers.png)
+![Entity detail](img/screenshots/entity_view_overview.png)
+![Quick Adjust](img/screenshots/mobile_adjust_scan_1.jpeg)
+![Stickers](img/screenshots/stickers_batch.png)
 
 ## Go deeper
 - Users: Web UI guide and CLI basics — see [docs index](README.md).
