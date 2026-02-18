@@ -4,6 +4,11 @@
 [![License](https://img.shields.io/github/license/yusufm/smallfactory?style=flat-square)](https://github.com/yusufm/smallfactory/blob/main/LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/yusufm/smallfactory?style=flat-square)](https://github.com/yusufm/smallfactory/commits/main)
 
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/g3QSuVmvBt)
+
+[![Ko-fi](https://img.shields.io/badge/Support-smallFactory-FF5E5B?logo=kofi&logoColor=white&style=flat-square)](https://ko-fi.com/T6T21UH4X8)
+
+
 **For solo founders and tiny hardware teams who are tired of spreadsheet chaos but don't need enterprise PLM.**
 
 ![smallFactory Dashboard](docs/img/screenshots/dashboard.png)
