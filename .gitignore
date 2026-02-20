@@ -133,3 +133,7 @@ dmypy.json
 
 # Smallfactory data repos
 datarepos/
+
+# macOS Finder
+.DS_Store
+**/.DS_Store
