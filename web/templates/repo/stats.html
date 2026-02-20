@@ -269,7 +269,7 @@
       err: ['bg-rose-100','text-rose-800']
     };
     statusEl.className = base.concat(kinds[kind] || kinds.idle).join(' ');
-    statusEl.innerHTML = text;
+    statusEl.textContent = text;
   }
   function init(){
     var btn = el('run-validation');
@@ -284,7 +284,10 @@
         warning: 'bg-amber-100 text-amber-800'
       };
       const cls = map[String(sev||'').toLowerCase()] || 'bg-gray-100 text-gray-800';
-      return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}">${sev||'info'}</span>`;
+      const span = document.createElement('span');
+      span.className = `inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`;
+      span.textContent = sev || 'info';
+      return span;
     }
     function renderTable(issues){
       if (!panel || !tbody || !summary) return;
@@ -293,7 +296,14 @@
       while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
       if (!issues || !issues.length){
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td class="py-2 pr-4 text-green-700" colspan="4"><i class='fas fa-check-circle mr-1'></i>No issues found.</td>`;
+        const td = document.createElement('td');
+        td.className = 'py-2 pr-4 text-green-700';
+        td.colSpan = 4;
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-check-circle mr-1';
+        td.appendChild(icon);
+        td.appendChild(document.createTextNode('No issues found.'));
+        tr.appendChild(td);
         tbody.appendChild(tr);
         summary.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800';
         summary.textContent = 'No issues';
@@ -302,12 +312,22 @@
       issues.forEach(function(it){
         const tr = document.createElement('tr');
         tr.className = 'border-t border-gray-100';
-        tr.innerHTML = [
-          `<td class="py-2 pr-4">${sevBadge(it.severity)}</td>`,
-          `<td class="py-2 pr-4 font-mono text-xs">${it.code||''}</td>`,
-          `<td class="py-2 pr-4 font-mono text-xs">${it.path||''}</td>`,
-          `<td class="py-2 pr-4">${it.message||''}</td>`
-        ].join('');
+        const tdSev = document.createElement('td');
+        tdSev.className = 'py-2 pr-4';
+        tdSev.appendChild(sevBadge(it.severity));
+        const tdCode = document.createElement('td');
+        tdCode.className = 'py-2 pr-4 font-mono text-xs';
+        tdCode.textContent = it.code || '';
+        const tdPath = document.createElement('td');
+        tdPath.className = 'py-2 pr-4 font-mono text-xs';
+        tdPath.textContent = it.path || '';
+        const tdMsg = document.createElement('td');
+        tdMsg.className = 'py-2 pr-4';
+        tdMsg.textContent = it.message || '';
+        tr.appendChild(tdSev);
+        tr.appendChild(tdCode);
+        tr.appendChild(tdPath);
+        tr.appendChild(tdMsg);
         tbody.appendChild(tr);
       });
     }
@@ -315,7 +335,7 @@
       try {
         btn.disabled = true;
         btn.classList.add('opacity-50','cursor-not-allowed');
-        setBadge(status, '<i class="fas fa-spinner fa-spin mr-1"></i> Running…', 'running');
+        setBadge(status, 'Running…', 'running');
         const payload = {
           include_entities: true,
           include_inventory: true,

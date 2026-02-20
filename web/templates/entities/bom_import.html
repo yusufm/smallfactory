@@ -84,6 +84,15 @@
   const elApply = () => document.getElementById('imp-apply');
   const elSelectAll = () => document.getElementById('imp-select-all');
 
+  function esc(v){
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   // SFID helpers (matches SPECIFICATION.md authoritative regex)
   const SFID_REGEX = /^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$/;
   const isValidSfid = (s) => {
@@ -259,8 +268,8 @@
       let badge = '';
       let rowCls = '';
       let canApply = canApplyRow(r);
-      let qtyCellHtml = `${qty}`;
-      let revCellHtml = `${rev||'released'}`;
+      let qtyCellHtml = `${esc(qty)}`;
+      let revCellHtml = `${esc(rev||'released')}`;
       const showInput = r.ambiguous || (!use || !isValidSfid(use)) || (!!r.auto_suggested);
       if(r.ambiguous){
         status = 'Ambiguous';
@@ -284,8 +293,8 @@
           status = 'Will update';
           badge = '<span class="px-2 py-0.5 rounded text-xs bg-orange-100 text-orange-700">update</span>';
           rowCls = '';
-          qtyCellHtml = changedQty ? `<span class="line-through text-gray-400">${oldQty}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${qty}</span>` : `${qty}`;
-          revCellHtml = changedRev ? `<span class="line-through text-gray-400">${oldRev||'released'}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${rev||'released'}</span>` : `${rev||'released'}`;
+          qtyCellHtml = changedQty ? `<span class="line-through text-gray-400">${esc(oldQty)}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${esc(qty)}</span>` : `${esc(qty)}`;
+          revCellHtml = changedRev ? `<span class="line-through text-gray-400">${esc(oldRev||'released')}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${esc(rev||'released')}</span>` : `${esc(rev||'released')}`;
         }else{
           status = 'No change';
           badge = '<span class="px-2 py-0.5 rounded text-xs bg-gray-200 text-gray-700">no-op</span>';
@@ -304,22 +313,26 @@
         badge = '<span class="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">add</span>';
       }
       const useCell = showInput
-        ? `<input data-sfid-input="1" data-row-index="${i}" type="text" value="${use||''}"
+        ? `<input data-sfid-input="1" data-row-index="${i}" type="text" value="${esc(use||'')}"
                  placeholder="p_example"
                  class="w-44 border ${isValidSfid(use)?'border-gray-300':'border-red-300'} rounded px-2 py-1 font-mono text-sm" />`
-        : `<span class="font-mono text-blue-700">${use||'—'}</span>`;
+        : `<span class="font-mono text-blue-700">${esc(use||'—')}</span>`;
+      const nameSafe = esc(name||'—');
+      const mfrSafe = esc(mfr||'—');
+      const mpnSafe = esc(mpn||'—');
+      const statusSafe = esc(status);
       tb.insertAdjacentHTML('beforeend', `
         <tr class="${rowCls}" data-can-apply="${canApply?'1':'0'}" data-row-index="${i}">
           <td class="px-2 py-1">
             <input type="checkbox" data-row-select="1" data-row-index="${i}" class="h-4 w-4" ${canApply?'':'disabled'} ${canApply?'checked':''} />
           </td>
           <td class="px-2 py-1">${useCell}</td>
-          <td class="px-2 py-1">${name||'—'}</td>
+          <td class="px-2 py-1">${nameSafe}</td>
           <td class="px-2 py-1 text-right">${qtyCellHtml}</td>
           <td class="px-2 py-1">${revCellHtml}</td>
-          <td class="px-2 py-1">${mfr||'—'}</td>
-          <td class="px-2 py-1">${mpn||'—'}</td>
-          <td class="px-2 py-1">${badge} <span class="text-gray-600">${status}</span></td>
+          <td class="px-2 py-1">${mfrSafe}</td>
+          <td class="px-2 py-1">${mpnSafe}</td>
+          <td class="px-2 py-1">${badge} <span class="text-gray-600">${statusSafe}</span></td>
         </tr>
       `);
     });
@@ -341,14 +354,14 @@
       const rev = (er.rev||'released');
       const badge = '<span class="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">remove</span>';
       tb.insertAdjacentHTML('beforeend', `
-        <tr class="bg-red-50" data-remove="1" data-remove-use="${use}">
+        <tr class="bg-red-50" data-remove="1" data-remove-use="${esc(use)}">
           <td class="px-2 py-1">
-            <input type="checkbox" data-remove-select="1" data-remove-use="${use}" class="h-4 w-4" checked />
+            <input type="checkbox" data-remove-select="1" data-remove-use="${esc(use)}" class="h-4 w-4" checked />
           </td>
-          <td class="px-2 py-1 font-mono text-red-700">${use||'—'}</td>
-          <td class="px-2 py-1">${name||'—'}</td>
-          <td class="px-2 py-1 text-right">${qty}</td>
-          <td class="px-2 py-1">${rev||'released'}</td>
+          <td class="px-2 py-1 font-mono text-red-700">${esc(use||'—')}</td>
+          <td class="px-2 py-1">${esc(name||'—')}</td>
+          <td class="px-2 py-1 text-right">${esc(qty)}</td>
+          <td class="px-2 py-1">${esc(rev||'released')}</td>
           <td class="px-2 py-1">—</td>
           <td class="px-2 py-1">—</td>
           <td class="px-2 py-1">${badge} <span class="text-gray-700">Will remove</span></td>
@@ -445,17 +458,17 @@
           const newRev = previewRows[idx].rev || 'released';
           const changedQty = Number(oldQty) !== Number(newQty);
           const changedRev = String(oldRev) !== String(newRev);
-          tds[3].innerHTML = changedQty ? `<span class="line-through text-gray-400">${oldQty}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${newQty}</span>` : `${newQty}`;
-          tds[4].innerHTML = changedRev ? `<span class="line-through text-gray-400">${oldRev||'released'}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${newRev||'released'}</span>` : `${newRev||'released'}`;
+          tds[3].innerHTML = changedQty ? `<span class="line-through text-gray-400">${esc(oldQty)}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${esc(newQty)}</span>` : `${esc(newQty)}`;
+          tds[4].innerHTML = changedRev ? `<span class="line-through text-gray-400">${esc(oldRev||'released')}</span> <span class="mx-1">→</span> <span class="font-semibold text-blue-700">${esc(newRev||'released')}</span>` : `${esc(newRev||'released')}`;
         }else{
           // reset to plain values
           const newQty = previewRows[idx].qty ?? 1;
           const newRev = previewRows[idx].rev || 'released';
-          tds[3].innerHTML = `${newQty}`;
-          tds[4].innerHTML = `${newRev}`;
+          tds[3].innerHTML = `${esc(newQty)}`;
+          tds[4].innerHTML = `${esc(newRev)}`;
         }
         const statusTd = tds[7];
-        statusTd.innerHTML = `${badge} <span class="text-gray-600">${status}</span>`;
+        statusTd.innerHTML = `${badge} <span class="text-gray-600">${esc(status)}</span>`;
       }
     }
     updateSummaryAndApplyButton();
