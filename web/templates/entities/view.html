@@ -681,7 +681,14 @@ async function saveOverview(){
     const tagsEl = document.getElementById('ovw-tags-display');
     if(tagsEl){
       const parts = (tags||'').split(',').map(s=>s.trim()).filter(Boolean);
-      tagsEl.innerHTML = parts.map(t=>`<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">${t}</span>`).join(' ');
+      tagsEl.textContent = '';
+      parts.forEach(t => {
+        const span = document.createElement('span');
+        span.className = 'inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800';
+        span.textContent = t;
+        tagsEl.appendChild(span);
+        tagsEl.appendChild(document.createTextNode(' '));
+      });
     } else { needReload = true; }
     // Common attrs
     const manufacturer = attrs.manufacturer || attrs.mfr || '';
@@ -696,12 +703,20 @@ async function saveOverview(){
     const grid = document.getElementById('ovw-attrs-grid');
     if(grid){
       const entries = Object.keys(attrs).filter(k=>!ATTR_SKIP_KEYS.has(k)).sort();
-      grid.innerHTML = entries.map(k=>`
-        <div class="border border-gray-100 rounded p-3">
-          <div class="text-xs font-medium text-gray-500">${k}</div>
-          <div class="mt-1 text-sm text-gray-900 break-words">${attrs[k]}</div>
-        </div>
-      `).join('');
+      grid.textContent = '';
+      entries.forEach(k => {
+        const card = document.createElement('div');
+        card.className = 'border border-gray-100 rounded p-3';
+        const kEl = document.createElement('div');
+        kEl.className = 'text-xs font-medium text-gray-500';
+        kEl.textContent = k;
+        const vEl = document.createElement('div');
+        vEl.className = 'mt-1 text-sm text-gray-900 break-words';
+        vEl.textContent = String(attrs[k] ?? '');
+        card.appendChild(kEl);
+        card.appendChild(vEl);
+        grid.appendChild(card);
+      });
     } else { needReload = true; }
     // Close editor
     ovwInitialState = getOverviewCurrentState();
@@ -922,15 +937,28 @@ function dfShowError(msg){
 
 function dfUpdateTabs(){ /* removed: legacy subdir tabs */ }
 
-function dfBreadcrumbHtml(){
+function dfRenderBreadcrumb(container){
+  if(!container) return;
+  container.textContent = '';
   const parts = (dfPath||'').split('/').filter(Boolean);
-  let html = `<button type="button" class="text-gray-500 hover:underline" onclick="dfGoto('')">${FILES_ROOT}</button>`;
+  const rootBtn = document.createElement('button');
+  rootBtn.type = 'button';
+  rootBtn.className = 'text-gray-500 hover:underline';
+  rootBtn.textContent = FILES_ROOT;
+  rootBtn.addEventListener('click', () => dfGoto(''));
+  container.appendChild(rootBtn);
   let acc = '';
-  parts.forEach((p, idx) => {
+  parts.forEach((p) => {
     acc = acc ? `${acc}/${p}` : p;
-    html += `/<button type="button" class="underline hover:no-underline" onclick="dfGoto('${acc.replace(/'/g, "\\'")}')">${p}</button>`;
+    container.appendChild(document.createTextNode('/'));
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'underline hover:no-underline';
+    btn.textContent = p;
+    const pathValue = acc;
+    btn.addEventListener('click', () => dfGoto(pathValue));
+    container.appendChild(btn);
   });
-  return html;
 }
 
 function dfGoto(path){
@@ -954,7 +982,7 @@ function dfJoin(name){
 async function dfLoad(){
   try{
     const bc = document.getElementById('df-breadcrumb');
-    if(bc) bc.innerHTML = dfBreadcrumbHtml();
+    dfRenderBreadcrumb(bc);
     const qs = new URLSearchParams();
     if(dfPath) qs.set('path', dfPath);
     const url = `/api/entities/${encodeURIComponent(SFID)}/files` + (qs.toString() ? `?${qs.toString()}` : '');
@@ -1002,27 +1030,65 @@ function dfRenderList(items){
   items.forEach(it => {
     const isDir = it.type === 'dir';
     const dlUrl = `/api/entities/${encodeURIComponent(SFID)}/files/download?path=${encodeURIComponent(it.path||'')}`;
-    const nameHtml = isDir
-      ? `<button type="button" class="text-blue-700 hover:underline" onclick="dfGoto('${(it.path||'').replace(/'/g, "\\'")}')">${it.name}</button>`
-      : `<span class="inline-flex items-center gap-2">
-           ${it.name}
-           <a class="text-gray-400 hover:text-blue-700" href="${dlUrl}" title="Download" aria-label="Download" download>
-             <i class="fas fa-download"></i>
-           </a>
-         </span>`;
     const size = isDir ? '—' : (it.size!=null?it.size:'—');
     const mtime = it.mtime||'—';
-    const actions = isDir
-      ? `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', true)">Delete</button>`
-      : `<button class="text-xs text-red-700 hover:underline" onclick="openDfDeleteModal('${(it.path||'').replace(/'/g, "\\'")}', false)">Delete</button>`;
-    tbody.insertAdjacentHTML('beforeend', `
-      <tr class="odd:bg-gray-50 hover:bg-gray-50">
-        <td class="px-3 py-1.5 font-mono">${nameHtml}</td>
-        <td class="px-3 py-1.5 text-gray-700">${isDir?'dir':'file'}</td>
-        <td class="px-3 py-1.5 text-right text-gray-700">${size}</td>
-        <td class="px-3 py-1.5 text-gray-700">${mtime}</td>
-        <td class="px-3 py-1.5">${actions}</td>
-      </tr>`);
+    const tr = document.createElement('tr');
+    tr.className = 'odd:bg-gray-50 hover:bg-gray-50';
+
+    const nameTd = document.createElement('td');
+    nameTd.className = 'px-3 py-1.5 font-mono';
+    if (isDir) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'text-blue-700 hover:underline';
+      btn.textContent = it.name || '';
+      const pathValue = it.path || '';
+      btn.addEventListener('click', () => dfGoto(pathValue));
+      nameTd.appendChild(btn);
+    } else {
+      const wrap = document.createElement('span');
+      wrap.className = 'inline-flex items-center gap-2';
+      wrap.appendChild(document.createTextNode(it.name || ''));
+      const a = document.createElement('a');
+      a.className = 'text-gray-400 hover:text-blue-700';
+      a.href = dlUrl;
+      a.title = 'Download';
+      a.setAttribute('aria-label', 'Download');
+      a.setAttribute('download', '');
+      const icon = document.createElement('i');
+      icon.className = 'fas fa-download';
+      a.appendChild(icon);
+      wrap.appendChild(a);
+      nameTd.appendChild(wrap);
+    }
+
+    const typeTd = document.createElement('td');
+    typeTd.className = 'px-3 py-1.5 text-gray-700';
+    typeTd.textContent = isDir ? 'dir' : 'file';
+
+    const sizeTd = document.createElement('td');
+    sizeTd.className = 'px-3 py-1.5 text-right text-gray-700';
+    sizeTd.textContent = String(size);
+
+    const mtimeTd = document.createElement('td');
+    mtimeTd.className = 'px-3 py-1.5 text-gray-700';
+    mtimeTd.textContent = mtime;
+
+    const actionsTd = document.createElement('td');
+    actionsTd.className = 'px-3 py-1.5';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'text-xs text-red-700 hover:underline';
+    delBtn.textContent = 'Delete';
+    const pathValue = it.path || '';
+    delBtn.addEventListener('click', () => openDfDeleteModal(pathValue, isDir));
+    actionsTd.appendChild(delBtn);
+
+    tr.appendChild(nameTd);
+    tr.appendChild(typeTd);
+    tr.appendChild(sizeTd);
+    tr.appendChild(mtimeTd);
+    tr.appendChild(actionsTd);
+    tbody.appendChild(tr);
   });
 }
 

@@ -25,10 +25,22 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
+def _resolve_within(base: Path, candidate: Path) -> Path:
+    """Resolve candidate and ensure it remains within base."""
+    base_resolved = base.resolve()
+    candidate_resolved = candidate.resolve()
+    try:
+        candidate_resolved.relative_to(base_resolved)
+    except Exception:
+        raise ValueError("Resolved path escapes entities root")
+    return candidate
+
+
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     # Validate sfid conforms to SPEC (regex and safety)
     validate_sfid(sfid)
-    return _entities_dir(datarepo_path) / sfid / "entity.yml"
+    entities_root = _entities_dir(datarepo_path)
+    return _resolve_within(entities_root, entities_root / sfid / "entity.yml")
 
 
 def _read_yaml(p: Path) -> dict:
@@ -185,7 +197,9 @@ def _is_part_sfid(sfid: str) -> bool:
 
 
 def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
-    return _entities_dir(datarepo_path) / sfid
+    validate_sfid(sfid)
+    entities_root = _entities_dir(datarepo_path)
+    return _resolve_within(entities_root, entities_root / sfid)
 
 
 def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
@@ -194,6 +208,15 @@ def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
 
 def _refs_released_file(datarepo_path: Path, sfid: str) -> Path:
     return _entity_dir(datarepo_path, sfid) / "refs" / "released"
+
+
+def _normalize_revision_label(rev: str | int) -> str:
+    s = str(rev).strip()
+    if not s:
+        raise ValueError("Revision label is required")
+    if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s) is None:
+        raise ValueError("Invalid revision label")
+    return s
 
 
 def _read_released_pointer(datarepo_path: Path, sfid: str) -> Optional[str]:
@@ -303,7 +326,7 @@ def cut_revision(
     _validate_against_specs(datarepo_path, sfid, ent_data)
 
     # Determine new rev label
-    label = rev or _compute_next_label_from_fs(datarepo_path, sfid)
+    label = _normalize_revision_label(rev) if rev is not None else _compute_next_label_from_fs(datarepo_path, sfid)
     snap_dir = _revisions_dir(datarepo_path, sfid) / label
     if snap_dir.exists():
         # Ok, it exists.  But maybe it's a draft, and we can blow it away.
@@ -462,7 +485,8 @@ def _build_bom_tree_nodes(
         """Best-effort name lookup honoring a specific revision if provided."""
         if rev_label:
             try:
-                snap_fp = _revisions_dir(datarepo_path, sfid) / str(rev_label) / "entity.yml"
+                normalized = _normalize_revision_label(rev_label)
+                snap_fp = _revisions_dir(datarepo_path, sfid) / normalized / "entity.yml"
                 if snap_fp.exists():
                     data = _read_yaml(snap_fp) or {}
                     val = data.get("name")
@@ -479,7 +503,8 @@ def _build_bom_tree_nodes(
         """
         if rev_label:
             try:
-                snap_fp = _revisions_dir(datarepo_path, parent_sfid) / str(rev_label) / "entity.yml"
+                normalized = _normalize_revision_label(rev_label)
+                snap_fp = _revisions_dir(datarepo_path, parent_sfid) / normalized / "entity.yml"
                 if snap_fp.exists():
                     data = _read_yaml(snap_fp) or {}
                     return _bom_list_from_entity(data)
@@ -601,6 +626,7 @@ def release_revision(
     validate_sfid(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
+    rev = _normalize_revision_label(rev)
     # Ensure snapshot exists
     snap_dir = _revisions_dir(datarepo_path, sfid) / rev
     meta_fp = snap_dir / "meta.yml"

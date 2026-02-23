@@ -197,20 +197,29 @@ document.getElementById('field').addEventListener('change', function() {
         fieldDescription.textContent = description || 'Update this field with a new value.';
         
         // Update input based on field type
+        valueContainer.textContent = '';
         if (selectedField === 'description' || selectedField === 'notes') {
             // Replace input with textarea for long text fields
-            valueContainer.innerHTML = `
-                <textarea name="value" id="value" required rows="3"
-                          class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                          placeholder="Enter the new ${selectedField}">${currentValue}</textarea>
-            `;
+            const textarea = document.createElement('textarea');
+            textarea.name = 'value';
+            textarea.id = 'value';
+            textarea.required = true;
+            textarea.rows = 3;
+            textarea.className = 'mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+            textarea.placeholder = `Enter the new ${selectedField}`;
+            textarea.value = currentValue;
+            valueContainer.appendChild(textarea);
         } else {
             // Use regular input
-            valueContainer.innerHTML = `
-                <input type="text" name="value" id="value" required
-                       class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                       placeholder="Enter the new ${selectedField}" value="${currentValue}">
-            `;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.name = 'value';
+            input.id = 'value';
+            input.required = true;
+            input.className = 'mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
+            input.placeholder = `Enter the new ${selectedField}`;
+            input.value = currentValue;
+            valueContainer.appendChild(input);
         }
     } else {
         customFieldDiv.classList.add('hidden');

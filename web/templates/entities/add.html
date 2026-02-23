@@ -107,19 +107,47 @@ function makeInput(name, spec, value){
   const val = value || '';
   const label = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const baseClasses = 'mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500';
-  const reqMark = required ? '<span class="text-red-500">*</span>' : '';
-  if(isTextArea){
-    return `<div class="${['description','notes'].includes(name)?'sm:col-span-2':''}">
-      <label for="${name}" class="block text-sm font-medium text-gray-700">${label} ${reqMark}</label>
-      <textarea name="${name}" id="${name}" rows="3" class="${baseClasses}" placeholder="${placeholder}" ${required?'required':''}>${val}</textarea>
-      ${placeholder ? `<p class="mt-1 text-xs text-gray-500">${placeholder}</p>`:''}
-    </div>`;
+  const wrap = document.createElement('div');
+  if (['description','notes'].includes(name)) wrap.className = 'sm:col-span-2';
+  const labelEl = document.createElement('label');
+  labelEl.htmlFor = name;
+  labelEl.className = 'block text-sm font-medium text-gray-700';
+  labelEl.appendChild(document.createTextNode(`${label} `));
+  if (required) {
+    const reqSpan = document.createElement('span');
+    reqSpan.className = 'text-red-500';
+    reqSpan.textContent = '*';
+    labelEl.appendChild(reqSpan);
   }
-  return `<div class="${['description','notes'].includes(name)?'sm:col-span-2':''}">
-    <label for="${name}" class="block text-sm font-medium text-gray-700">${label} ${reqMark}</label>
-    <input type="text" name="${name}" id="${name}" class="${baseClasses}" placeholder="${placeholder}" value="${val}" ${required?'required':''}>
-    ${placeholder ? `<p class="mt-1 text-xs text-gray-500">${placeholder}</p>`:''}
-  </div>`;
+  wrap.appendChild(labelEl);
+  if(isTextArea){
+    const textarea = document.createElement('textarea');
+    textarea.name = name;
+    textarea.id = name;
+    textarea.rows = 3;
+    textarea.className = baseClasses;
+    textarea.placeholder = placeholder;
+    textarea.required = !!required;
+    textarea.value = val;
+    wrap.appendChild(textarea);
+  } else {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.name = name;
+    input.id = name;
+    input.className = baseClasses;
+    input.placeholder = placeholder;
+    input.value = val;
+    input.required = !!required;
+    wrap.appendChild(input);
+  }
+  if (placeholder) {
+    const p = document.createElement('p');
+    p.className = 'mt-1 text-xs text-gray-500';
+    p.textContent = placeholder;
+    wrap.appendChild(p);
+  }
+  return wrap;
 }
 
 function addCustomField(){
@@ -173,8 +201,8 @@ async function renderFields(){
   const optional = entries.filter(([k,v]) => !v || !v.required);
   if(required.length){ reqWrap.classList.remove('hidden'); } else { reqWrap.classList.add('hidden'); }
   if(optional.length){ optWrap.classList.remove('hidden'); } else { optWrap.classList.add('hidden'); }
-  required.forEach(([name, spec]) => { reqGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, mergedData[name]||'')); });
-  optional.forEach(([name, spec]) => { optGrid.insertAdjacentHTML('beforeend', makeInput(name, spec, mergedData[name]||'')); });
+  required.forEach(([name, spec]) => { reqGrid.appendChild(makeInput(name, spec, mergedData[name]||'')); });
+  optional.forEach(([name, spec]) => { optGrid.appendChild(makeInput(name, spec, mergedData[name]||'')); });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -283,7 +311,7 @@ formEl.addEventListener('submit', function(){
       let el = document.getElementById(fieldName);
       if (el) { el.value = value; return; }
       // Otherwise, inject into optional grid for visibility
-      optGrid.insertAdjacentHTML('beforeend', makeInput(fieldName, {}, value));
+      optGrid.appendChild(makeInput(fieldName, {}, value));
       optWrap.classList.remove('hidden');
       el = document.getElementById(fieldName);
       if (el) el.value = value;
