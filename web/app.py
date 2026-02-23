@@ -1547,7 +1547,7 @@ def repo_stats_validate():
         )
         return jsonify({'success': True, 'result': result})
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 @app.route('/')
 def index():
@@ -2331,7 +2331,7 @@ def api_inventory_adjust():
             'new_qty': new_qty,
         })
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 @app.route('/api/inventory/onhand', methods=['GET'])
 def api_inventory_onhand():
@@ -2367,7 +2367,7 @@ def api_inventory_onhand():
             'location_qty': loc_qty,
         })
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities')
 def api_entities_list():
@@ -2475,7 +2475,7 @@ def api_entities_update(sfid):
         )
         return jsonify({'success': True, 'entity': updated})
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/revisions', methods=['GET'])
 def api_revisions_get(sfid):
@@ -3304,8 +3304,26 @@ def api_bom_add(sfid):
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except FileNotFoundError as e:
+        return _api_exception_response(e, 400, "Referenced entity does not exist under entities/")
+    except ValueError as e:
+        msg = "Invalid BOM request"
+        try:
+            if "duplicate bom" in str(e).lower():
+                msg = "Duplicate BOM entry"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
+    except RuntimeError as e:
+        msg = "BOM operation failed"
+        try:
+            if "git push" in str(e).lower():
+                msg = "Post-mutation git push failed"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/remove', methods=['POST'])
@@ -3358,8 +3376,16 @@ def api_bom_set(sfid):
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except ValueError as e:
+        msg = "Invalid BOM request"
+        try:
+            if "duplicate bom" in str(e).lower():
+                msg = "Duplicate BOM entry"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
-        return _api_exception_response(e, 400, str(e))
+        return _api_exception_response(e, 400)
 
 
 # -----------------------
@@ -3636,7 +3662,20 @@ def api_vision_ask():
         result = vlm_ask_image(prompt, img_bytes)
         return jsonify({'success': True, 'result': result})
     except ValueError as e:
-        return _api_exception_response(e, 400, str(e))
+        msg = "Invalid request"
+        try:
+            err = str(e)
+            if "No image file uploaded" in err:
+                msg = "No image file uploaded under field 'file'."
+            elif "Unsupported file type" in err:
+                msg = "Unsupported file type; expected an image."
+            elif "Image too large" in err:
+                msg = "Image too large (max 10MB)."
+            elif "Failed to read image" in err:
+                msg = "Failed to read image."
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
         # Friendly guidance depending on configured provider
         try:
@@ -3669,7 +3708,20 @@ def api_vision_extract_part():
         result = vlm_extract_invoice_part(img_bytes)
         return jsonify({'success': True, 'result': result})
     except ValueError as e:
-        return _api_exception_response(e, 400, str(e))
+        msg = "Invalid request"
+        try:
+            err = str(e)
+            if "No image file uploaded" in err:
+                msg = "No image file uploaded under field 'file'."
+            elif "Unsupported file type" in err:
+                msg = "Unsupported file type; expected an image."
+            elif "Image too large" in err:
+                msg = "Image too large (max 10MB)."
+            elif "Failed to read image" in err:
+                msg = "Failed to read image."
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
         try:
             prov = get_vision_provider()

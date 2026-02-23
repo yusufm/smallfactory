@@ -39,8 +39,7 @@ def _resolve_within(base: Path, candidate: Path) -> Path:
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     # Validate sfid conforms to SPEC (regex and safety)
     validate_sfid(sfid)
-    entities_root = _entities_dir(datarepo_path)
-    return _resolve_within(entities_root, entities_root / sfid / "entity.yml")
+    return _entities_dir(datarepo_path) / sfid / "entity.yml"
 
 
 def _read_yaml(p: Path) -> dict:
@@ -198,8 +197,7 @@ def _is_part_sfid(sfid: str) -> bool:
 
 def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
     validate_sfid(sfid)
-    entities_root = _entities_dir(datarepo_path)
-    return _resolve_within(entities_root, entities_root / sfid)
+    return _entities_dir(datarepo_path) / sfid
 
 
 def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
