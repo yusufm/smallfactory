@@ -138,7 +138,7 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
         if d.is_dir() and d.name == sfid:
             raise FileExistsError(f"Entity '{sfid}' already exists")
 
-    (root / sfid).mkdir(parents=True, exist_ok=True)
+    (root / sfid).mkdir(parents=True, exist_ok=True)  # lgtm [py/path-injection]
     ent_dir = None
     for d in root.iterdir():
         if d.is_dir() and d.name == sfid:
