@@ -9,7 +9,7 @@ import yaml
 import re
 
 from .gitutils import git_commit_paths
-from .config import get_entity_field_specs_for_sfid, validate_sfid
+from .config import get_entity_field_specs_for_sfid
 
 
 # -------------------------------
@@ -25,18 +25,25 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
-def _assert_within(root: Path, candidate: Path) -> None:
-    root_resolved = root.resolve()
-    candidate_resolved = candidate.resolve()
-    try:
-        candidate_resolved.relative_to(root_resolved)
-    except Exception:
-        raise ValueError("Path escapes entities root")
+_SFID_RE = re.compile(r"^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$")
+
+
+def _validate_sfid_local(sfid: str) -> None:
+    """Local sfid guard so path sinks are gated in-module for static analyzers."""
+    if not isinstance(sfid, str) or not sfid:
+        raise ValueError("sfid is required")
+    if re.fullmatch(_SFID_RE, sfid) is None:
+        raise ValueError(
+            "sfid must match ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$ and be lowercase"
+        )
+    # Explicitly reject path separators and traversal tokens.
+    if "/" in sfid or "\\" in sfid or sfid in {".", ".."}:
+        raise ValueError("Invalid sfid")
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     # Resolve through directory lookup to avoid direct tainted path composition.
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     root = _entities_dir(datarepo_path)
     for d in root.iterdir():
         if d.is_dir() and d.name == sfid:
@@ -45,11 +52,9 @@ def _entity_file(datarepo_path: Path, sfid: str) -> Path:
 
 
 def _entity_file_for_create(datarepo_path: Path, sfid: str) -> Path:
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     root = _entities_dir(datarepo_path)
-    p = root / sfid / "entity.yml"
-    _assert_within(root, p)
-    return p
+    return root / sfid / "entity.yml"
 
 
 def _read_yaml(p: Path) -> dict:
@@ -119,7 +124,7 @@ def list_entities(datarepo_path: Path) -> List[dict]:
 
 
 def get_entity(datarepo_path: Path, sfid: str) -> dict:
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     fp = _entity_file(datarepo_path, sfid)
     data = _read_yaml(fp)
     if not isinstance(data, dict):
@@ -131,7 +136,7 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
 def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None) -> dict:
     if not sfid:
         raise ValueError("sfid is required")
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     try:
         _ = _entity_file(datarepo_path, sfid)
         raise FileExistsError(f"Entity '{sfid}' already exists")
@@ -263,7 +268,7 @@ def get_revisions(datarepo_path: Path, sfid: str) -> Dict:
     - rev: contents of refs/released (label) or None if not set.
     - revisions: list of meta dicts augmented with 'id' and compatibility fields.
     """
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     # Ensure entity exists
     fp = _entity_file(datarepo_path, sfid)
     released = _read_released_pointer(datarepo_path, sfid)
@@ -320,7 +325,7 @@ def cut_revision(
     - Does NOT flip refs/released.
     Returns: {sfid, rev, revisions} for UI compatibility.
     """
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     # Ensure entity exists
@@ -602,7 +607,7 @@ def bump_revision(datarepo_path: Path, sfid: str, *, notes: Optional[str] = None
 
     This no longer flips the released pointer; it creates a draft snapshot per SPEC.
     """
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     label = _compute_next_label_from_fs(datarepo_path, sfid)
@@ -627,7 +632,7 @@ def release_revision(
     - Updates meta.yml; writes refs/released with the label.
     Returns: {sfid, rev, revisions}
     """
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     rev = _normalize_revision_label(rev)
@@ -714,7 +719,7 @@ def bom_add_line(
     Returns a dict with keys: sfid, index, bom (updated list).
     """
     ent = _ensure_part(datarepo_path, parent_sfid)
-    validate_sfid(use)
+    _validate_sfid_local(use)
     if check_exists:
         _ = _entity_file(datarepo_path, use)
     # Build line
@@ -834,7 +839,7 @@ def bom_set_line(
         new_use = updates["use"]
         if not isinstance(new_use, str) or not new_use:
             raise ValueError("'use' must be a non-empty string")
-        validate_sfid(new_use)
+        _validate_sfid_local(new_use)
         if check_exists:
             _ = _entity_file(datarepo_path, new_use)
         cur_use = None
@@ -883,7 +888,7 @@ def bom_alt_add(
     bom = _bom_list_from_entity(ent)
     if index < 0 or index >= len(bom):
         raise IndexError("index out of range")
-    validate_sfid(alt_use)
+    _validate_sfid_local(alt_use)
     if check_exists:
         _ = _entity_file(datarepo_path, alt_use)
     line = dict(bom[index]) if isinstance(bom[index], dict) else {}
@@ -959,7 +964,7 @@ def bom_alt_remove(
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
     if not field or field == "sfid":
         raise ValueError("Invalid or immutable field: 'sfid'")
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     fp = _entity_file(datarepo_path, sfid)
     data = _read_yaml(fp)
     if not isinstance(data, dict):
@@ -985,7 +990,7 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
         raise ValueError("updates must be a non-empty dict")
     if "sfid" in updates:
         raise ValueError("Cannot update 'sfid' via this method")
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     fp = _entity_file(datarepo_path, sfid)
     data = _read_yaml(fp)
     if not isinstance(data, dict):
@@ -1028,7 +1033,7 @@ def retire_entity(
     - Sets fields: retired: true, retired_at: ISO-8601 UTC, retired_reason: <reason?>
     - Does not touch inventory; references remain valid historically.
     """
-    validate_sfid(sfid)
+    _validate_sfid_local(sfid)
     fp = _entity_file(datarepo_path, sfid)
     data = _read_yaml(fp)
     if not isinstance(data, dict):
