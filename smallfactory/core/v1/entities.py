@@ -139,14 +139,13 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
         if d.is_dir() and d.name == sfid:
             raise FileExistsError(f"Entity '{sfid}' already exists")
 
-    root_fd = os.open(root, os.O_RDONLY)
-    try:
-        try:
-            os.mkdir(sfid, dir_fd=root_fd)
-        except FileExistsError:
-            pass
-    finally:
-        os.close(root_fd)
+    root_real = os.path.realpath(root)
+    cand_real = os.path.realpath(os.path.join(root_real, sfid))
+    if os.path.dirname(cand_real) != root_real:
+        raise ValueError("Invalid sfid")
+    if os.path.commonpath([root_real, cand_real]) != root_real:
+        raise ValueError("Invalid sfid")
+    Path(cand_real).mkdir(parents=True, exist_ok=False)
     ent_dir = None
     for d in root.iterdir():
         if d.is_dir() and d.name == sfid:
