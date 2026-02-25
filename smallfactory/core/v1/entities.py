@@ -25,21 +25,22 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
-def _resolve_within(base: Path, candidate: Path) -> Path:
-    """Resolve candidate and ensure it remains within base."""
-    base_resolved = base.resolve()
+def _assert_within(root: Path, candidate: Path) -> None:
+    root_resolved = root.resolve()
     candidate_resolved = candidate.resolve()
     try:
-        candidate_resolved.relative_to(base_resolved)
+        candidate_resolved.relative_to(root_resolved)
     except Exception:
-        raise ValueError("Resolved path escapes entities root")
-    return candidate
+        raise ValueError("Path escapes entities root")
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
-    # Validate sfid conforms to SPEC (regex and safety)
+    # Validate sfid before composing file paths, then enforce scope containment.
     validate_sfid(sfid)
-    return _entities_dir(datarepo_path) / sfid / "entity.yml"
+    root = _entities_dir(datarepo_path)
+    p = root / sfid / "entity.yml"
+    _assert_within(root, p)
+    return p
 
 
 def _read_yaml(p: Path) -> dict:
@@ -197,7 +198,10 @@ def _is_part_sfid(sfid: str) -> bool:
 
 def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
     validate_sfid(sfid)
-    return _entities_dir(datarepo_path) / sfid
+    root = _entities_dir(datarepo_path)
+    p = root / sfid
+    _assert_within(root, p)
+    return p
 
 
 def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
