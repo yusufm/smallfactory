@@ -7,6 +7,7 @@ import shutil
 import hashlib
 import yaml
 import re
+import tempfile
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
@@ -148,12 +149,42 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     # Ensure 'sfid' not written
     data_to_write = dict(data)
     data_to_write.pop("sfid", None)
-    with open(fp, "w") as f:
-        yaml.safe_dump(data_to_write, f, sort_keys=False)
+    # Atomic write via temp file in target directory.
+    tmp_path = None
+    with tempfile.NamedTemporaryFile("w", dir=fp.parent, delete=False) as tf:
+        yaml.safe_dump(data_to_write, tf, sort_keys=False)
+        tmp_path = Path(tf.name)
+    if tmp_path is None:
+        raise RuntimeError("Failed to create temporary entity file")
+    tmp_path.replace(fp)
 
     paths_to_commit = [fp]
+    try:
+        if sfid.startswith("p_"):
+            ent_dir = None
+            for d in root.iterdir():
+                if d.is_dir() and d.name == sfid:
+                    ent_dir = d
+                    break
+            if ent_dir is not None:
+                revisions = ent_dir / "revisions"
+                revisions.mkdir(parents=True, exist_ok=True)
+                rev_keep = revisions / ".gitkeep"
+                if not rev_keep.exists():
+                    rev_keep.write_text("")
+                paths_to_commit.append(rev_keep)
+                refs = ent_dir / "refs"
+                refs.mkdir(parents=True, exist_ok=True)
+                refs_keep = refs / ".gitkeep"
+                if not refs_keep.exists():
+                    refs_keep.write_text("")
+                paths_to_commit.append(refs_keep)
+    except Exception:
+        # Non-fatal: scaffolding is optional; proceed with entity creation even if it fails.
+        pass
+
     commit_msg = f"[smallFactory] Created entity {sfid}\n::sfid::{sfid}"
-    # Commit canonical entity metadata file.
+    # Commit entity metadata and optional scaffold placeholders.
     git_commit_paths(datarepo_path, paths_to_commit, commit_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
