@@ -9,7 +9,7 @@ import yaml
 import re
 
 from .gitutils import git_commit_paths
-from .config import get_entity_field_specs_for_sfid
+from .config import get_entity_field_specs_for_sfid, validate_sfid
 
 
 # -------------------------------
@@ -25,12 +25,9 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
-_SFID_RE = re.compile(r"^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$")
-
-
 def _validate_sfid_local(sfid: str) -> None:
-    if not isinstance(sfid, str) or _SFID_RE.fullmatch(sfid) is None:
-        raise ValueError("Invalid sfid")
+    # Keep one canonical validation source.
+    validate_sfid(sfid)
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
