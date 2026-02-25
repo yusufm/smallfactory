@@ -78,12 +78,21 @@ def _api_exception_response(
     *,
     hint: str | None = None,
 ):
-    """Return a safe API error payload while logging full exception details server-side."""
+    """Return a safe API error payload while logging full exception details server-side.
+
+    For 4xx responses, include the exception text when callers did not provide a
+    specific public message. This keeps validation failures actionable in the UI.
+    """
     try:
         app.logger.exception("API request failed: %s", exc)
     except Exception:
         pass
-    payload = {"success": False, "error": public_message}
+    error_message = public_message
+    if public_message == "Request failed" and status < 500:
+        detail = str(exc).strip()
+        if detail:
+            error_message = detail
+    payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
     return jsonify(payload), status
