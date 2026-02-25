@@ -90,6 +90,13 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 "path": _rel(entity_yml, repo),
                 "message": "Do not include 'sfid' in entity.yml; identity is the directory name"
             })
+        if "kind" in data:
+            issues.append({
+                "severity": "error",
+                "code": "ENT_NO_KIND_FIELD",
+                "path": _rel(entity_yml, repo),
+                "message": "Do not include 'kind' in entity.yml; kind is inferred from sfid prefix"
+            })
         if "children" in data:
             issues.append({
                 "severity": "error",
@@ -195,7 +202,12 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                                         continue
                                     aus = alt.get("use")
                                     if aus is None:
-                                        # Alternates without 'use' are ignored; not an error.
+                                        issues.append({
+                                            "severity": "error",
+                                            "code": "ENT_BOM_ALT_USE_REQUIRED",
+                                            "path": _rel(entity_yml, repo),
+                                            "message": f"bom item {idx} alt {a_idx}: 'use' must be an SFID string"
+                                        })
                                         continue
                                     if not isinstance(aus, str) or not aus.strip():
                                         issues.append({

@@ -9,6 +9,8 @@ import yaml
 import re
 import tempfile
 import os
+import io
+import tarfile
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
@@ -255,6 +257,20 @@ def _read_released_pointer(datarepo_path: Path, sfid: str) -> Optional[str]:
     return None
 
 
+def _has_implicit_buy_release(datarepo_path: Path, sfid: str) -> bool:
+    """True when sfid is a buy part with no explicit revisions and no released pointer."""
+    try:
+        ent = get_entity(datarepo_path, sfid)
+    except Exception:
+        return False
+    policy = str((ent or {}).get("policy") or "").strip().lower()
+    if policy != "buy":
+        return False
+    if _read_released_pointer(datarepo_path, sfid):
+        return False
+    return len(_list_revision_meta_files(datarepo_path, sfid)) == 0
+
+
 def _list_revision_meta_files(datarepo_path: Path, sfid: str) -> List[Tuple[str, Path]]:
     """Return list of (rev_label, meta_path) for existing snapshots."""
     out: List[Tuple[str, Path]] = []
@@ -475,7 +491,12 @@ def _resolve_rev_for_child(datarepo_path: Path, child_sfid: str, rev_spec) -> Op
         s = ""
     if not s or s.lower() == "released":
         try:
-            return _read_released_pointer(datarepo_path, child_sfid)
+            released = _read_released_pointer(datarepo_path, child_sfid)
+            if released:
+                return released
+            if _has_implicit_buy_release(datarepo_path, child_sfid):
+                return "released"
+            return None
         except Exception:
             return None
     return s
@@ -487,6 +508,7 @@ def _build_bom_tree_nodes(
     *,
     max_depth: Optional[int] = None,
     root_rev: Optional[str] = None,
+    config: Optional[Dict] = None,
 ) -> List[Dict]:
     """Walk the BOM starting at root_sfid and return flat list of resolved nodes.
 
@@ -547,12 +569,26 @@ def _build_bom_tree_nodes(
         except Exception:
             return None
 
+    def _when_matches(when_obj: object) -> bool:
+        if not isinstance(when_obj, dict):
+            return True
+        if not when_obj:
+            return True
+        if not isinstance(config, dict):
+            return False
+        for k, expected in when_obj.items():
+            if config.get(k) != expected:
+                return False
+        return True
+
     def recurse(parent_sfid: str, level: int, parent_mult: Optional[int], path_stack: List[str], parent_rev: Optional[str]):
         if max_depth is not None and level > max_depth:
             return
         lines = _bom_list_at_rev(parent_sfid, parent_rev)
         for line in lines or []:
             if not isinstance(line, dict):
+                continue
+            if not _when_matches(line.get("when")):
                 continue
             child = str(line.get("use", "")).strip()
             if not child:
@@ -607,12 +643,82 @@ def _build_bom_tree_nodes(
     return nodes
 
 
-def resolved_bom_tree(datarepo_path: Path, root_sfid: str, *, max_depth: Optional[int] = None) -> List[Dict]:
+def resolved_bom_tree(
+    datarepo_path: Path,
+    root_sfid: str,
+    *,
+    max_depth: Optional[int] = None,
+    config: Optional[Dict] = None,
+) -> List[Dict]:
     """Public API: return resolved BOM nodes for a root SFID.
 
     Wrapper over internal traversal to be used by CLI/Web and other layers.
     """
-    return _build_bom_tree_nodes(datarepo_path, root_sfid, max_depth=max_depth)
+    return _build_bom_tree_nodes(datarepo_path, root_sfid, max_depth=max_depth, config=config)
+
+
+def resolved_bom_view(
+    datarepo_path: Path,
+    root_sfid: str,
+    *,
+    max_depth: Optional[int] = None,
+    config: Optional[Dict] = None,
+    level_offset: int = 0,
+) -> List[Dict]:
+    """Return resolved BOM nodes enriched with inventory on-hand totals.
+
+    This read-model is intended for non-core interfaces (CLI/Web/API) that need a
+    stable presentation payload without re-implementing traversal/mapping logic.
+    """
+    # Local import avoids module-level circular coupling.
+    from .inventory import inventory_onhand_readonly
+
+    core_nodes = resolved_bom_tree(
+        datarepo_path,
+        root_sfid,
+        max_depth=max_depth,
+        config=config,
+    )
+
+    onhand_cache: Dict[str, Optional[int]] = {}
+
+    def _onhand_total(sfid: object) -> Optional[int]:
+        if not isinstance(sfid, str) or not sfid.startswith("p_"):
+            return None
+        if sfid in onhand_cache:
+            return onhand_cache[sfid]
+        try:
+            onhand = inventory_onhand_readonly(datarepo_path, part=sfid)
+            total = int((onhand or {}).get("total", 0) or 0)
+            onhand_cache[sfid] = total
+            return total
+        except Exception:
+            onhand_cache[sfid] = None
+            return None
+
+    rows: List[Dict] = []
+    for n in core_nodes:
+        try:
+            base_level = int(n.get("level", 0) or 0)
+        except Exception:
+            base_level = 0
+        rows.append(
+            {
+                "parent": n.get("parent"),
+                "use": n.get("use"),
+                "name": n.get("name"),
+                "qty": n.get("qty"),
+                "rev": n.get("rev_spec", "released"),
+                "resolved_rev": n.get("rev"),
+                "level": base_level + int(level_offset or 0),
+                "is_alt": n.get("is_alt", False),
+                "alternates_group": n.get("alternates_group"),
+                "gross_qty": n.get("gross_qty"),
+                "cycle": n.get("cycle", False),
+                "onhand_total": _onhand_total(n.get("use")),
+            }
+        )
+    return rows
 
 
 def bump_revision(
@@ -682,6 +788,28 @@ def release_revision(
 
     info = get_revisions(datarepo_path, sfid)
     return {"sfid": sfid, "rev": info.get("rev"), "revisions": info.get("revisions", [])}
+
+
+def revision_download_archive(datarepo_path: Path, sfid: str, rev: str) -> Dict:
+    """Build an in-memory .tar.gz archive for a snapshot revision directory."""
+    _validate_sfid_local(sfid)
+    if not _is_part_sfid(sfid):
+        raise ValueError("Revisions are only supported on part entities ('p_*')")
+    label = _normalize_revision_label(rev)
+    snap_dir = _revisions_dir(datarepo_path, sfid) / label
+    if not snap_dir.exists() or not snap_dir.is_dir():
+        raise FileNotFoundError(f"Revision '{label}' not found for {sfid}")
+
+    buf = io.BytesIO()
+    with tarfile.open(mode="w:gz", fileobj=buf) as tf:
+        arc_root = f"{sfid}_rev{label}"
+        tf.add(str(snap_dir), arcname=arc_root)
+    buf.seek(0)
+    return {
+        "filename": f"{sfid}_rev{label}.tar.gz",
+        "mimetype": "application/gzip",
+        "bytes": buf.getvalue(),
+    }
 
 # -------------------------------
 # BOM management helpers

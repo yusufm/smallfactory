@@ -37,7 +37,7 @@ from smallfactory.core.v1.entities import (
     bom_set_line as ent_bom_set_line,
     bom_alt_add as ent_bom_alt_add,
     bom_alt_remove as ent_bom_alt_remove,
-    resolved_bom_tree as ent_resolved_bom_tree,
+    resolved_bom_view as ent_resolved_bom_view,
 )
 # Files core API
 from smallfactory.core.v1.files import (
@@ -1069,47 +1069,13 @@ def main():
             return None
 
     def _walk_bom(datarepo_path: pathlib.Path, root_sfid: str, *, max_depth: int | None = None) -> list:
-        """Use core resolved_bom_tree() and enrich with on-hand totals for CLI output.
+        """Use core read-model helper for CLI/API-consistent BOM output.
 
-        Returns nodes with fields compatible with previous CLI output:
-        parent, use, name, qty, rev, level, is_alt, alternates_group, gross_qty, cycle, onhand_total.
+        Returns nodes with fields:
+        parent, use, name, qty, rev, resolved_rev, level, is_alt,
+        alternates_group, gross_qty, cycle, onhand_total.
         """
-        core_nodes = ent_resolved_bom_tree(datarepo_path, root_sfid, max_depth=max_depth)
-        onhand_cache: dict[str, int | None] = {}
-
-        def get_onhand_total(sfid: str) -> int | None:
-            if sfid in onhand_cache:
-                return onhand_cache[sfid]
-            try:
-                if not sfid or not isinstance(sfid, str) or not sfid.startswith("p_"):
-                    onhand_cache[sfid] = None
-                    return None
-                oh = inventory_onhand(datarepo_path, part=sfid)
-                total = int(oh.get("total", 0)) if isinstance(oh, dict) else None
-                onhand_cache[sfid] = total
-                return total
-            except Exception:
-                onhand_cache[sfid] = None
-                return None
-
-        out: list = []
-        for n in core_nodes:
-            # Map core fields to CLI-compatible fields
-            out.append({
-                "parent": n.get("parent"),
-                "use": n.get("use"),
-                "name": n.get("name"),
-                "qty": n.get("qty"),
-                # CLI historically exposed the spec under 'rev'
-                "rev": n.get("rev_spec", "released"),
-                "level": n.get("level"),
-                "is_alt": n.get("is_alt", False),
-                "alternates_group": n.get("alternates_group"),
-                "gross_qty": n.get("gross_qty"),
-                "cycle": n.get("cycle", False),
-                "onhand_total": get_onhand_total(n.get("use")),
-            })
-        return out
+        return ent_resolved_bom_view(datarepo_path, root_sfid, max_depth=max_depth, level_offset=1)
 
     def cmd_bom_ls(args):
         datarepo_path = _repo_path()

@@ -75,3 +75,9 @@ def test_files_reject_symlink_escape(repo: Path, tmp_path: Path):
 
     with pytest.raises(ValueError):
         list_files(repo, "p_sec", path="escape")
+
+
+def test_files_operations_reject_non_part_entities(repo: Path):
+    create_entity(repo, "l_sec", {"name": "Location"})
+    with pytest.raises(ValueError, match="only supported on part entities"):
+        mkdir(repo, "l_sec", path="docs")
