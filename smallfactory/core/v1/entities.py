@@ -25,15 +25,22 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
-def _validate_sfid_local(sfid: str) -> None:
-    # Keep one canonical validation source.
-    validate_sfid(sfid)
+def _assert_within(root: Path, candidate: Path) -> None:
+    root_resolved = root.resolve()
+    candidate_resolved = candidate.resolve()
+    try:
+        candidate_resolved.relative_to(root_resolved)
+    except Exception:
+        raise ValueError("Path escapes entities root")
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
-    # Validate sfid before composing file paths.
-    _validate_sfid_local(sfid)
-    return _entities_dir(datarepo_path) / sfid / "entity.yml"
+    # Validate sfid before composing file paths, then enforce scope containment.
+    validate_sfid(sfid)
+    root = _entities_dir(datarepo_path)
+    p = root / sfid / "entity.yml"
+    _assert_within(root, p)
+    return p
 
 
 def _read_yaml(p: Path) -> dict:
@@ -103,7 +110,7 @@ def list_entities(datarepo_path: Path) -> List[dict]:
 
 
 def get_entity(datarepo_path: Path, sfid: str) -> dict:
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -117,7 +124,7 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
 def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None) -> dict:
     if not sfid:
         raise ValueError("sfid is required")
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if fp.exists():
         raise FileExistsError(f"Entity '{sfid}' already exists")
@@ -190,8 +197,11 @@ def _is_part_sfid(sfid: str) -> bool:
 
 
 def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
-    _validate_sfid_local(sfid)
-    return _entities_dir(datarepo_path) / sfid
+    validate_sfid(sfid)
+    root = _entities_dir(datarepo_path)
+    p = root / sfid
+    _assert_within(root, p)
+    return p
 
 
 def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
@@ -247,7 +257,7 @@ def get_revisions(datarepo_path: Path, sfid: str) -> Dict:
     - rev: contents of refs/released (label) or None if not set.
     - revisions: list of meta dicts augmented with 'id' and compatibility fields.
     """
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     # Ensure entity exists
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
@@ -306,7 +316,7 @@ def cut_revision(
     - Does NOT flip refs/released.
     Returns: {sfid, rev, revisions} for UI compatibility.
     """
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     # Ensure entity exists
@@ -590,7 +600,7 @@ def bump_revision(datarepo_path: Path, sfid: str, *, notes: Optional[str] = None
 
     This no longer flips the released pointer; it creates a draft snapshot per SPEC.
     """
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     label = _compute_next_label_from_fs(datarepo_path, sfid)
@@ -615,7 +625,7 @@ def release_revision(
     - Updates meta.yml; writes refs/released with the label.
     Returns: {sfid, rev, revisions}
     """
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     rev = _normalize_revision_label(rev)
@@ -702,7 +712,7 @@ def bom_add_line(
     Returns a dict with keys: sfid, index, bom (updated list).
     """
     ent = _ensure_part(datarepo_path, parent_sfid)
-    _validate_sfid_local(use)
+    validate_sfid(use)
     if check_exists:
         fp = _entity_file(datarepo_path, use)
         if not fp.exists():
@@ -824,7 +834,7 @@ def bom_set_line(
         new_use = updates["use"]
         if not isinstance(new_use, str) or not new_use:
             raise ValueError("'use' must be a non-empty string")
-        _validate_sfid_local(new_use)
+        validate_sfid(new_use)
         if check_exists and not _entity_file(datarepo_path, new_use).exists():
             raise FileNotFoundError(f"Referenced entity '{new_use}' does not exist under entities/")
         cur_use = None
@@ -873,7 +883,7 @@ def bom_alt_add(
     bom = _bom_list_from_entity(ent)
     if index < 0 or index >= len(bom):
         raise IndexError("index out of range")
-    _validate_sfid_local(alt_use)
+    validate_sfid(alt_use)
     if check_exists and not _entity_file(datarepo_path, alt_use).exists():
         raise FileNotFoundError(f"Alternate entity '{alt_use}' does not exist under entities/")
     line = dict(bom[index]) if isinstance(bom[index], dict) else {}
@@ -949,7 +959,7 @@ def bom_alt_remove(
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
     if not field or field == "sfid":
         raise ValueError("Invalid or immutable field: 'sfid'")
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -977,7 +987,7 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
         raise ValueError("updates must be a non-empty dict")
     if "sfid" in updates:
         raise ValueError("Cannot update 'sfid' via this method")
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
@@ -1022,7 +1032,7 @@ def retire_entity(
     - Sets fields: retired: true, retired_at: ISO-8601 UTC, retired_reason: <reason?>
     - Does not touch inventory; references remain valid historically.
     """
-    _validate_sfid_local(sfid)
+    validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
     if not fp.exists():
         raise FileNotFoundError(f"Entity '{sfid}' not found")
