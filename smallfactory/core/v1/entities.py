@@ -35,7 +35,16 @@ def _assert_within(root: Path, candidate: Path) -> None:
 
 
 def _entity_file(datarepo_path: Path, sfid: str) -> Path:
-    # Validate sfid before composing file paths, then enforce scope containment.
+    # Resolve through directory lookup to avoid direct tainted path composition.
+    validate_sfid(sfid)
+    root = _entities_dir(datarepo_path)
+    for d in root.iterdir():
+        if d.is_dir() and d.name == sfid:
+            return d / "entity.yml"
+    raise FileNotFoundError(f"Entity '{sfid}' not found")
+
+
+def _entity_file_for_create(datarepo_path: Path, sfid: str) -> Path:
     validate_sfid(sfid)
     root = _entities_dir(datarepo_path)
     p = root / sfid / "entity.yml"
@@ -112,8 +121,6 @@ def list_entities(datarepo_path: Path) -> List[dict]:
 def get_entity(datarepo_path: Path, sfid: str) -> dict:
     validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
-    if not fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
         data = {}
@@ -125,9 +132,12 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     if not sfid:
         raise ValueError("sfid is required")
     validate_sfid(sfid)
-    fp = _entity_file(datarepo_path, sfid)
-    if fp.exists():
+    try:
+        _ = _entity_file(datarepo_path, sfid)
         raise FileExistsError(f"Entity '{sfid}' already exists")
+    except FileNotFoundError:
+        pass
+    fp = _entity_file_for_create(datarepo_path, sfid)
     fp.parent.mkdir(parents=True, exist_ok=True)
     data: Dict = {}
     if fields:
@@ -197,11 +207,7 @@ def _is_part_sfid(sfid: str) -> bool:
 
 
 def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
-    validate_sfid(sfid)
-    root = _entities_dir(datarepo_path)
-    p = root / sfid
-    _assert_within(root, p)
-    return p
+    return _entity_file(datarepo_path, sfid).parent
 
 
 def _revisions_dir(datarepo_path: Path, sfid: str) -> Path:
@@ -260,8 +266,6 @@ def get_revisions(datarepo_path: Path, sfid: str) -> Dict:
     validate_sfid(sfid)
     # Ensure entity exists
     fp = _entity_file(datarepo_path, sfid)
-    if not fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     released = _read_released_pointer(datarepo_path, sfid)
     metas = []
     for label, meta_path in _list_revision_meta_files(datarepo_path, sfid):
@@ -321,8 +325,6 @@ def cut_revision(
         raise ValueError("Revisions are only supported on part entities ('p_*')")
     # Ensure entity exists
     ent_fp = _entity_file(datarepo_path, sfid)
-    if not ent_fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     # Validate entity.yml against specs (no-op if none configured)
     ent_data = _read_yaml(ent_fp) or {}
     _validate_against_specs(datarepo_path, sfid, ent_data)
@@ -714,9 +716,7 @@ def bom_add_line(
     ent = _ensure_part(datarepo_path, parent_sfid)
     validate_sfid(use)
     if check_exists:
-        fp = _entity_file(datarepo_path, use)
-        if not fp.exists():
-            raise FileNotFoundError(f"Referenced entity '{use}' does not exist under entities/")
+        _ = _entity_file(datarepo_path, use)
     # Build line
     line: Dict = {"use": use}
     if qty is not None:
@@ -835,8 +835,8 @@ def bom_set_line(
         if not isinstance(new_use, str) or not new_use:
             raise ValueError("'use' must be a non-empty string")
         validate_sfid(new_use)
-        if check_exists and not _entity_file(datarepo_path, new_use).exists():
-            raise FileNotFoundError(f"Referenced entity '{new_use}' does not exist under entities/")
+        if check_exists:
+            _ = _entity_file(datarepo_path, new_use)
         cur_use = None
         try:
             cur_use = str((line or {}).get("use") or "").strip() or None
@@ -884,8 +884,8 @@ def bom_alt_add(
     if index < 0 or index >= len(bom):
         raise IndexError("index out of range")
     validate_sfid(alt_use)
-    if check_exists and not _entity_file(datarepo_path, alt_use).exists():
-        raise FileNotFoundError(f"Alternate entity '{alt_use}' does not exist under entities/")
+    if check_exists:
+        _ = _entity_file(datarepo_path, alt_use)
     line = dict(bom[index]) if isinstance(bom[index], dict) else {}
     alts = line.get("alternates")
     if not isinstance(alts, list):
@@ -961,8 +961,6 @@ def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> di
         raise ValueError("Invalid or immutable field: 'sfid'")
     validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
-    if not fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
         data = {}
@@ -989,8 +987,6 @@ def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
         raise ValueError("Cannot update 'sfid' via this method")
     validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
-    if not fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
         data = {}
@@ -1034,8 +1030,6 @@ def retire_entity(
     """
     validate_sfid(sfid)
     fp = _entity_file(datarepo_path, sfid)
-    if not fp.exists():
-        raise FileNotFoundError(f"Entity '{sfid}' not found")
     data = _read_yaml(fp)
     if not isinstance(data, dict):
         data = {}
