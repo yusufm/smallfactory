@@ -54,7 +54,7 @@ from smallfactory.core.v1.entities import (
     bom_set_line,
     bom_alt_add,
     bom_alt_remove,
-    resolved_bom_tree as ent_resolved_bom_tree,
+    resolved_bom_view as ent_resolved_bom_view,
 )
 from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
@@ -2818,44 +2818,10 @@ def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | No
     """Return a flat list of deep BOM nodes with metadata via core traversal.
 
     Preserves web semantics:
-    - level: 1 for immediate children (core is 0-based; we add +1)
+    - level: 1 for immediate children
     - includes resolved_rev (resolved label) alongside rev (spec)
-    - enriches with onhand_total
     """
-    core_nodes = ent_resolved_bom_tree(datarepo_path, parent_sfid, max_depth=max_depth)
-    onhand_cache: dict[str, int | None] = {}
-
-    def _get_onhand_total(sfid: str) -> int | None:
-        if not isinstance(sfid, str) or not sfid.startswith('p_'):
-            return None
-        if sfid in onhand_cache:
-            return onhand_cache[sfid]
-        try:
-            oh = inventory_onhand_readonly(datarepo_path, part=sfid)
-            total = int(oh.get('total', 0)) if isinstance(oh, dict) else None
-            onhand_cache[sfid] = total
-            return total
-        except Exception:
-            onhand_cache[sfid] = None
-            return None
-
-    nodes = []
-    for n in core_nodes:
-        nodes.append({
-            'parent': n.get('parent'),
-            'use': n.get('use'),
-            'name': n.get('name'),
-            'qty': n.get('qty'),
-            'rev': n.get('rev_spec', 'released'),
-            'resolved_rev': n.get('rev'),
-            'level': (n.get('level') or 0) + 1,
-            'is_alt': n.get('is_alt', False),
-            'alternates_group': n.get('alternates_group'),
-            'gross_qty': n.get('gross_qty'),
-            'cycle': n.get('cycle', False),
-            'onhand_total': _get_onhand_total(n.get('use')),
-        })
-    return nodes
+    return ent_resolved_bom_view(datarepo_path, parent_sfid, max_depth=max_depth, level_offset=1)
 
 
 # -----------------------

@@ -615,6 +615,59 @@ def resolved_bom_tree(datarepo_path: Path, root_sfid: str, *, max_depth: Optiona
     return _build_bom_tree_nodes(datarepo_path, root_sfid, max_depth=max_depth)
 
 
+def resolved_bom_view(
+    datarepo_path: Path,
+    root_sfid: str,
+    *,
+    max_depth: Optional[int] = None,
+    level_offset: int = 0,
+) -> List[Dict]:
+    """Return resolved BOM nodes enriched for interface presentation."""
+    # Local import avoids module-level coupling.
+    from .inventory import inventory_onhand_readonly
+
+    core_nodes = resolved_bom_tree(datarepo_path, root_sfid, max_depth=max_depth)
+    onhand_cache: Dict[str, Optional[int]] = {}
+
+    def _onhand_total(sfid: object) -> Optional[int]:
+        if not isinstance(sfid, str) or not sfid.startswith("p_"):
+            return None
+        if sfid in onhand_cache:
+            return onhand_cache[sfid]
+        try:
+            onhand = inventory_onhand_readonly(datarepo_path, part=sfid)
+            total = int((onhand or {}).get("total", 0) or 0)
+            onhand_cache[sfid] = total
+            return total
+        except Exception:
+            onhand_cache[sfid] = None
+            return None
+
+    rows: List[Dict] = []
+    for n in core_nodes:
+        try:
+            base_level = int(n.get("level", 0) or 0)
+        except Exception:
+            base_level = 0
+        rows.append(
+            {
+                "parent": n.get("parent"),
+                "use": n.get("use"),
+                "name": n.get("name"),
+                "qty": n.get("qty"),
+                "rev": n.get("rev_spec", "released"),
+                "resolved_rev": n.get("rev"),
+                "level": base_level + int(level_offset or 0),
+                "is_alt": n.get("is_alt", False),
+                "alternates_group": n.get("alternates_group"),
+                "gross_qty": n.get("gross_qty"),
+                "cycle": n.get("cycle", False),
+                "onhand_total": _onhand_total(n.get("use")),
+            }
+        )
+    return rows
+
+
 def bump_revision(
     datarepo_path: Path,
     sfid: str,

@@ -151,3 +151,37 @@ def test_post_routes_delegate_to_core_and_fail_without_mutation_on_core_error(we
         r = client.post("/api/entities/p_parent/bom/alt-remove", json={"index": 0, "alt_use": "p_alt"})
         assert r.status_code == 400
         assert _capture_state() == (head4, bom4)
+
+
+def test_bom_deep_route_delegates_to_core_read_model(web_mod, monkeypatch: pytest.MonkeyPatch):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+    client = app.test_client()
+
+    create_entity(repo, "p_root", {"name": "Root"})
+
+    expected_nodes = [
+        {
+            "parent": "p_root",
+            "use": "p_child",
+            "name": "Child",
+            "qty": 1,
+            "rev": "released",
+            "resolved_rev": "released",
+            "level": 1,
+            "is_alt": False,
+            "alternates_group": None,
+            "gross_qty": 1,
+            "cycle": False,
+            "onhand_total": 0,
+        }
+    ]
+
+    with monkeypatch.context() as mp:
+        mp.setattr(mod, "ent_resolved_bom_view", lambda *a, **k: expected_nodes)
+        resp = client.get("/api/entities/p_root/bom/deep")
+        assert resp.status_code == 200
+        body = resp.get_json() or {}
+        assert body.get("success") is True
+        assert body.get("nodes") == expected_nodes
