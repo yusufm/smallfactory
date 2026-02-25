@@ -334,7 +334,7 @@ Note: The legacy POST route `/inventory/<item_id>/adjust` has been removed in fa
   - `/api/entities/<sfid>` — Entity (GET)
   - `/api/entities/<sfid>/update` — Update entity fields (POST)
   - `/api/entities/<sfid>/revisions` — Get revisions and released pointer (GET)
-  - `/api/entities/<sfid>/revisions/bump` — Cut and release next revision (POST)
+  - `/api/entities/<sfid>/revisions/bump` — Cut and release a revision (POST; optional `rev` in body, otherwise next numeric)
   - `/api/entities/<sfid>/revisions/<rev>/release` — Release a specific revision (POST)
   - `/api/entities/<sfid>/bom` — BOM list (GET)
   - `/api/entities/<sfid>/bom/deep` — Resolved BOM tree (GET)

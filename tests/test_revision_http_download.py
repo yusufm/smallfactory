@@ -102,3 +102,26 @@ def test_revision_download_endpoint_serves_tar_gz(web_mod):
         fobj = tf.extractfile(member)
         assert fobj is not None
         assert fobj.read() == b"hello world\n"
+
+
+def test_revision_download_endpoint_accepts_custom_label(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+    assert isinstance(repo, Path)
+
+    sfid = "p_dl_custom"
+    create_entity(repo, sfid, {"name": "Download Custom Label"})
+
+    cut_revision(repo, sfid, rev="A01", notes="draft custom")
+    client = app.test_client()
+
+    r_rel = client.post(f"/api/entities/{sfid}/revisions/A01/release", json={"notes": "release"})
+    assert r_rel.status_code == 200
+    assert r_rel.get_json().get("success") is True
+
+    r = client.get(f"/api/entities/{sfid}/revisions/A01/download")
+    assert r.status_code == 200
+    cd = r.headers.get("Content-Disposition", "")
+    assert "attachment" in cd
+    assert f"{sfid}_revA01.tar.gz" in cd

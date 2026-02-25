@@ -2492,13 +2492,14 @@ def api_revisions_bump(sfid):
         datarepo_path = get_datarepo_path()
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
         notes = payload.get('notes') if isinstance(payload, dict) else None
+        rev = payload.get('rev') if isinstance(payload, dict) else None
         released_at = payload.get('released_at') if isinstance(payload, dict) else None
-        # Cut next snapshot, then immediately release it (transaction-guarded)
+        # Cut snapshot, then immediately release it (transaction-guarded)
         def _mutate():
-            bumped = bump_revision(datarepo_path, sfid, notes=notes)
+            bumped = bump_revision(datarepo_path, sfid, rev=rev, notes=notes)
             new_rev = bumped.get('new_rev')
             if not new_rev:
-                raise RuntimeError('Failed to determine new revision label after bump')
+                raise RuntimeError('Failed to determine revision label after bump')
             return release_revision(datarepo_path, sfid, new_rev, released_at=released_at, notes=notes)
         ent = _run_repo_txn(
             datarepo_path,
@@ -2533,10 +2534,8 @@ def api_revisions_download(sfid, rev):
     """
     try:
         datarepo_path = get_datarepo_path()
-        # Validate numeric revision label (per spec)
-        try:
-            rev_str = str(int(str(rev).strip()))
-        except Exception:
+        rev_str = str(rev).strip()
+        if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
             return jsonify({'success': False, 'error': 'Invalid revision id'}), 400
         rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / rev_str
         if not rev_dir.exists() or not rev_dir.is_dir():

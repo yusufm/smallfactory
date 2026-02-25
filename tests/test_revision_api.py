@@ -86,3 +86,16 @@ def test_cut_with_custom_and_numeric_sequence(tmp_path: Path):
     # Next bump increments numerically
     r2 = bump_revision(repo, "p_seq")
     assert r2["new_rev"] == "2"
+
+
+def test_bump_with_custom_label(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    create_entity(repo, "p_seq_custom", {"name": "Seq Custom"})
+
+    # Explicit label through bump should be accepted.
+    r1 = bump_revision(repo, "p_seq_custom", rev="A01")
+    assert r1["new_rev"] == "A01"
+
+    # Auto bump should still follow numeric sequence for numeric labels.
+    r2 = bump_revision(repo, "p_seq_custom")
+    assert r2["new_rev"] == "1"

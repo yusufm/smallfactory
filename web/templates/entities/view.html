@@ -418,6 +418,7 @@
         </div>
         <div class="px-6 py-4 text-sm text-gray-700">
           <div class="flex flex-wrap items-end gap-2">
+            <input id="rev-label" type="text" placeholder="label (optional, e.g. A01)" class="w-52 border border-gray-300 rounded px-2 py-1 font-mono">
             <input id="rev-notes" type="text" placeholder="notes (optional)" class="flex-1 min-w-[12rem] border border-gray-300 rounded px-2 py-1">
             <button type="button" class="px-2.5 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700" onclick="openRevConfirmModal()">Create & release revision</button>
           </div>
@@ -1245,8 +1246,14 @@ function renderRevisionsRows(list){
 
 function openRevConfirmModal(){
   const m = document.getElementById('rev-confirm-modal');
+  const revEl = document.getElementById('rev-label');
   const notesEl = document.getElementById('rev-notes');
+  const labelTarget = document.getElementById('rev-confirm-label');
   const target = document.getElementById('rev-confirm-notes');
+  if(labelTarget){
+    const rev = (revEl?.value||'').trim();
+    labelTarget.textContent = rev || 'auto (next numeric)';
+  }
   if(target){
     const notes = (notesEl?.value||'').trim();
     target.textContent = notes || '—';
@@ -1321,14 +1328,19 @@ async function submitReleaseNotesModal(){
 }
 
 async function bumpRevision(){
+  const rev = (document.getElementById('rev-label')?.value||'').trim();
   const notes = (document.getElementById('rev-notes')?.value||'').trim();
+  const payload = {};
+  if(rev) payload.rev = rev;
+  if(notes) payload.notes = notes;
   try{
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/revisions/bump`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(notes?{notes}:{})
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if(!data.success) throw new Error(data.error||'Failed to bump revision');
+    if(document.getElementById('rev-label')) document.getElementById('rev-label').value = '';
     if(document.getElementById('rev-notes')) document.getElementById('rev-notes').value = '';
     // Refresh
     await loadRevisions();
@@ -1470,6 +1482,10 @@ document.addEventListener('DOMContentLoaded', function(){
       </div>
       <div class="px-5 py-4 text-sm text-gray-800 space-y-3">
         <p>You're about to create and release a new revision for <span class="font-mono text-blue-700">{{ entity.sfid }}</span>.</p>
+        <div class="bg-gray-50 border border-gray-200 rounded p-3">
+          <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Label</div>
+          <div id="rev-confirm-label" class="text-gray-800 whitespace-pre-wrap break-words">auto (next numeric)</div>
+        </div>
         <div class="bg-gray-50 border border-gray-200 rounded p-3">
           <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">Notes</div>
           <div id="rev-confirm-notes" class="text-gray-800 whitespace-pre-wrap break-words">—</div>
