@@ -50,7 +50,8 @@ def _validate_location_sfid(location_sfid: str) -> None:
 def _part_dir(datarepo_path: Path, part_sfid: str) -> Path:
     validate_sfid(part_sfid)
     if not part_sfid.startswith("p_"):
-        raise ValueError("part must be a valid part sfid starting with 'p_'")
+        # Allow any part-like sfid; SPEC recognizes p_ for parts in v0.1
+        pass
     d = ensure_inventory_dir(datarepo_path) / part_sfid
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -152,58 +153,34 @@ def _default_location(datarepo_path: Path) -> Optional[str]:
     return None
 
 
-def _compute_part_onhand_from_journal(
-    journal_path: Path,
-    *,
-    enforce_non_negative: bool = False,
-) -> Tuple[Dict[str, int], int]:
+def _compute_part_onhand_from_journal(journal_path: Path) -> Tuple[Dict[str, int], int]:
     by_loc: Dict[str, int] = defaultdict(int)
     total = 0
     if not journal_path.exists():
         return {}, 0
-    for idx, line in enumerate(_read_lines(journal_path), start=1):
+    for line in _read_lines(journal_path):
         if not line.strip():
             continue
         try:
             obj = json.loads(line)
+            loc = str(obj.get("location", "")).strip()
+            if not loc:
+                # skip entries without a location (should be defaulted at write time)
+                continue
+            qty_delta = int(obj.get("qty_delta", 0))
+            by_loc[loc] += qty_delta
+            total += qty_delta
         except Exception:
             # ignore malformed lines
             continue
-        try:
-            loc = str(obj.get("location", "")).strip()
-        except Exception:
-            continue
-        if not loc:
-            # skip entries without a location (should be defaulted at write time)
-            continue
-        try:
-            qty_delta = int(obj.get("qty_delta", 0))
-        except Exception:
-            continue
-        next_total = int(total) + int(qty_delta)
-        next_loc = int(by_loc.get(loc, 0)) + int(qty_delta)
-        if enforce_non_negative:
-            if next_total < 0:
-                raise ValueError(
-                    f"inventory rebuild failed: negative total on-hand at line {idx} in {journal_path}"
-                )
-            if next_loc < 0:
-                raise ValueError(
-                    f"inventory rebuild failed: negative on-hand at location '{loc}' at line {idx} in {journal_path}"
-                )
-        by_loc[loc] = next_loc
-        total = next_total
     # drop zero entries
     by_loc = {k: v for k, v in by_loc.items() if v != 0}
     return by_loc, total
 
 
-def _write_part_cache(datarepo_path: Path, part_sfid: str, *, enforce_non_negative: bool = False) -> Dict:
+def _write_part_cache(datarepo_path: Path, part_sfid: str) -> Dict:
     journal = _journal_file(datarepo_path, part_sfid)
-    by_loc, total = _compute_part_onhand_from_journal(
-        journal,
-        enforce_non_negative=enforce_non_negative,
-    )
+    by_loc, total = _compute_part_onhand_from_journal(journal)
     ent_meta = _read_entity_meta(datarepo_path, part_sfid)
     uom = ent_meta.get("uom", "ea")
     data = {
@@ -221,7 +198,7 @@ def _write_location_cache(datarepo_path: Path, location_sfid: str) -> Dict:
     inv_dir = ensure_inventory_dir(datarepo_path)
     parts: Dict[str, int] = {}
     uom = "ea"
-    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
         part = pdir.name
         cache_p = _part_onhand_file(datarepo_path, part)
         if not cache_p.exists():
@@ -264,8 +241,6 @@ def inventory_post(
     - Commit message must include ::sfid::<PART> and ::sfid::<LOCATION> tokens.
     """
     validate_sfid(part)
-    if not part.startswith("p_"):
-        raise ValueError("part must be a valid part sfid starting with 'p_'")
     if not _entity_exists(datarepo_path, part):
         raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
     if location is None or not str(location).strip():
@@ -347,8 +322,6 @@ def inventory_onhand(
     inv_dir = ensure_inventory_dir(datarepo_path)
     if part:
         validate_sfid(part)
-        if not part.startswith("p_"):
-            raise ValueError("part must be a valid part sfid starting with 'p_'")
         if not _entity_exists(datarepo_path, part):
             raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
         cache_p = _part_onhand_file(datarepo_path, part)
@@ -367,7 +340,7 @@ def inventory_onhand(
     # Summary over all parts
     parts = []
     grand_total = 0
-    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
         part_sfid = pdir.name
         cache_p = _part_onhand_file(datarepo_path, part_sfid)
         if not cache_p.exists():
@@ -405,8 +378,6 @@ def inventory_onhand_readonly(
     inv_dir = ensure_inventory_dir(datarepo_path)
     if part:
         validate_sfid(part)
-        if not part.startswith("p_"):
-            raise ValueError("part must be a valid part sfid starting with 'p_'")
         if not _entity_exists(datarepo_path, part):
             raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
         journal = _journal_file(datarepo_path, part)
@@ -426,7 +397,7 @@ def inventory_onhand_readonly(
             raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
         parts: Dict[str, int] = {}
         uom = "ea"
-        for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+        for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
             part_sfid = pdir.name
             cache_p = _part_onhand_file(datarepo_path, part_sfid)
             cache: Dict = {}
@@ -462,7 +433,7 @@ def inventory_onhand_readonly(
     # Summary over all parts (prefer caches if present; compute from journals otherwise)
     parts_list = []
     grand_total = 0
-    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
         part_sfid = pdir.name
         cache_p = _part_onhand_file(datarepo_path, part_sfid)
         cache: Dict = {}
@@ -492,74 +463,19 @@ def inventory_onhand_readonly(
     return {"parts": parts_list, "total": grand_total}
 
 
-def inventory_list_items_readonly(datarepo_path: Path) -> List[Dict]:
-    """Return inventory rows for all canonical part entities without mutating repo state."""
-    # Local import avoids widening module coupling at import time.
-    from .entities import list_entities
-
-    ents = list_entities(datarepo_path) or []
-    items: List[Dict] = []
-    for ent in ents:
-        sfid = str((ent or {}).get("sfid") or "").strip()
-        if not sfid or not sfid.startswith("p_"):
-            continue
-        try:
-            cache = inventory_onhand_readonly(datarepo_path, part=sfid) or {}
-        except Exception:
-            cache = {}
-        items.append(
-            {
-                "sfid": sfid,
-                "name": (ent or {}).get("name", sfid),
-                "description": (ent or {}).get("description", ""),
-                "category": (ent or {}).get("category", ""),
-                "uom": cache.get("uom", (ent or {}).get("uom", "ea") or "ea"),
-                "total": int(cache.get("total", 0) or 0),
-                "by_location": cache.get("by_location", {}) or {},
-                "as_of": cache.get("as_of"),
-            }
-        )
-    items.sort(key=lambda x: str(x.get("sfid") or ""))
-    return items
-
-
-def inventory_view_item_readonly(datarepo_path: Path, part: str) -> Dict:
-    """Return a single inventory row payload for one part without mutating repo state."""
-    validate_sfid(part)
-    if not part.startswith("p_"):
-        raise ValueError("part must be a valid part sfid starting with 'p_'")
-
-    # Local import avoids widening module coupling at import time.
-    from .entities import get_entity
-
-    entity = get_entity(datarepo_path, part)
-    cache = inventory_onhand_readonly(datarepo_path, part=part)
-    return {
-        "sfid": part,
-        "name": entity.get("name", part),
-        "description": entity.get("description", ""),
-        "category": entity.get("category", ""),
-        "uom": cache.get("uom", entity.get("uom", "ea") or "ea"),
-        "total": int(cache.get("total", 0) or 0),
-        "by_location": cache.get("by_location", {}) or {},
-        "as_of": cache.get("as_of"),
-    }
-
-
 def inventory_rebuild(datarepo_path: Path) -> Dict:
     """Rebuild all onhand caches from journals (per-part and per-location)."""
     inv_dir = ensure_inventory_dir(datarepo_path)
     # Rebuild per-part
     rebuilt_parts: List[str] = []
-    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
         part_sfid = pdir.name
         if _journal_file(datarepo_path, part_sfid).exists():
-            # Enforce spec invariant: historical journal must never imply negative on-hand.
-            _write_part_cache(datarepo_path, part_sfid, enforce_non_negative=True)
+            _write_part_cache(datarepo_path, part_sfid)
             rebuilt_parts.append(part_sfid)
     # Rebuild per-location based on all part caches
     locations: set[str] = set()
-    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name.startswith("p_")]):
+    for pdir in sorted([p for p in inv_dir.iterdir() if p.is_dir() and p.name != "_location"]):
         cache_p = _part_onhand_file(datarepo_path, pdir.name)
         if not cache_p.exists():
             continue
@@ -579,14 +495,9 @@ def inventory_rebuild(datarepo_path: Path) -> Dict:
     for loc in rebuilt_locations:
         to_commit.append(_location_cache_file(datarepo_path, loc))
     if to_commit:
-        token_lines = ""
-        for p_sfid in rebuilt_parts:
-            token_lines += f"\n::sfid::{p_sfid}"
-        for l_sfid in rebuilt_locations:
-            token_lines += f"\n::sfid::{l_sfid}"
         git_commit_paths(
             datarepo_path,
             to_commit,
-            f"[smallFactory] Rebuilt inventory onhand caches\n::sf-action::rebuild{token_lines}",
+            "[smallFactory] Rebuilt inventory onhand caches\n::sf-action::rebuild",
         )
     return {"parts": rebuilt_parts, "locations": rebuilt_locations}

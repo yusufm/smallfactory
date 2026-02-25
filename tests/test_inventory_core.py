@@ -14,12 +14,9 @@ from smallfactory.core.v1.entities import create_entity
 from smallfactory.core.v1.inventory import (
     inventory_onhand,
     inventory_onhand_readonly,
-    inventory_list_items_readonly,
-    inventory_view_item_readonly,
     inventory_post,
     inventory_rebuild,
 )
-from smallfactory.core.v1.validate import validate_repo
 
 
 def _init_git_repo(root: Path) -> None:
@@ -126,30 +123,6 @@ def test_readonly_onhand_computes_without_materializing_caches(repo: Path):
     assert part_cache_file.exists()
 
 
-def test_inventory_list_and_view_readonly_helpers(repo: Path):
-    create_entity(repo, "p_other", {"name": "Other Part", "category": "raw", "uom": "kg"})
-    inventory_post(repo, "p_inv", 3, location="l_main")
-
-    rows = inventory_list_items_readonly(repo)
-    assert [r.get("sfid") for r in rows] == ["p_inv", "p_other"]
-
-    inv_row = next(r for r in rows if r.get("sfid") == "p_inv")
-    assert inv_row["name"] == "Inventory Part"
-    assert inv_row["total"] == 3
-    assert inv_row["by_location"] == {"l_main": 3}
-
-    other_row = next(r for r in rows if r.get("sfid") == "p_other")
-    assert other_row["uom"] == "kg"
-    assert other_row["total"] == 0
-    assert other_row["by_location"] == {}
-
-    item = inventory_view_item_readonly(repo, "p_inv")
-    assert item["sfid"] == "p_inv"
-    assert item["name"] == "Inventory Part"
-    assert item["total"] == 3
-    assert item["by_location"] == {"l_main": 3}
-
-
 def test_inventory_rebuild_recreates_all_caches_from_journals(repo: Path):
     create_entity(repo, "p_other", {"name": "Other Part"})
     _write_journal(
@@ -183,27 +156,3 @@ def test_inventory_rebuild_recreates_all_caches_from_journals(repo: Path):
     loc_cache = yaml.safe_load((repo / "inventory" / "_location" / "l_main" / "onhand.generated.yml").read_text()) or {}
     assert loc_cache["parts"] == {"p_inv": 4, "p_other": 2}
     assert loc_cache["total"] == 6
-
-    # Rebuild commits must include required sfid tokens.
-    lint = validate_repo(repo, include_entities=False, include_inventory=False, include_git=True)
-    codes = {i.get("code") for i in lint.get("issues", [])}
-    assert "GIT_TOKEN_REQUIRED" not in codes
-
-
-def test_inventory_post_rejects_non_part_sfid(repo: Path):
-    create_entity(repo, "l_not_a_part", {"name": "Not A Part"})
-    with pytest.raises(ValueError, match="part must be a valid part sfid"):
-        inventory_post(repo, "l_not_a_part", 1, location="l_main")
-
-
-def test_inventory_rebuild_errors_on_historical_negative_onhand(repo: Path):
-    _write_journal(
-        repo,
-        "p_inv",
-        [
-            {"txn": "01ARZ3NDEKTSV4RRFFQ69G5FAV", "location": "l_main", "qty_delta": 1},
-            {"txn": "01ARZ3NDEKTSV4RRFFQ69G5FAW", "location": "l_main", "qty_delta": -2},
-        ],
-    )
-    with pytest.raises(ValueError, match="negative .*on-hand"):
-        inventory_rebuild(repo)

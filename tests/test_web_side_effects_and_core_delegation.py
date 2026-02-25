@@ -9,7 +9,7 @@ import pytest
 # Ensure project root on sys.path so 'smallfactory' is importable when running pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from smallfactory.core.v1.entities import create_entity, bom_list, cut_revision
+from smallfactory.core.v1.entities import create_entity, bom_list
 
 pytest.importorskip("flask", reason="Flask not installed; web API tests skipped")
 
@@ -151,74 +151,6 @@ def test_post_routes_delegate_to_core_and_fail_without_mutation_on_core_error(we
         r = client.post("/api/entities/p_parent/bom/alt-remove", json={"index": 0, "alt_use": "p_alt"})
         assert r.status_code == 400
         assert _capture_state() == (head4, bom4)
-
-
-def test_revision_download_delegates_to_core_and_is_read_only_on_error(web_mod, monkeypatch: pytest.MonkeyPatch):
-    mod = web_mod
-    app = mod.app
-    repo = mod.get_datarepo_path()
-
-    create_entity(repo, "p_revdl", {"name": "RevDL"})
-    cut_revision(repo, "p_revdl", rev="1")
-
-    client = app.test_client()
-    head_before = _git_head(repo)
-    assert _git_status_clean(repo)
-
-    with monkeypatch.context() as mp:
-        mp.setattr(
-            mod,
-            "revision_download_archive",
-            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sentinel-revision-download")),
-        )
-        r = client.get("/api/entities/p_revdl/revisions/1/download")
-        assert r.status_code == 400
-
-    assert _git_head(repo) == head_before
-    assert _git_status_clean(repo)
-
-
-def test_inventory_json_routes_delegate_to_core_read_models(web_mod, monkeypatch: pytest.MonkeyPatch):
-    mod = web_mod
-    app = mod.app
-    repo = mod.get_datarepo_path()
-    client = app.test_client()
-
-    head_before = _git_head(repo)
-    assert _git_status_clean(repo)
-
-    expected_items = [
-        {
-            "sfid": "p_from_core",
-            "name": "From Core",
-            "description": "",
-            "category": "",
-            "uom": "ea",
-            "total": 7,
-            "by_location": {"l_main": 7},
-            "as_of": "2026-01-01T00:00:00Z",
-        }
-    ]
-    expected_item = dict(expected_items[0])
-
-    with monkeypatch.context() as mp:
-        mp.setattr(mod, "inventory_list_items_readonly", lambda *a, **k: expected_items)
-        mp.setattr(mod, "inventory_view_item_readonly", lambda *a, **k: expected_item)
-
-        listing = client.get("/api/inventory")
-        assert listing.status_code == 200
-        listing_body = listing.get_json() or {}
-        assert listing_body.get("success") is True
-        assert listing_body.get("items") == expected_items
-
-        view = client.get("/api/inventory/p_from_core")
-        assert view.status_code == 200
-        view_body = view.get_json() or {}
-        assert view_body.get("success") is True
-        assert view_body.get("item") == expected_item
-
-    assert _git_head(repo) == head_before
-    assert _git_status_clean(repo)
 
 
 def test_bom_deep_route_delegates_to_core_read_model(web_mod, monkeypatch: pytest.MonkeyPatch):

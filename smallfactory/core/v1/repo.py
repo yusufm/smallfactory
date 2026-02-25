@@ -156,10 +156,6 @@ def scaffold_default_location(repo_path: Path, location_sfid: str = "l_inbox") -
         validate_sfid(location_sfid)
     except Exception as e:
         raise ValueError(f"Invalid default location sfid '{location_sfid}': {e}")
-    if not location_sfid.startswith("l_"):
-        raise ValueError(
-            f"Invalid default location sfid '{location_sfid}': must start with 'l_'"
-        )
 
     ent_fp = repo_path / "entities" / location_sfid / "entity.yml"
     dr_cfg_fp = repo_path / DATAREPO_CONFIG_FILENAME

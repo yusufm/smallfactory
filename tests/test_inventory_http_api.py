@@ -113,37 +113,3 @@ def test_api_inventory_adjust_delta_zero_is_noop_and_onhand_requires_sfid(web_mo
     assert body.get("new_qty") == 0
     assert body.get("total") == 0
     assert after == before
-
-
-def test_api_inventory_list_and_view_endpoints(web_mod):
-    mod = web_mod
-    app = mod.app
-    repo = mod.get_datarepo_path()
-
-    create_entity(repo, "p_api_list", {"name": "List Part"})
-    create_entity(repo, "l_main", {"name": "Main"})
-    (repo / "sfdatarepo.yml").write_text("inventory:\n  default_location: l_main\n", encoding="utf-8")
-
-    client = app.test_client()
-    adj = client.post("/api/inventory/adjust", json={"sfid": "p_api_list", "quantity": 3})
-    assert adj.status_code == 200
-    assert (adj.get_json() or {}).get("success") is True
-
-    listing = client.get("/api/inventory")
-    assert listing.status_code == 200
-    data = listing.get_json() or {}
-    assert data.get("success") is True
-    items = data.get("items") or []
-    row = next((x for x in items if x.get("sfid") == "p_api_list"), None)
-    assert row is not None
-    assert row.get("total") == 3
-    assert row.get("by_location", {}).get("l_main") == 3
-
-    view = client.get("/api/inventory/p_api_list")
-    assert view.status_code == 200
-    body = view.get_json() or {}
-    assert body.get("success") is True
-    item = body.get("item") or {}
-    assert item.get("sfid") == "p_api_list"
-    assert item.get("total") == 3
-    assert item.get("by_location", {}).get("l_main") == 3

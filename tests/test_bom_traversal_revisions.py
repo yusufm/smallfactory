@@ -57,57 +57,6 @@ def test_resolved_bom_tree_honors_child_rev_for_bom_loading(tmp_path: Path):
     assert "p_leaf_b" in uses2
 
 
-def test_resolved_bom_tree_filters_when_clauses_by_config(tmp_path: Path):
-    repo = tmp_path / "repo"; repo.mkdir()
-
-    create_entity(repo, "p_leaf_common", {"name": "Common"})
-    create_entity(repo, "p_leaf_120", {"name": "Leaf120"})
-    create_entity(repo, "p_leaf_240", {"name": "Leaf240"})
-    create_entity(repo, "p_top_when", {"name": "TopWhen"})
-
-    bom_add_line(repo, "p_top_when", use="p_leaf_common", qty=1, rev="released")
-    bom_add_line(repo, "p_top_when", use="p_leaf_120", qty=1, rev="released")
-    bom_add_line(repo, "p_top_when", use="p_leaf_240", qty=1, rev="released")
-    # Inject 'when' selectors on two lines.
-    bom_set_line(repo, "p_top_when", index=1, updates={"rev": "released"})
-    bom_set_line(repo, "p_top_when", index=2, updates={"rev": "released"})
-    ent = _read_yaml(repo / "entities" / "p_top_when" / "entity.yml")
-    ent["bom"][1]["when"] = {"voltage": 120}
-    ent["bom"][2]["when"] = {"voltage": 240}
-    with open(repo / "entities" / "p_top_when" / "entity.yml", "w") as f:
-        yaml.safe_dump(ent, f, sort_keys=False)
-
-    nodes_default = resolved_bom_tree(repo, "p_top_when")
-    uses_default = [n.get("use") for n in nodes_default]
-    assert "p_leaf_common" in uses_default
-    assert "p_leaf_120" not in uses_default
-    assert "p_leaf_240" not in uses_default
-
-    nodes_120 = resolved_bom_tree(repo, "p_top_when", config={"voltage": 120})
-    uses_120 = [n.get("use") for n in nodes_120]
-    assert "p_leaf_common" in uses_120
-    assert "p_leaf_120" in uses_120
-    assert "p_leaf_240" not in uses_120
-
-    nodes_240 = resolved_bom_tree(repo, "p_top_when", config={"voltage": 240})
-    uses_240 = [n.get("use") for n in nodes_240]
-    assert "p_leaf_common" in uses_240
-    assert "p_leaf_240" in uses_240
-    assert "p_leaf_120" not in uses_240
-
-
-def test_resolved_bom_tree_marks_implicit_buy_children_as_released(tmp_path: Path):
-    repo = tmp_path / "repo"; repo.mkdir()
-    create_entity(repo, "p_buy_leaf", {"name": "BuyLeaf", "policy": "buy"})
-    create_entity(repo, "p_parent_buy_tree", {"name": "ParentBuy"})
-    bom_add_line(repo, "p_parent_buy_tree", use="p_buy_leaf", qty=1, rev="released")
-
-    nodes = resolved_bom_tree(repo, "p_parent_buy_tree")
-    child = next(n for n in nodes if n.get("use") == "p_buy_leaf")
-    assert child.get("rev_spec") == "released"
-    assert child.get("rev") == "released"
-
-
 def test_cut_revision_generates_bom_tree_using_snapshot_and_per_line_revs(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
 

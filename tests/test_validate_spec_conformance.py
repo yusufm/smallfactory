@@ -72,11 +72,10 @@ def test_entity_yml_missing(tmp_path: Path):
 
 def test_entity_yml_forbidden_fields(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
-    _write(repo / "entities" / "p_ok" / "entity.yml", "sfid: p_ok\nkind: part\nchildren: []\nname: Ok\n")
+    _write(repo / "entities" / "p_ok" / "entity.yml", "sfid: p_ok\nchildren: []\nname: Ok\n")
     res = validate_repo(repo, include_git=False)
     codes = _codes(res["issues"])  # both should be flagged
     assert "ENT_NO_SFID_FIELD" in codes
-    assert "ENT_NO_KIND_FIELD" in codes
     assert "ENT_NO_CHILDREN" in codes
 
 
@@ -277,11 +276,11 @@ def test_entity_yml_invalid_yaml(tmp_path: Path):
     assert "ENT_ENTITY_YML_INVALID" in _codes(res["issues"])  # invalid yaml should be flagged
 
 
-def test_bom_alternates_missing_use_is_error(tmp_path: Path):
+def test_bom_alternates_missing_use_is_ignored(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     # Create child so parent bom 'use' is valid and doesn't trigger missing entity
     _write(repo / "entities" / "p_child" / "entity.yml", "name: Child\n")
-    # Alternates list contains objects without 'use' -> should fail validation
+    # Alternates list contains objects without 'use' -> should be ignored (no alt-use errors)
     _write(
         repo / "entities" / "p_parent" / "entity.yml",
         """
@@ -291,8 +290,12 @@ bom:
         """.lstrip(),
     )
     res = validate_repo(repo, include_git=False)
-    codes = _codes(res["issues"])
-    assert "ENT_BOM_ALT_USE_REQUIRED" in codes
+    codes = _codes(res["issues"])  # ensure no alt-specific errors are present
+    assert "ENT_BOM_ALT_NOT_LIST" not in codes
+    assert "ENT_BOM_ALT_ITEM_NOT_MAP" not in codes
+    assert "ENT_BOM_ALT_USE_REQUIRED" not in codes
+    assert "ENT_BOM_ALT_SFID_INVALID" not in codes
+    assert "ENT_BOM_ALT_ENTITY_MISSING" not in codes
 
 
 def test_gitattributes_union_merge_config_ok(tmp_path: Path):

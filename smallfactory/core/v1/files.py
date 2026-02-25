@@ -32,8 +32,6 @@ def _entity_dir(datarepo_path: Path, sfid: str) -> Path:
 
 def _files_root(datarepo_path: Path, sfid: str) -> Path:
     """Return the working files root for an entity (files/ only)."""
-    if not str(sfid).startswith("p_"):
-        raise ValueError("files operations are only supported on part entities ('p_*')")
     ent = _entity_dir(datarepo_path, sfid)
     root = ent / "files"
     root.mkdir(parents=True, exist_ok=True)

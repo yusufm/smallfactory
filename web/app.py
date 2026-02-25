@@ -22,6 +22,7 @@ from typing import List
 import time
 import atexit
 from contextlib import contextmanager
+import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
 
 # Prometheus metrics
@@ -35,8 +36,6 @@ from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
     inventory_onhand_readonly,
-    inventory_list_items_readonly,
-    inventory_view_item_readonly,
 )
 from smallfactory.core.v1.entities import (
     list_entities,
@@ -48,7 +47,6 @@ from smallfactory.core.v1.entities import (
     get_revisions,
     bump_revision,
     release_revision,
-    revision_download_archive,
     # BOM management
     bom_list,
     bom_add_line,
@@ -1580,7 +1578,52 @@ def inventory_list():
     """Display all inventory items in a table."""
     try:
         datarepo_path = get_datarepo_path()
-        items = inventory_list_items_readonly(datarepo_path)
+        # Inventory summary (existing parts with journals/caches)
+        summary = inventory_onhand_readonly(datarepo_path)
+        summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
+        inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
+
+        # All canonical part entities
+        entities = list_entities(datarepo_path) or []
+        part_entities = [e for e in entities if str(e.get('sfid', '')).startswith('p_')]
+
+        # Build items list: include every part, defaulting to zero if absent from inventory
+        items = []
+        for ent in part_entities:
+            sfid = ent.get('sfid')
+            if not sfid:
+                continue
+            name = ent.get('name', sfid)
+            description = ent.get('description', '')
+            category = ent.get('category', '')
+
+            if sfid in inv_totals:
+                # Populate full cache details (by-location, uom, as_of) for parts that have inventory
+                try:
+                    cache = inventory_onhand_readonly(datarepo_path, part=sfid)
+                except Exception:
+                    cache = {}
+                uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
+                total = int(cache.get('total', 0) or 0)
+                by_location = cache.get('by_location', {}) or {}
+                as_of = cache.get('as_of')
+            else:
+                # Zero-quantity default for parts without any inventory activity
+                uom = ent.get('uom', 'ea') or 'ea'
+                total = 0
+                by_location = {}
+                as_of = None
+
+            items.append({
+                'sfid': sfid,
+                'name': name,
+                'description': description,
+                'category': category,
+                'uom': uom,
+                'total': total,
+                'by_location': by_location,
+                'as_of': as_of,
+            })
         # Optional pre-filtering from dashboard drill-downs
         status = (request.args.get('status') or '').strip().lower()
         if status == 'in_stock':
@@ -1597,8 +1640,20 @@ def inventory_view(item_id):
     """View details of a specific inventory item."""
     try:
         datarepo_path = get_datarepo_path()
+        cache = inventory_onhand_readonly(datarepo_path, part=item_id)
+        # Combine with entity metadata for UX if desired
+        entity = get_entity(datarepo_path, item_id)
         field_specs = get_inventory_field_specs()
-        item = inventory_view_item_readonly(datarepo_path, item_id)
+        item = {
+            "sfid": item_id,
+            "name": entity.get("name", item_id),
+            "description": entity.get("description", ""),
+            "category": entity.get("category", ""),
+            "uom": cache.get("uom"),
+            "total": cache.get("total", 0),
+            "by_location": cache.get("by_location", {}),
+            "as_of": cache.get("as_of"),
+        }
         return render_template('inventory/view.html', item=item, field_specs=field_specs)
     except Exception as e:
         flash(f'Error viewing item: {e}', 'error')
@@ -2167,7 +2222,7 @@ def api_inventory_list():
     """API endpoint to get all inventory items as JSON."""
     try:
         datarepo_path = get_datarepo_path()
-        items = inventory_list_items_readonly(datarepo_path)
+        items = list_items(datarepo_path)
         return jsonify({'success': True, 'items': items})
     except Exception as e:
         return _api_exception_response(e, 500)
@@ -2177,7 +2232,7 @@ def api_inventory_view(item_id):
     """API endpoint to get a specific inventory item as JSON."""
     try:
         datarepo_path = get_datarepo_path()
-        item = inventory_view_item_readonly(datarepo_path, item_id)
+        item = view_item(datarepo_path, item_id)
         return jsonify({'success': True, 'item': item})
     except Exception as e:
         return _api_exception_response(e, 404)
@@ -2479,17 +2534,25 @@ def api_revisions_download(sfid, rev):
     """
     try:
         datarepo_path = get_datarepo_path()
-        payload = revision_download_archive(datarepo_path, sfid, str(rev))
+        rev_str = str(rev).strip()
+        if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
+            return jsonify({'success': False, 'error': 'Invalid revision id'}), 400
+        rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / rev_str
+        if not rev_dir.exists() or not rev_dir.is_dir():
+            return jsonify({'success': False, 'error': 'Revision not found'}), 404
+        # Create tar.gz in memory
+        buf = io.BytesIO()
+        with tarfile.open(mode='w:gz', fileobj=buf) as tf:
+            arc_root = f"{sfid}_rev{rev_str}"
+            tf.add(str(rev_dir), arcname=arc_root)
+        buf.seek(0)
+        filename = f"{sfid}_rev{rev_str}.tar.gz"
         return send_file(
-            io.BytesIO(payload.get('bytes') or b''),
-            mimetype=payload.get('mimetype') or 'application/gzip',
+            buf,
+            mimetype='application/gzip',
             as_attachment=True,
-            download_name=payload.get('filename') or f"{sfid}_rev{rev}.tar.gz",
+            download_name=filename,
         )
-    except FileNotFoundError:
-        return jsonify({'success': False, 'error': 'Revision not found'}), 404
-    except ValueError as e:
-        return _api_exception_response(e, 400)
     except Exception as e:
         return _api_exception_response(e, 400)
 
