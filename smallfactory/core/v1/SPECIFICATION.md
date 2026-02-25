@@ -112,6 +112,9 @@ Top‑level directories (recap):
 - Consumers MUST obtain a resolved BOM tree via `resolved_bom_tree(...)`.
 - The returned node schema is the contract and MUST be treated as read-only by callers:
   - `parent, use, name, qty, rev_spec, rev, level, is_alt, alternates_group, gross_qty, cycle`.
+- `resolved_bom_tree(...).level` is **0-based** (`0` = immediate children of the requested root).
+- Depth limiting uses the same basis: `max_depth=0` means immediate children only.
+- Presentation layers MAY offset levels for display (for example, showing immediate children as level `1`), but MUST preserve core traversal/depth semantics.
 - UI layers MAY enrich this with presentation-only data (e.g., on-hand totals, formatting), but MUST NOT alter resolution logic.
 
 ### Revisions (normative)

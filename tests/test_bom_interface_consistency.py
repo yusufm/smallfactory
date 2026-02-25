@@ -12,7 +12,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from smallfactory.core.v1.entities import bom_add_line, create_entity
+from smallfactory.core.v1.entities import (
+    bom_add_line,
+    create_entity,
+    resolved_bom_tree,
+    resolved_bom_view,
+)
 from smallfactory.core.v1.inventory import inventory_post
 
 pytest.importorskip("flask", reason="Flask not installed; web API tests skipped")
@@ -110,3 +115,25 @@ def test_cli_bom_ls_delegates_to_core_read_model(env, monkeypatch: pytest.Monkey
     monkeypatch.setattr(sf_cli, "ent_resolved_bom_view", lambda *a, **k: expected)
     out = _run_cli_json(monkeypatch, sf_cli, ["bom", "ls", "p_root"])
     assert out == expected
+
+
+def test_core_bom_tree_level_contract_and_view_offset(env):
+    repo, _, _ = env
+    create_entity(repo, "p_root_lv", {"name": "Root"})
+    create_entity(repo, "p_mid_lv", {"name": "Mid"})
+    create_entity(repo, "p_leaf_lv", {"name": "Leaf"})
+
+    bom_add_line(repo, "p_root_lv", use="p_mid_lv", qty=2, rev="released")
+    bom_add_line(repo, "p_mid_lv", use="p_leaf_lv", qty=3, rev="released")
+
+    tree = resolved_bom_tree(repo, "p_root_lv")
+    view = resolved_bom_view(repo, "p_root_lv", level_offset=1)
+
+    assert len(tree) == len(view)
+    assert [n.get("use") for n in tree] == [n.get("use") for n in view]
+    for t, v in zip(tree, view):
+        assert int(v.get("level", -1)) == int(t.get("level", -1)) + 1
+
+    immediate = resolved_bom_tree(repo, "p_root_lv", max_depth=0)
+    assert {n.get("use") for n in immediate} == {"p_mid_lv"}
+    assert all(int(n.get("level", -1)) == 0 for n in immediate)
