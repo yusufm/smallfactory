@@ -31,6 +31,17 @@ def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: b
     if not paths:
         return
     try:
+        # Some unit tests use plain directories without git initialization.
+        # In that mode, file mutations should still work and commit becomes a no-op.
+        ck = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        if ck.returncode != 0:
+            return
+
         for p in paths:
             if delete:
                 # Stage removals and remove from working tree; ignore if path is untracked.

@@ -159,10 +159,14 @@
     fields.forEach(k => {
       const v = obj[k];
       const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="px-4 py-2 text-sm text-gray-600">${escapeHtml(k)}</td>
-        <td class="px-4 py-2 text-sm text-gray-900">${formatValue(v)}</td>
-      `;
+      const keyTd = document.createElement('td');
+      keyTd.className = 'px-4 py-2 text-sm text-gray-600';
+      keyTd.textContent = String(k);
+      const valueTd = document.createElement('td');
+      valueTd.className = 'px-4 py-2 text-sm text-gray-900';
+      appendFormattedValue(valueTd, v);
+      tr.appendChild(keyTd);
+      tr.appendChild(valueTd);
       resultTable.appendChild(tr);
     });
     rawJson.textContent = JSON.stringify(obj, null, 2) + '\nmodel: ' + model;
@@ -184,11 +188,26 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
-  function formatValue(v) {
-    if (Array.isArray(v)) return v.map(escapeHtml).join(', ');
-    if (v == null) return '<span class="text-gray-400">null</span>';
-    if (typeof v === 'object') return '<code class="text-xs">' + escapeHtml(JSON.stringify(v)) + '</code>';
-    return escapeHtml(v);
+  function appendFormattedValue(container, v) {
+    if (Array.isArray(v)) {
+      container.textContent = v.map(x => String(x)).join(', ');
+      return;
+    }
+    if (v == null) {
+      const span = document.createElement('span');
+      span.className = 'text-gray-400';
+      span.textContent = 'null';
+      container.appendChild(span);
+      return;
+    }
+    if (typeof v === 'object') {
+      const code = document.createElement('code');
+      code.className = 'text-xs';
+      code.textContent = JSON.stringify(v);
+      container.appendChild(code);
+      return;
+    }
+    container.textContent = String(v);
   }
 })();
 </script>

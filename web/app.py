@@ -70,6 +70,24 @@ from smallfactory.core.v1.validate import validate_repo
 app = Flask(__name__)
 app.secret_key = os.environ.get('SF_WEB_SECRET', 'dev-only-insecure-secret')
 
+
+def _api_exception_response(
+    exc: Exception,
+    status: int = 500,
+    public_message: str = "Request failed",
+    *,
+    hint: str | None = None,
+):
+    """Return a safe API error payload while logging full exception details server-side."""
+    try:
+        app.logger.exception("API request failed: %s", exc)
+    except Exception:
+        pass
+    payload = {"success": False, "error": public_message}
+    if hint:
+        payload["hint"] = hint
+    return jsonify(payload), status
+
 # Optionally allow an extra templates directory for SaaS-provided partials
 # If SF_EXTRA_TEMPLATES is not set, fall back to the standard mount path.
 _extra_tpl_dir = os.environ.get('SF_EXTRA_TEMPLATES') or '/var/lib/smallfactory-saas/templates'
@@ -1529,7 +1547,7 @@ def repo_stats_validate():
         )
         return jsonify({'success': True, 'result': result})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/')
 def index():
@@ -2062,15 +2080,45 @@ def entities_add():
     ?next=<path>. If provided, 'next' is echoed back as a hidden field and used
     as the redirect target after successful creation.
     """
-    from urllib.parse import urlparse, parse_qs, urlencode
+    from urllib.parse import urlparse, parse_qs
 
     def _is_safe_next(url: str) -> bool:
         try:
             p = urlparse(url)
             # Only allow relative, same-origin paths (no scheme or netloc)
-            return (p.scheme == '' and p.netloc == '' and (p.path or '/').startswith('/'))
+            return (
+                p.scheme == ''
+                and p.netloc == ''
+                and (p.path or '/').startswith('/')
+                and not (p.path or '').startswith('//')
+                and '\\' not in url
+            )
         except Exception:
             return False
+
+    def _safe_next_redirect(url: str | None, update_key: str | None, new_sfid: str):
+        if not url or not _is_safe_next(url):
+            return None
+        try:
+            parsed = urlparse(url)
+            endpoint_by_path = {
+                '/inventory/adjust': 'inventory_adjust',
+                '/entities/add': 'entities_add',
+            }
+            endpoint = endpoint_by_path.get(parsed.path)
+            if not endpoint:
+                return None
+            qs = parse_qs(parsed.query, keep_blank_values=False)
+            if update_key in ('sfid', 'l_sfid', 'location'):
+                qs[update_key] = [new_sfid]
+            if endpoint == 'inventory_adjust':
+                allowed = {'sfid', 'l_sfid', 'location'}
+            else:
+                allowed = {'sfid', 'next', 'update_param'}
+            params = {k: vals[-1] for k, vals in qs.items() if k in allowed and vals}
+            return redirect(url_for(endpoint, **params))
+        except Exception:
+            return None
 
     form_data = {}
     next_url = None
@@ -2128,18 +2176,9 @@ def entities_add():
                 if prefix:
                     return redirect(url_for('entities_add', sfid=prefix))
                 return redirect(url_for('entities_add'))
-            if next_url and _is_safe_next(next_url):
-                # If caller indicated which param to update, rewrite the next URL
-                try:
-                    if update_param in ('sfid', 'l_sfid', 'location'):
-                        parsed = urlparse(next_url)
-                        qs = parse_qs(parsed.query)
-                        qs[update_param] = [sfid]
-                        new_qs = urlencode(qs, doseq=True)
-                        next_url = parsed._replace(query=new_qs).geturl()
-                except Exception:
-                    pass
-                return redirect(next_url)
+            safe_redirect = _safe_next_redirect(next_url, update_param, sfid)
+            if safe_redirect is not None:
+                return safe_redirect
             return redirect(url_for('entities_view', sfid=entity.get('sfid')))
         except Exception as e:
             flash(f'Error creating entity: {e}', 'error')
@@ -2186,7 +2225,7 @@ def api_inventory_list():
         items = list_items(datarepo_path)
         return jsonify({'success': True, 'items': items})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return _api_exception_response(e, 500)
 
 @app.route('/api/inventory/<item_id>')
 def api_inventory_view(item_id):
@@ -2196,7 +2235,7 @@ def api_inventory_view(item_id):
         item = view_item(datarepo_path, item_id)
         return jsonify({'success': True, 'item': item})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 404
+        return _api_exception_response(e, 404)
 
 @app.route('/api/inventory/adjust', methods=['POST'])
 def api_inventory_adjust():
@@ -2292,7 +2331,7 @@ def api_inventory_adjust():
             'new_qty': new_qty,
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/inventory/onhand', methods=['GET'])
 def api_inventory_onhand():
@@ -2328,7 +2367,7 @@ def api_inventory_onhand():
             'location_qty': loc_qty,
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities')
 def api_entities_list():
@@ -2337,7 +2376,7 @@ def api_entities_list():
         entities = list_entities(datarepo_path)
         return jsonify({'success': True, 'entities': entities})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return _api_exception_response(e, 500)
 
 @app.route('/api/entities/search')
 def api_entities_search():
@@ -2397,7 +2436,7 @@ def api_entities_search():
         results.sort(key=lambda x: x.get('sfid', ''))
         return jsonify({'success': True, 'results': results[:limit]})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return _api_exception_response(e, 500)
 
 @app.route('/api/entities/<sfid>')
 def api_entities_view(sfid):
@@ -2406,7 +2445,7 @@ def api_entities_view(sfid):
         entity = get_entity(datarepo_path, sfid)
         return jsonify({'success': True, 'entity': entity})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 404
+        return _api_exception_response(e, 404)
 
 @app.route('/api/entities/<sfid>/update', methods=['POST'])
 def api_entities_update(sfid):
@@ -2436,7 +2475,7 @@ def api_entities_update(sfid):
         )
         return jsonify({'success': True, 'entity': updated})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/revisions', methods=['GET'])
 def api_revisions_get(sfid):
@@ -2445,7 +2484,7 @@ def api_revisions_get(sfid):
         info = get_revisions(datarepo_path, sfid)
         return jsonify({'success': True, 'rev': info.get('rev'), 'revisions': info.get('revisions', [])})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/revisions/bump', methods=['POST'])
 def api_revisions_bump(sfid):
@@ -2467,7 +2506,7 @@ def api_revisions_bump(sfid):
         )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/revisions/<rev>/release', methods=['POST'])
 def api_revisions_release(sfid, rev):
@@ -2484,7 +2523,7 @@ def api_revisions_release(sfid, rev):
         )
         return jsonify({'success': True, 'entity': ent, 'rev': ent.get('rev'), 'revisions': ent.get('revisions', [])})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/revisions/<rev>/download', methods=['GET'])
 def api_revisions_download(sfid, rev):
@@ -2516,7 +2555,7 @@ def api_revisions_download(sfid, rev):
             download_name=filename,
         )
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 # -----------------------
 # BOM API endpoints (AJAX)
@@ -2563,7 +2602,7 @@ def api_bom_get(sfid):
         bom = bom_list(datarepo_path, sfid)
         return jsonify({'success': True, 'bom': bom, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/import/apply', methods=['POST'])
@@ -2773,7 +2812,7 @@ def api_bom_import_apply(sfid):
         created_entities = res.get('created_entities', [])
         return jsonify({'success': True, 'rows': rows, 'summary': summary, 'created_entities': created_entities})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 # Deep BOM traversal using core API
 def _walk_bom_deep(datarepo_path: Path, parent_sfid: str, *, max_depth: int | None = None):
@@ -3172,7 +3211,7 @@ def api_bom_import_preview(sfid):
             }
         })
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/deep', methods=['GET'])
@@ -3212,7 +3251,7 @@ def api_bom_deep(sfid):
             )
         return jsonify({'success': True, 'nodes': nodes})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/add', methods=['POST'])
@@ -3265,8 +3304,26 @@ def api_bom_add(sfid):
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except FileNotFoundError as e:
+        return _api_exception_response(e, 400, "Referenced entity does not exist under entities/")
+    except ValueError as e:
+        msg = "Invalid BOM request"
+        try:
+            if "duplicate bom" in str(e).lower():
+                msg = "Duplicate BOM entry"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
+    except RuntimeError as e:
+        msg = "BOM operation failed"
+        try:
+            if "git push" in str(e).lower():
+                msg = "Post-mutation git push failed"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/remove', methods=['POST'])
@@ -3296,7 +3353,7 @@ def api_bom_remove(sfid):
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/set', methods=['POST'])
@@ -3319,8 +3376,16 @@ def api_bom_set(sfid):
         )
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
+    except ValueError as e:
+        msg = "Invalid BOM request"
+        try:
+            if "duplicate bom" in str(e).lower():
+                msg = "Duplicate BOM entry"
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 # -----------------------
@@ -3351,7 +3416,7 @@ def api_files_list(sfid):
         res = files_list(datarepo_path, sfid, path=path, recursive=recursive, glob=glob)
         return jsonify({'success': True, **res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/files/mkdir', methods=['POST'])
@@ -3372,7 +3437,7 @@ def api_files_mkdir(sfid):
         )
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/files/rmdir', methods=['POST'])
@@ -3393,7 +3458,7 @@ def api_files_rmdir(sfid):
         )
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/files/upload', methods=['POST'])
@@ -3416,7 +3481,7 @@ def api_files_upload(sfid):
         )
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/files/delete', methods=['POST'])
@@ -3437,7 +3502,7 @@ def api_files_delete(sfid):
         )
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/files/move', methods=['POST'])
@@ -3470,7 +3535,7 @@ def api_files_move(sfid):
         )
         return jsonify({'success': True, 'result': res})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/files/download', methods=['GET'])
 def api_files_download(sfid):
@@ -3490,7 +3555,7 @@ def api_files_download(sfid):
     except FileNotFoundError:
         return jsonify({'success': False, 'error': 'File not found'}), 404
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 @app.route('/api/entities/<sfid>/bom/alt-add', methods=['POST'])
 def api_bom_alt_add(sfid):
@@ -3511,7 +3576,7 @@ def api_bom_alt_add(sfid):
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/<sfid>/bom/alt-remove', methods=['POST'])
@@ -3535,7 +3600,7 @@ def api_bom_alt_remove(sfid):
         bom = res.get('bom')
         return jsonify({'success': True, 'result': res, 'rows': _enrich_bom_rows(datarepo_path, bom)})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        return _api_exception_response(e, 400)
 
 
 @app.route('/api/entities/specs/<sfid>')
@@ -3546,7 +3611,7 @@ def api_entities_specs(sfid):
         specs = get_entity_field_specs_for_sfid(sfid, datarepo_path)
         return jsonify({'success': True, 'specs': specs})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return _api_exception_response(e, 500)
 
 # -----------------------
 # Vision API (Ollama-backed)
@@ -3597,7 +3662,20 @@ def api_vision_ask():
         result = vlm_ask_image(prompt, img_bytes)
         return jsonify({'success': True, 'result': result})
     except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        msg = "Invalid request"
+        try:
+            err = str(e)
+            if "No image file uploaded" in err:
+                msg = "No image file uploaded under field 'file'."
+            elif "Unsupported file type" in err:
+                msg = "Unsupported file type; expected an image."
+            elif "Image too large" in err:
+                msg = "Image too large (max 10MB)."
+            elif "Failed to read image" in err:
+                msg = "Failed to read image."
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
         # Friendly guidance depending on configured provider
         try:
@@ -3619,7 +3697,7 @@ def api_vision_ask():
                 "Pull model: `ollama pull qwen2.5vl:3b`\n"
                 "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
             )
-        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+        return _api_exception_response(e, 500, "Vision request failed", hint=hint)
 
 
 @app.route('/api/vision/extract/part', methods=['POST'])
@@ -3630,7 +3708,20 @@ def api_vision_extract_part():
         result = vlm_extract_invoice_part(img_bytes)
         return jsonify({'success': True, 'result': result})
     except ValueError as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+        msg = "Invalid request"
+        try:
+            err = str(e)
+            if "No image file uploaded" in err:
+                msg = "No image file uploaded under field 'file'."
+            elif "Unsupported file type" in err:
+                msg = "Unsupported file type; expected an image."
+            elif "Image too large" in err:
+                msg = "Image too large (max 10MB)."
+            elif "Failed to read image" in err:
+                msg = "Failed to read image."
+        except Exception:
+            pass
+        return _api_exception_response(e, 400, msg)
     except Exception as e:
         try:
             prov = get_vision_provider()
@@ -3651,7 +3742,7 @@ def api_vision_extract_part():
                 "Pull model: `ollama pull qwen2.5vl:3b`\n"
                 "Set URL (if remote): export SF_OLLAMA_BASE_URL=http://<host>:11434"
             )
-        return jsonify({'success': False, 'error': str(e), 'hint': hint}), 500
+        return _api_exception_response(e, 500, "Vision extraction failed", hint=hint)
 
 # -----------------------
 # Stickers (QR only) routes
