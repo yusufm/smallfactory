@@ -9,7 +9,7 @@ import yaml
 import re
 
 from .gitutils import git_commit_paths
-from .config import get_entity_field_specs_for_sfid
+from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
 
 
 # -------------------------------
@@ -25,18 +25,12 @@ def _entities_dir(datarepo_path: Path) -> Path:
     return p
 
 
-_SFID_RE = re.compile(r"^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$")
-
-
 def _validate_sfid_local(sfid: str) -> None:
-    """Local sfid guard so path sinks are gated in-module for static analyzers."""
-    if not isinstance(sfid, str) or not sfid:
-        raise ValueError("sfid is required")
-    if re.fullmatch(_SFID_RE, sfid) is None:
-        raise ValueError(
-            "sfid must match ^(?=.{3,64}$)[a-z]+_[a-z0-9_-]*[a-z0-9]$ and be lowercase"
-        )
-    # Explicitly reject path separators and traversal tokens.
+    """Bridge central validation to local path sinks for static analyzer visibility."""
+    validate_sfid(sfid)
+    if re.fullmatch(SFID_REGEX, sfid) is None:
+        raise ValueError("Invalid sfid")
+    # Explicitly reject separators and traversal tokens at path boundaries.
     if "/" in sfid or "\\" in sfid or sfid in {".", ".."}:
         raise ValueError("Invalid sfid")
 
