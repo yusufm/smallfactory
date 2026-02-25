@@ -8,6 +8,7 @@ import hashlib
 import yaml
 import re
 import tempfile
+import os
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
@@ -138,7 +139,14 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
         if d.is_dir() and d.name == sfid:
             raise FileExistsError(f"Entity '{sfid}' already exists")
 
-    (root / sfid).mkdir(parents=True, exist_ok=True)
+    root_fd = os.open(root, os.O_RDONLY)
+    try:
+        try:
+            os.mkdir(sfid, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+    finally:
+        os.close(root_fd)
     ent_dir = None
     for d in root.iterdir():
         if d.is_dir() and d.name == sfid:
