@@ -55,7 +55,21 @@
                         </a>
                     </div>
                 </div>
-                <div class="flex items-center">
+                <div class="flex items-center gap-2">
+                    <a href="{{ (sf_help_links.docs_index if sf_help_links else 'https://github.com/yusufm/smallfactory/blob/main/docs/README.md') }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="hidden md:inline-flex items-center px-2 py-1 text-sm text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                       title="Open smallFactory docs on GitHub">
+                        <i class="fas fa-book mr-1.5"></i>Docs
+                    </a>
+                    <a href="{{ (sf_help_links.discord if sf_help_links else 'https://discord.gg/g3QSuVmvBt') }}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="hidden md:inline-flex items-center px-2 py-1 text-sm text-gray-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
+                       title="Join the smallFactory Discord community">
+                        <i class="fab fa-discord mr-1.5"></i>Community
+                    </a>
                     {# SaaS desktop partial (if provided by SF_EXTRA_TEMPLATES) #}
                     {% include 'saas/nav.html' ignore missing %}
                     <div class="relative hidden md:block">
@@ -95,6 +109,12 @@
                 </a>
                 <a href="{{ url_for('announcements') }}" class="{% if request.endpoint == 'announcements' %}bg-blue-50 border-blue-500 text-blue-700{% else %}border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800{% endif %} block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
                     <i class="fas fa-message mr-2"></i>Messages
+                </a>
+                <a href="{{ (sf_help_links.docs_index if sf_help_links else 'https://github.com/yusufm/smallfactory/blob/main/docs/README.md') }}" target="_blank" rel="noopener noreferrer" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fas fa-book mr-2"></i>Docs
+                </a>
+                <a href="{{ (sf_help_links.discord if sf_help_links else 'https://discord.gg/g3QSuVmvBt') }}" target="_blank" rel="noopener noreferrer" class="border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-800 block pl-3 pr-4 py-2 border-l-4 text-base font-medium">
+                    <i class="fab fa-discord mr-2"></i>Community
                 </a>
                 {# SaaS mobile partial (if provided by SF_EXTRA_TEMPLATES) #}
                 {% include 'saas/mobile_nav.html' ignore missing %}

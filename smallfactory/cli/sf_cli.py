@@ -60,8 +60,32 @@ from smallfactory.core.v1.stickers import (
 from smallfactory.core.v1.validate import validate_repo
 
 
+DEFAULT_GITHUB_REPO_URL = os.getenv("SF_GITHUB_REPO_URL", "https://github.com/yusufm/smallfactory").rstrip("/")
+DEFAULT_CLI_DOCS_URL = os.getenv("SF_CLI_DOCS_URL", f"{DEFAULT_GITHUB_REPO_URL}/blob/main/docs/cli/README.md")
+DEFAULT_DISCORD_URL = os.getenv("SF_DISCORD_URL", "https://discord.gg/g3QSuVmvBt")
+
+
+def _help_footer() -> str:
+    return (
+        "Help & Community:\n"
+        f"  CLI docs: {DEFAULT_CLI_DOCS_URL}\n"
+        f"  Discord: {DEFAULT_DISCORD_URL}"
+    )
+
+
 class SFArgumentParser(argparse.ArgumentParser):
     """ArgumentParser that prints full help on error instead of short usage."""
+    HELP_FOOTER = _help_footer()
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", argparse.RawDescriptionHelpFormatter)
+        epilog = kwargs.get("epilog")
+        if epilog:
+            kwargs["epilog"] = f"{epilog}\n\n{self.HELP_FOOTER}"
+        else:
+            kwargs["epilog"] = self.HELP_FOOTER
+        super().__init__(*args, **kwargs)
+
     def error(self, message):
         self.print_help()
         sys.stderr.write(f"\nError: {message}\n")

@@ -118,6 +118,8 @@ if _extra_tpl_dir and os.path.isdir(_extra_tpl_dir):
 # App Version (Git) helper
 # -----------------------
 _APP_VERSION_CACHE: dict | None = None
+DEFAULT_GITHUB_REPO_URL = os.environ.get("SF_GITHUB_REPO_URL", "https://github.com/yusufm/smallfactory").rstrip("/")
+DEFAULT_DISCORD_URL = os.environ.get("SF_DISCORD_URL", "https://discord.gg/g3QSuVmvBt")
 
 def _get_project_root() -> Path:
     try:
@@ -225,7 +227,11 @@ def inject_app_version():
         ver = _read_app_version()
     except Exception:
         ver = {'hash': None, 'short': None, 'date': None, 'dirty': False, 'branch': None}
-    return {'app_version': ver}
+    help_links = {
+        "docs_index": os.environ.get("SF_DOCS_INDEX_URL", f"{DEFAULT_GITHUB_REPO_URL}/blob/main/docs/README.md"),
+        "discord": DEFAULT_DISCORD_URL,
+    }
+    return {'app_version': ver, 'sf_help_links': help_links}
 
 # -----------------------
 # Jinja Filters / Helpers
