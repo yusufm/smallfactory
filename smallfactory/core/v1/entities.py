@@ -138,8 +138,15 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
         if d.is_dir() and d.name == sfid:
             raise FileExistsError(f"Entity '{sfid}' already exists")
 
-    fp = root / sfid / "entity.yml"
-    fp.parent.mkdir(parents=True, exist_ok=True)
+    (root / sfid).mkdir(parents=True, exist_ok=True)
+    ent_dir = None
+    for d in root.iterdir():
+        if d.is_dir() and d.name == sfid:
+            ent_dir = d
+            break
+    if ent_dir is None:
+        raise RuntimeError(f"Failed to initialize entity directory for '{sfid}'")
+    fp = ent_dir / "entity.yml"
     data: Dict = {}
     if fields:
         # Do not persist 'sfid' within entity.yml; identity is directory name
@@ -151,7 +158,7 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     data_to_write.pop("sfid", None)
     # Atomic write via temp file in target directory.
     tmp_path = None
-    with tempfile.NamedTemporaryFile("w", dir=fp.parent, delete=False) as tf:
+    with tempfile.NamedTemporaryFile("w", dir=ent_dir, delete=False) as tf:
         yaml.safe_dump(data_to_write, tf, sort_keys=False)
         tmp_path = Path(tf.name)
     if tmp_path is None:
@@ -161,11 +168,6 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     paths_to_commit = [fp]
     try:
         if sfid.startswith("p_"):
-            ent_dir = None
-            for d in root.iterdir():
-                if d.is_dir() and d.name == sfid:
-                    ent_dir = d
-                    break
             if ent_dir is not None:
                 revisions = ent_dir / "revisions"
                 revisions.mkdir(parents=True, exist_ok=True)
