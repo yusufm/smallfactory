@@ -48,12 +48,12 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
         sfid = child.name
         try:
             validate_sfid(sfid)
-        except Exception as e:
+        except Exception:
             issues.append({
                 "severity": "error",
                 "code": "ENT_SFID_INVALID",
                 "path": f"entities/{sfid}/",
-                "message": f"Invalid sfid directory name: {e}"
+                "message": "Invalid sfid directory name"
             })
             continue
         entity_yml = child / "entity.yml"
@@ -143,12 +143,12 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                         else:
                             try:
                                 validate_sfid(use)
-                            except Exception as e:
+                            except Exception:
                                 issues.append({
                                     "severity": "error",
                                     "code": "ENT_BOM_USE_SFID_INVALID",
                                     "path": _rel(entity_yml, repo),
-                                    "message": f"bom item {idx}: invalid SFID in 'use': {e}"
+                                    "message": f"bom item {idx}: invalid SFID in 'use'"
                                 })
                             if not (repo / "entities" / use / "entity.yml").exists():
                                 issues.append({
@@ -207,12 +207,12 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                                         continue
                                     try:
                                         validate_sfid(aus)
-                                    except Exception as e:
+                                    except Exception:
                                         issues.append({
                                             "severity": "error",
                                             "code": "ENT_BOM_ALT_SFID_INVALID",
                                             "path": _rel(entity_yml, repo),
-                                            "message": f"bom item {idx} alt {a_idx}: invalid SFID in 'use': {e}"
+                                            "message": f"bom item {idx} alt {a_idx}: invalid SFID in 'use'"
                                         })
                                         continue
                                     if not (repo / "entities" / aus / "entity.yml").exists():
@@ -324,12 +324,12 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
             else:
                 try:
                     validate_sfid(loc)
-                except Exception as e:
+                except Exception:
                     issues.append({
                         "severity": "error",
                         "code": "INV_DEFAULT_LOCATION_INVALID",
                         "path": "sfdatarepo.yml",
-                        "message": f"sfdatarepo.yml: invalid inventory.default_location sfid: {e}"
+                        "message": "sfdatarepo.yml: invalid inventory.default_location sfid"
                     })
                 if not (repo / "entities" / loc / "entity.yml").exists():
                     issues.append({
@@ -432,12 +432,12 @@ def _scan_inventory(repo: Path, issues: List[Dict]) -> None:
                         else:
                             try:
                                 validate_sfid(loc)
-                            except Exception as e:
+                            except Exception:
                                 issues.append({
                                     "severity": "error",
                                     "code": "INV_LOCATION_SFID_INVALID",
                                     "path": _rel(j, repo),
-                                    "message": f"Line {idx}: invalid location sfid: {e}"
+                                    "message": f"Line {idx}: invalid location sfid"
                                 })
                             if not (repo / "entities" / loc / "entity.yml").exists():
                                 issues.append({

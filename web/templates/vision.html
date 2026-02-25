@@ -92,8 +92,15 @@
   });
 
   function preview(file) {
-    const url = URL.createObjectURL(file);
-    previewImg.src = url;
+    if (!/^image\//.test(file.type || '')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (dataUrl.startsWith('data:image/')) {
+        previewImg.src = dataUrl;
+      }
+    };
+    reader.readAsDataURL(file);
     previewWrap.classList.remove('hidden');
     imgInfo.textContent = `${file.name} · ${(file.size/1024/1024).toFixed(2)} MB · ${file.type || 'image'}`;
   }
