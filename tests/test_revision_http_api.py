@@ -156,3 +156,22 @@ def test_revisions_get_lists_released_and_draft(web_mod):
     m2 = next((m for m in revs if (m.get("id") or m.get("rev")) == "2"), {})
     assert m1.get("status") == "released"
     assert m2.get("status") == "draft"
+
+
+def test_revisions_bump_endpoint_accepts_custom_label(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+
+    create_entity(repo, "p_http_custom", {"name": "HTTP Custom Rev"})
+    client = app.test_client()
+
+    r = client.post("/api/entities/p_http_custom/revisions/bump", json={"rev": "A01", "notes": "custom"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body.get("success") is True
+    assert body.get("rev") == "A01"
+
+    released_fp = repo / "entities" / "p_http_custom" / "refs" / "released"
+    assert released_fp.exists()
+    assert released_fp.read_text().strip() == "A01"

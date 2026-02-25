@@ -453,7 +453,7 @@ Algorithm (conceptual):
 
 ## Commands (minimal surface)
 ```
-sf entities revision bump <sfid> [--notes "..."]
+sf entities revision bump <sfid> [--rev <label>] [--notes "..."]
 sf entities revision release <sfid> <revision> [--released-at <ISO8601>]
 sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
 sf build units mint <b_sfid> --qty <n>
@@ -649,4 +649,3 @@ An optional, explicit registry of alternates groups may be maintained for determ
 - Resolver behavior with `alternates_group`:
   - Consider `members` in listed order and select the first member whose `refs/released` exists and is valid; otherwise error.
   - If the catalog file is missing, the resolver will error when an `alternates_group` is encountered.
-

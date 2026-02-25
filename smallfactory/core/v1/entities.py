@@ -615,15 +615,23 @@ def resolved_bom_tree(datarepo_path: Path, root_sfid: str, *, max_depth: Optiona
     return _build_bom_tree_nodes(datarepo_path, root_sfid, max_depth=max_depth)
 
 
-def bump_revision(datarepo_path: Path, sfid: str, *, notes: Optional[str] = None) -> dict:
-    """Convenience: cut the next draft revision label and return revision info.
+def bump_revision(
+    datarepo_path: Path,
+    sfid: str,
+    *,
+    rev: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> dict:
+    """Convenience: cut a draft revision label and return revision info.
 
+    - If rev is provided, it is used as-is after normalization.
+    - If rev is omitted, the next numeric label is computed from filesystem state.
     This no longer flips the released pointer; it creates a draft snapshot per SPEC.
     """
     _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
-    label = _compute_next_label_from_fs(datarepo_path, sfid)
+    label = _normalize_revision_label(rev) if rev is not None else _compute_next_label_from_fs(datarepo_path, sfid)
     # Create the draft snapshot
     cut_revision(datarepo_path, sfid, label, notes=notes)
     # Return info plus the newly created label so callers can immediately release it

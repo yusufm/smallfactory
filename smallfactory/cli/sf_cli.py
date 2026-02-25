@@ -166,8 +166,9 @@ def main():
     ent_rev = ent_sub.add_parser("revision", help="Revision operations for part entities")
     rev_sub = ent_rev.add_subparsers(dest="rev_cmd", required=False, parser_class=SFArgumentParser)
 
-    ent_rev_bump = rev_sub.add_parser("bump", help="Create and immediately release the next revision for a part")
+    ent_rev_bump = rev_sub.add_parser("bump", help="Create and immediately release a revision for a part")
     ent_rev_bump.add_argument("sfid", help="Part SFID (e.g., p_widget)")
+    ent_rev_bump.add_argument("--rev", default=None, help="Optional revision label (defaults to next numeric label)")
     ent_rev_bump.add_argument("--notes", default=None, help="Optional notes for revision metadata (applied to snapshot and release)")
     ent_rev_bump.add_argument("--released-at", dest="released_at", default=None, help="ISO datetime for release (default now)")
 
@@ -985,7 +986,12 @@ def main():
         datarepo_path = _repo_path()
         try:
             # Cut next snapshot (draft), then immediately release it
-            res_bump = ent_bump_revision(datarepo_path, args.sfid, notes=getattr(args, "notes", None))
+            res_bump = ent_bump_revision(
+                datarepo_path,
+                args.sfid,
+                rev=getattr(args, "rev", None),
+                notes=getattr(args, "notes", None),
+            )
             new_rev = res_bump.get("new_rev")
             if not new_rev:
                 raise RuntimeError("failed to determine new revision label")
