@@ -45,12 +45,6 @@ def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     raise FileNotFoundError(f"Entity '{sfid}' not found")
 
 
-def _entity_file_for_create(datarepo_path: Path, sfid: str) -> Path:
-    _validate_sfid_local(sfid)
-    root = _entities_dir(datarepo_path)
-    return root / sfid / "entity.yml"
-
-
 def _read_yaml(p: Path) -> dict:
     with open(p) as f:
         return yaml.safe_load(f) or {}
@@ -130,13 +124,20 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
 def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None) -> dict:
     if not sfid:
         raise ValueError("sfid is required")
-    _validate_sfid_local(sfid)
-    try:
-        _ = _entity_file(datarepo_path, sfid)
-        raise FileExistsError(f"Entity '{sfid}' already exists")
-    except FileNotFoundError:
-        pass
-    fp = _entity_file_for_create(datarepo_path, sfid)
+    # Keep central validator as source of truth, and perform explicit local guarding
+    # at this path sink to satisfy static dataflow checks.
+    validate_sfid(sfid)
+    if re.fullmatch(SFID_REGEX, sfid) is None:
+        raise ValueError("Invalid sfid")
+    if "/" in sfid or "\\" in sfid or sfid in {".", ".."}:
+        raise ValueError("Invalid sfid")
+
+    root = _entities_dir(datarepo_path)
+    for d in root.iterdir():
+        if d.is_dir() and d.name == sfid:
+            raise FileExistsError(f"Entity '{sfid}' already exists")
+
+    fp = root / sfid / "entity.yml"
     fp.parent.mkdir(parents=True, exist_ok=True)
     data: Dict = {}
     if fields:
@@ -147,34 +148,12 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     # Ensure 'sfid' not written
     data_to_write = dict(data)
     data_to_write.pop("sfid", None)
-    _write_yaml(fp, data_to_write)
-    # Optional scaffold for parts (p_*) per PLM SPEC (files/, revisions/, refs/)
-    # We create empty directories with .gitkeep files so Git tracks them.
+    with open(fp, "w") as f:
+        yaml.safe_dump(data_to_write, f, sort_keys=False)
+
     paths_to_commit = [fp]
-    try:
-        if sfid.startswith("p_"):
-            root_dir = fp.parent
-            # files subtree: do not pre-create any subdirectories under files/
-            # The files/ root will be lazily created by file APIs when used.
-            # revisions dir (no snapshots yet)
-            revisions = root_dir / "revisions"
-            revisions.mkdir(parents=True, exist_ok=True)
-            rev_keep = revisions / ".gitkeep"
-            if not rev_keep.exists():
-                rev_keep.write_text("")
-            paths_to_commit.append(rev_keep)
-            # refs dir (no 'released' pointer yet)
-            refs = root_dir / "refs"
-            refs.mkdir(parents=True, exist_ok=True)
-            refs_keep = refs / ".gitkeep"
-            if not refs_keep.exists():
-                refs_keep.write_text("")
-            paths_to_commit.append(refs_keep)
-    except Exception:
-        # Non-fatal: scaffolding is optional; proceed with entity creation even if it fails.
-        pass
     commit_msg = f"[smallFactory] Created entity {sfid}\n::sfid::{sfid}"
-    # Commit entity.yml and any scaffold placeholders
+    # Commit canonical entity metadata file.
     git_commit_paths(datarepo_path, paths_to_commit, commit_msg)
     data_ret = dict(data_to_write)
     data_ret["sfid"] = sfid
