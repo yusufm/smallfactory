@@ -155,7 +155,7 @@ class TestSetRemote:
         set_remote(tmp_path, "https://github.com/test/repo.git")
         r = subprocess.run(["git", "remote", "-v"], cwd=tmp_path, capture_output=True, text=True)
         assert "origin" in r.stdout
-        assert "github.com" in r.stdout
+        assert "https://github.com/test/repo.git" in r.stdout
 
     def test_empty_url_is_noop(self, tmp_path: Path):
         init_git_repo(tmp_path)
