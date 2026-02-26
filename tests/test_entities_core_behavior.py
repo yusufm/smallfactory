@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-import sys
 
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo
 from smallfactory.core.v1.entities import (
     create_entity,
     delete_entity,
@@ -19,16 +16,10 @@ from smallfactory.core.v1.entities import (
 )
 
 
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
-
-
 def test_create_part_entity_scaffolds_revision_and_refs_dirs(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     created = create_entity(repo, "p_widget", {"name": "Widget"})
     assert created["sfid"] == "p_widget"
@@ -47,7 +38,7 @@ def test_create_part_entity_scaffolds_revision_and_refs_dirs(tmp_path: Path):
 def test_entity_specs_are_enforced_on_create_and_update(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     (repo / "sfdatarepo.yml").write_text(
         (
@@ -87,7 +78,7 @@ def test_entity_specs_are_enforced_on_create_and_update(tmp_path: Path):
 def test_retire_sets_metadata_and_hard_delete_is_disallowed(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     create_entity(repo, "p_legacy", {"name": "Legacy"})
 

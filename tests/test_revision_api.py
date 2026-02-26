@@ -1,11 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
-import sys
+
 import yaml
 
-# Ensure package importable
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo
 from smallfactory.core.v1.entities import (
     create_entity,
     get_revisions,
@@ -22,6 +20,7 @@ def read_yaml(p: Path) -> dict:
 
 def test_bump_and_release_revision_flow(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
+    init_git_repo(repo)
     # Create a part entity
     ent = create_entity(repo, "p_rev", {"name": "Rev Part"})
     assert ent["sfid"] == "p_rev"
@@ -71,6 +70,7 @@ def test_bump_and_release_revision_flow(tmp_path: Path):
 
 def test_cut_with_custom_and_numeric_sequence(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
+    init_git_repo(repo)
     create_entity(repo, "p_seq", {"name": "Seq Part"})
 
     # Cut an alpha label explicitly
@@ -90,6 +90,7 @@ def test_cut_with_custom_and_numeric_sequence(tmp_path: Path):
 
 def test_bump_with_custom_label(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
+    init_git_repo(repo)
     create_entity(repo, "p_seq_custom", {"name": "Seq Custom"})
 
     # Explicit label through bump should be accepted.

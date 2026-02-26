@@ -1,35 +1,20 @@
 from __future__ import annotations
 import io
 from pathlib import Path
-import importlib.util
 
 import pytest
 from PIL import Image
 
-# Ensure project root on sys.path so 'smallfactory' is importable when running pytest
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import import_web_app_module
 
 # Skip these tests entirely if Flask is not installed
 pytest.importorskip("flask", reason="Flask not installed; web API tests skipped")
 
 
-def _import_web_app_module() -> object:
-    web_app_path = Path(__file__).resolve().parents[1] / "web" / "app.py"
-    spec = importlib.util.spec_from_file_location("sf_web_app", str(web_app_path))
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    # Make project root importable similar to app.py behavior
-    sys.path.insert(0, str(web_app_path.parent.parent))
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod
-
-
 @pytest.fixture()
 def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     # Import the web app module
-    mod = _import_web_app_module()
+    mod = import_web_app_module()
 
     # Point get_datarepo_path at a temp dir (not used by vision tests but keeps consistency)
     repo = tmp_path / "repo"
