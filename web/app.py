@@ -88,10 +88,17 @@ def _api_exception_response(
     except Exception:
         pass
     error_message = public_message
+    # Only surface exception text for known safe types that we raise
+    # intentionally for validation / user errors.  Unexpected exceptions
+    # keep the generic public_message to avoid leaking internal details.
+    _SAFE_EXC_TYPES = (ValueError, FileNotFoundError, KeyError, IndexError,
+                       FileExistsError, IsADirectoryError, NotADirectoryError,
+                       PermissionError, OSError, RuntimeError)
     if public_message == "Request failed" and status < 500:
-        detail = str(exc).strip()
-        if detail:
-            error_message = detail
+        if isinstance(exc, _SAFE_EXC_TYPES):
+            detail = str(exc).strip().split("\n", 1)[0]  # first line only
+            if detail:
+                error_message = detail
     payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
