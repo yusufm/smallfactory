@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
-import sys
 
 import pytest
 import yaml
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo, git_commit_count
 from smallfactory.core.v1.entities import create_entity
 from smallfactory.core.v1.inventory import (
     inventory_onhand,
@@ -17,19 +14,6 @@ from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_rebuild,
 )
-
-
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
-
-
-def _git_commit_count(root: Path) -> int:
-    r = subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=root, capture_output=True, text=True)
-    if r.returncode != 0:
-        return 0
-    return int((r.stdout or "0").strip() or "0")
 
 
 def _write_journal(repo: Path, part: str, rows: list[dict]) -> Path:
@@ -44,7 +28,7 @@ def _write_journal(repo: Path, part: str, rows: list[dict]) -> Path:
 def repo(tmp_path: Path) -> Path:
     p = tmp_path / "repo"
     p.mkdir(parents=True)
-    _init_git_repo(p)
+    init_git_repo(p)
     create_entity(p, "p_inv", {"name": "Inventory Part", "uom": "pcs"})
     create_entity(p, "l_main", {"name": "Main"})
     create_entity(p, "l_overflow", {"name": "Overflow"})
@@ -141,9 +125,9 @@ def test_inventory_rebuild_recreates_all_caches_from_journals(repo: Path):
         ],
     )
 
-    before = _git_commit_count(repo)
+    before = git_commit_count(repo)
     rebuilt = inventory_rebuild(repo)
-    after = _git_commit_count(repo)
+    after = git_commit_count(repo)
 
     assert rebuilt["parts"] == ["p_inv", "p_other"]
     assert rebuilt["locations"] == ["l_main", "l_overflow"]

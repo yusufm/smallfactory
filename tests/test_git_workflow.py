@@ -9,17 +9,8 @@ import types
 
 import pytest
 
-# Ensure project root on sys.path so 'smallfactory' package is importable when running pytest
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo
 from smallfactory.core.v1.gitutils import git_commit_paths
-
-
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # Configure minimal identity for commits
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
 
 
 def _git_has_commit(root: Path) -> bool:
@@ -35,7 +26,7 @@ def _git_last_commit_message(root: Path) -> str:
 def test_git_commit_paths_commit_only(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     # Create a file and commit via git_commit_paths
     entities_dir = repo / "entities" / "p_widget"
@@ -54,7 +45,7 @@ def test_git_commit_paths_commit_only(tmp_path: Path):
 def test_git_commit_paths_noop_when_nothing_to_commit(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     entities_dir = repo / "entities" / "p_widget"
     entities_dir.mkdir(parents=True)
@@ -72,7 +63,7 @@ def test_git_commit_paths_noop_when_nothing_to_commit(tmp_path: Path):
     assert second == first
 
 
-@pytest.mark.skipif(pytest.importorskip("flask", reason="Flask not installed; web txn tests skipped") is None, reason="Flask not installed")
+@pytest.mark.skipif(not importlib.util.find_spec("flask"), reason="Flask not installed; web txn tests skipped")
 def test_run_repo_txn_autocommit_on_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Dynamically import web/app.py to access _run_repo_txn without starting the server
     web_app_path = Path(__file__).resolve().parents[1] / "web" / "app.py"
@@ -88,7 +79,7 @@ def test_run_repo_txn_autocommit_on_off(tmp_path: Path, monkeypatch: pytest.Monk
 
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     # Common mutate: create file under entities path
     target_dir = repo / "entities" / "p_test"

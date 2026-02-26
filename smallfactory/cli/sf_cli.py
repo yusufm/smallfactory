@@ -1256,12 +1256,8 @@ def main():
 
     def cmd_web(args):
         try:
-            # Import Flask app here to avoid import issues if Flask isn't installed
-            import sys
-            from pathlib import Path
-            
             # Add the project root to Python path for web imports
-            project_root = Path(__file__).parent.parent.parent
+            project_root = pathlib.Path(__file__).parent.parent.parent
             sys.path.insert(0, str(project_root))
             
             from web.app import app

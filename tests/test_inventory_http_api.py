@@ -1,49 +1,22 @@
 from __future__ import annotations
 
-import importlib.util
-import subprocess
 from pathlib import Path
-import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo, git_commit_count, import_web_app_module
 from smallfactory.core.v1.entities import create_entity
 
 pytest.importorskip("flask", reason="Flask not installed; web API tests skipped")
-
-
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
-
-
-def _git_commit_count(root: Path) -> int:
-    r = subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=root, capture_output=True, text=True)
-    if r.returncode != 0:
-        return 0
-    return int((r.stdout or "0").strip() or "0")
-
-
-def _import_web_app_module() -> object:
-    web_app_path = Path(__file__).resolve().parents[1] / "web" / "app.py"
-    spec = importlib.util.spec_from_file_location("sf_web_app", str(web_app_path))
-    assert spec and spec.loader
-    mod = importlib.util.module_from_spec(spec)
-    sys.path.insert(0, str(web_app_path.parent.parent))
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod
 
 
 @pytest.fixture()
 def web_mod(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
-    mod = _import_web_app_module()
+    mod = import_web_app_module()
     monkeypatch.setattr(mod, "get_datarepo_path", lambda: repo)
     monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
     return mod
@@ -103,9 +76,9 @@ def test_api_inventory_adjust_delta_zero_is_noop_and_onhand_requires_sfid(web_mo
     assert missing_body.get("success") is False
     assert "Missing required parameter: sfid" in (missing_body.get("error") or "")
 
-    before = _git_commit_count(repo)
+    before = git_commit_count(repo)
     noop = client.post("/api/inventory/adjust", json={"sfid": "p_zero", "l_sfid": "l_main", "delta": 0})
-    after = _git_commit_count(repo)
+    after = git_commit_count(repo)
     assert noop.status_code == 200
     body = noop.get_json() or {}
     assert body.get("success") is True

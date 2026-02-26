@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import io
-import subprocess
 from pathlib import Path
-import sys
 import zipfile
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo
 from smallfactory.core.v1.entities import create_entity
 from smallfactory.core.v1.files import (
     delete_file,
@@ -23,17 +20,11 @@ from smallfactory.core.v1.files import (
 )
 
 
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
-
-
 @pytest.fixture()
 def repo(tmp_path: Path) -> Path:
     p = tmp_path / "repo"
     p.mkdir(parents=True)
-    _init_git_repo(p)
+    init_git_repo(p)
     create_entity(p, "p_files", {"name": "Files Part"})
     return p
 

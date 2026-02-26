@@ -4,7 +4,6 @@ import json
 import yaml
 import time
 import os
-import random
 from typing import Optional, List, Dict, Tuple
 from collections import defaultdict
 
@@ -49,9 +48,6 @@ def _validate_location_sfid(location_sfid: str) -> None:
 
 def _part_dir(datarepo_path: Path, part_sfid: str) -> Path:
     validate_sfid(part_sfid)
-    if not part_sfid.startswith("p_"):
-        # Allow any part-like sfid; SPEC recognizes p_ for parts in v0.1
-        pass
     d = ensure_inventory_dir(datarepo_path) / part_sfid
     d.mkdir(parents=True, exist_ok=True)
     return d

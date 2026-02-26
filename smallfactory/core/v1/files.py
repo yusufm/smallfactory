@@ -365,6 +365,5 @@ def zip_files(
                             continue
                         arc = str(child.relative_to(root)).replace("\\", "/")
                         zf.write(child, arcname=arc)
-    zf.close()
     buf.seek(0)
     return buf.getvalue()

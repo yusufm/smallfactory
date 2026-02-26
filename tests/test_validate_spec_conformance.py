@@ -1,26 +1,18 @@
 from __future__ import annotations
 import os
-import sys
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
-# Ensure project root on sys.path so 'smallfactory' package is importable when running pytest
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
+from conftest import init_git_repo
 from smallfactory.core.v1.validate import validate_repo
 
 
 # -----------------
 # Helpers
 # -----------------
-
-def _init_git_repo(root: Path) -> None:
-    subprocess.run(["git", "init"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=root, check=True)
 
 
 def _git_commit_all(root: Path, msg: str) -> None:
@@ -243,7 +235,7 @@ def test_inventory_journal_validation(tmp_path: Path):
 def test_git_commit_token_required(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     # Touch entities file and commit WITHOUT ::sfid:: token
     _write(repo / "entities" / "p_x" / "entity.yml", "name: X\n")
@@ -256,7 +248,7 @@ def test_git_commit_token_required(tmp_path: Path):
 def test_git_commit_token_present_allows_plm_commit(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    _init_git_repo(repo)
+    init_git_repo(repo)
 
     # Use a core API that commits with ::sfid::<sfid> in the message
     from smallfactory.core.v1.entities import create_entity
