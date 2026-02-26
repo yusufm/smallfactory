@@ -88,12 +88,13 @@ def _api_exception_response(
     except Exception:
         pass
     error_message = public_message
-    # Only surface exception text for known safe types that we raise
-    # intentionally for validation / user errors.  Unexpected exceptions
-    # keep the generic public_message to avoid leaking internal details.
-    _SAFE_EXC_TYPES = (ValueError, FileNotFoundError, KeyError, IndexError,
-                       FileExistsError, IsADirectoryError, NotADirectoryError,
-                       PermissionError, OSError, RuntimeError)
+    # Only surface exception text for narrow validation types that core
+    # code raises intentionally for user-facing errors.  Everything else
+    # (RuntimeError, OSError and subclasses, etc.) keeps the generic
+    # public_message so internal details like paths and git stderr stay
+    # server-side.
+    _SAFE_EXC_TYPES = (ValueError, KeyError, IndexError,
+                       FileNotFoundError, FileExistsError)
     if public_message == "Request failed" and status < 500:
         if isinstance(exc, _SAFE_EXC_TYPES):
             detail = str(exc).strip().split("\n", 1)[0]  # first line only
