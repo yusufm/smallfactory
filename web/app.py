@@ -88,10 +88,18 @@ def _api_exception_response(
     except Exception:
         pass
     error_message = public_message
+    # Only surface exception text for narrow validation types that core
+    # code raises intentionally for user-facing errors.  Everything else
+    # (RuntimeError, OSError and subclasses, etc.) keeps the generic
+    # public_message so internal details like paths and git stderr stay
+    # server-side.
+    _SAFE_EXC_TYPES = (ValueError, KeyError, IndexError,
+                       FileNotFoundError, FileExistsError)
     if public_message == "Request failed" and status < 500:
-        detail = str(exc).strip()
-        if detail:
-            error_message = detail
+        if isinstance(exc, _SAFE_EXC_TYPES):
+            detail = str(exc).strip().split("\n", 1)[0]  # first line only
+            if detail:
+                error_message = detail
     payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
