@@ -268,3 +268,129 @@ class TestEntityFilesApi:
             json={"path": "docs"},
         )
         assert resp.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Build Journal API (GET/append events, tags editing)
+# ---------------------------------------------------------------------------
+
+class TestBuildJournalApi:
+
+    def test_append_and_get_events(self, client):
+        create_entity(_repo(client), "b_unit_001", {"name": "Build Unit 001"})
+
+        r1 = client.post(
+            "/api/entities/b_unit_001/events/append",
+            json={
+                "event": {
+                    "tags": ["repair_request"],
+                    "target": "p_lan9514",
+                    "reason": "No USB enumeration",
+                }
+            },
+        )
+        assert r1.status_code == 200
+        d1 = r1.get_json()
+        assert d1["success"] is True
+        assert d1["event"]["id"]
+
+        r3 = client.get("/api/entities/b_unit_001/events")
+        assert r3.status_code == 200
+        d3 = r3.get_json()
+        assert d3["success"] is True
+        events = d3["events"]
+        assert isinstance(events, list)
+        assert len(events) == 1
+        assert events[0]["tags"] == ["repair_request"]
+
+    def test_append_event_rejects_non_build_sfid(self, client):
+        create_entity(_repo(client), "p_widget", {"name": "Widget"})
+        resp = client.post(
+            "/api/entities/p_widget/events/append",
+            json={"event": {"tags": ["log"], "message": "hello"}},
+        )
+        assert resp.status_code == 400
+
+    def test_get_events_rejects_non_build_sfid(self, client):
+        create_entity(_repo(client), "p_widget2", {"name": "Widget 2"})
+        resp = client.get("/api/entities/p_widget2/events")
+        assert resp.status_code == 400
+
+    def test_tags_optional_and_editable(self, client):
+        create_entity(_repo(client), "b_unit_002", {"name": "Build Unit 002"})
+
+        r1 = client.post(
+            "/api/entities/b_unit_002/events/append",
+            json={"event": {"message": "Operator note"}},
+        )
+        assert r1.status_code == 200
+        d1 = r1.get_json()
+        assert d1["success"] is True
+        event_id = d1["event"]["id"]
+        assert d1["event"]["tags"] == []
+
+        r2 = client.post(
+            f"/api/entities/b_unit_002/events/{event_id}/tags",
+            json={"tags": ["qa_review", "retest"]},
+        )
+        assert r2.status_code == 200
+        d2 = r2.get_json()
+        assert d2["success"] is True
+        assert d2["event"]["tags"] == ["qa_review", "retest"]
+        assert d2["event"]["message"] == "Operator note"
+
+    def test_update_event_entry(self, client):
+        create_entity(_repo(client), "b_unit_004", {"name": "Build Unit 004"})
+        r1 = client.post(
+            "/api/entities/b_unit_004/events/append",
+            json={"event": {"tags": ["note"], "message": "before"}},
+        )
+        assert r1.status_code == 200
+        event_id = r1.get_json()["event"]["id"]
+
+        r2 = client.post(
+            f"/api/entities/b_unit_004/events/{event_id}/update",
+            json={
+                    "event": {
+                    "tags": ["qa_review"],
+                    "message": "after",
+                    "files": ["event attachments/test/evidence.txt"],
+                }
+            },
+        )
+        assert r2.status_code == 200
+        d2 = r2.get_json()
+        assert d2["success"] is True
+        assert d2["event"]["id"] == event_id
+        assert d2["event"]["tags"] == ["qa_review"]
+        assert d2["event"]["message"] == "after"
+        assert d2["event"]["files"] == ["event attachments/test/evidence.txt"]
+
+    def test_attach_file_link_to_event(self, client):
+        create_entity(_repo(client), "b_unit_003", {"name": "Build Unit 003"})
+
+        r1 = client.post(
+            "/api/entities/b_unit_003/events/append",
+            json={"event": {"message": "Attach test file"}},
+        )
+        assert r1.status_code == 200
+        ev_id = r1.get_json()["event"]["id"]
+
+        up = client.post(
+            "/api/entities/b_unit_003/files/upload",
+            data={"file": (io.BytesIO(b"abc"), "evidence.txt"), "path": f"event attachments/{ev_id}/evidence.txt"},
+            content_type="multipart/form-data",
+        )
+        assert up.status_code == 200
+        up_data = up.get_json()
+        assert up_data["success"] is True
+        linked_path = up_data["result"]["path"]
+
+        lk = client.post(
+            f"/api/entities/b_unit_003/events/{ev_id}/files/link",
+            json={"path": linked_path},
+        )
+        assert lk.status_code == 200
+        lk_data = lk.get_json()
+        assert lk_data["success"] is True
+        assert linked_path in (lk_data["event"].get("files") or [])

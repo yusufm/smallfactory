@@ -254,6 +254,40 @@ python3 sf.py entities files mv p_widget drawings/file.pdf drawings/file_rename.
 python3 sf.py entities files mv p_widget drawings drawings_v2 --dir --overwrite
 ```
 
+### events
+
+Manage build events for `b_*` entities.
+
+```bash
+# List events
+python3 sf.py entities events ls b_2024_0001
+
+# Append an event with tags
+python3 sf.py entities events append b_2024_0001 message="Bench test failed" --tags repair,task_open
+
+# Append and link existing files/ paths
+python3 sf.py entities events append b_2024_0001 message="Added evidence" \
+  --file "event attachments/evt_demo/log.txt" \
+  --file "event attachments/evt_demo/scope.png"
+
+# Append and upload local files in one command
+python3 sf.py entities events append b_2024_0001 message="Created with uploads" \
+  --upload ./captures/log.txt \
+  --upload ./captures/scope.png
+
+# Update fields on an event
+python3 sf.py entities events update b_2024_0001 evt_20260227193308 message="Reworked and retested"
+
+# Replace tags on an event
+python3 sf.py entities events tags b_2024_0001 evt_20260227193308 --tags repair,measurement
+
+# Link a files/ path to an existing event
+python3 sf.py entities events link-file b_2024_0001 evt_20260227193308 "event attachments/evt_20260227193308/photo.png"
+```
+
+Notes:
+- Event storage is `entities/<b_sfid>/events.jsonl` (JSON Lines), not `entity.yml`.
+
 ## bom (Bill of Materials)
 
 Operate on a parent part's BOM.

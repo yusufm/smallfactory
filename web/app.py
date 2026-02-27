@@ -43,6 +43,10 @@ from smallfactory.core.v1.entities import (
     create_entity,
     update_entity_fields,
     retire_entity,
+    append_build_event,
+    update_build_event,
+    update_build_event_tags,
+    add_build_event_file_link,
     # Revisions
     get_revisions,
     bump_revision,
@@ -2499,6 +2503,111 @@ def api_entities_update(sfid):
         return jsonify({'success': True, 'entity': updated})
     except Exception as e:
         return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/events', methods=['GET'])
+def api_entities_events_get(sfid):
+    """Get events for a build entity."""
+    try:
+        if not str(sfid).startswith('b_'):
+            raise ValueError("Build events are only supported for build entities ('b_*')")
+        datarepo_path = get_datarepo_path()
+        entity = get_entity(datarepo_path, sfid)
+        events = entity.get('events')
+        if events is None:
+            events = []
+        if not isinstance(events, list):
+            raise ValueError("Entity field 'events' must be a list")
+        out = [dict(ev) for ev in events if isinstance(ev, dict)]
+        return jsonify({'success': True, 'sfid': sfid, 'events': out})
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/events/append', methods=['POST'])
+def api_entities_events_append(sfid):
+    """Append a build event to entities/<b_...>/events.jsonl."""
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            raise ValueError('Invalid payload')
+        event = payload.get('event') if isinstance(payload.get('event'), dict) else payload
+        if not isinstance(event, dict) or not event:
+            raise ValueError('No event provided')
+        def _mutate():
+            return append_build_event(datarepo_path, sfid, event)
+        out = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+        )
+        return jsonify({'success': True, 'sfid': sfid, 'event': out.get('event'), 'events': out.get('events', [])})
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/events/<event_id>/tags', methods=['POST'])
+def api_entities_event_set_tags(sfid, event_id):
+    """Update only tags for a build journal event."""
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            payload = {}
+        tags = payload.get('tags')
+        def _mutate():
+            return update_build_event_tags(datarepo_path, sfid, event_id, tags)
+        out = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+        )
+        return jsonify({'success': True, 'sfid': sfid, 'event': out.get('event'), 'events': out.get('events', [])})
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/events/<event_id>/update', methods=['POST'])
+def api_entities_event_update(sfid, event_id):
+    """Update a build journal event payload (tags/details/files/etc)."""
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            payload = {}
+        event = payload.get('event') if isinstance(payload.get('event'), dict) else payload
+        if not isinstance(event, dict):
+            raise ValueError('event must be an object')
+        event.pop('id', None)
+        def _mutate():
+            return update_build_event(datarepo_path, sfid, event_id, event)
+        out = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+        )
+        return jsonify({'success': True, 'sfid': sfid, 'event': out.get('event'), 'events': out.get('events', [])})
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/events/<event_id>/files/link', methods=['POST'])
+def api_entities_event_link_file(sfid, event_id):
+    """Link an existing files/<path> item to a build journal event."""
+    try:
+        datarepo_path = get_datarepo_path()
+        payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
+        if not isinstance(payload, dict):
+            payload = {}
+        path = payload.get('path')
+        def _mutate():
+            return add_build_event_file_link(datarepo_path, sfid, event_id, str(path or ""))
+        out = _run_repo_txn(
+            datarepo_path,
+            _mutate,
+        )
+        return jsonify({'success': True, 'sfid': sfid, 'event': out.get('event'), 'events': out.get('events', [])})
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
 
 @app.route('/api/entities/<sfid>/revisions', methods=['GET'])
 def api_revisions_get(sfid):

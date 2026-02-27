@@ -5,6 +5,7 @@ import pathlib
 import json
 import yaml
 import datetime
+import uuid
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
@@ -38,6 +39,10 @@ from smallfactory.core.v1.entities import (
     bom_alt_add as ent_bom_alt_add,
     bom_alt_remove as ent_bom_alt_remove,
     resolved_bom_view as ent_resolved_bom_view,
+    append_build_event as ent_append_build_event,
+    update_build_event as ent_update_build_event,
+    update_build_event_tags as ent_update_build_event_tags,
+    add_build_event_file_link as ent_add_build_event_file_link,
 )
 # Files core API
 from smallfactory.core.v1.files import (
@@ -241,6 +246,48 @@ def main():
     ef_mv.add_argument("dst", help="Destination path (relative to files/)")
     ef_mv.add_argument("--dir", action="store_true", help="Treat paths as directories (move_dir)")
     ef_mv.add_argument("--overwrite", action="store_true", help="Overwrite destination if exists")
+
+    # entities > events group (build event tracking)
+    ent_events = ent_sub.add_parser("events", help="Manage build events")
+    events_sub = ent_events.add_subparsers(dest="events_cmd", required=False, parser_class=SFArgumentParser)
+
+    ev_ls = events_sub.add_parser("ls", help="List events for a build entity")
+    ev_ls.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+
+    ev_append = events_sub.add_parser("append", help="Append a build event")
+    ev_append.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    ev_append.add_argument("pairs", nargs="*", help="key=value event fields (e.g., message=Started target=p_uut)")
+    ev_append.add_argument("--tags", default=None, help="Comma-separated tags (optional)")
+    ev_append.add_argument(
+        "--file",
+        dest="files",
+        action="append",
+        default=None,
+        help="Attach a files/ relative path at creation time (repeatable)",
+    )
+    ev_append.add_argument(
+        "--upload",
+        dest="uploads",
+        action="append",
+        default=None,
+        help="Upload local file and attach it at creation (repeatable)",
+    )
+
+    ev_update = events_sub.add_parser("update", help="Update an existing build event")
+    ev_update.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    ev_update.add_argument("event_id", help="Event ID to update")
+    ev_update.add_argument("pairs", nargs="*", help="key=value event fields to set")
+    ev_update.add_argument("--tags", default=None, help="Comma-separated tags (optional)")
+
+    ev_tags = events_sub.add_parser("tags", help="Replace tags on an event")
+    ev_tags.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    ev_tags.add_argument("event_id", help="Event ID to modify")
+    ev_tags.add_argument("--tags", required=True, help="Comma-separated tags (use empty string to clear)")
+
+    ev_link = events_sub.add_parser("link-file", help="Link a files/ path to an event")
+    ev_link.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
+    ev_link.add_argument("event_id", help="Event ID to modify")
+    ev_link.add_argument("path", help="Path under files/ to link (e.g., event attachments/evt_.../evidence.txt)")
 
     # bom group (bill of materials ops)
     bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
@@ -1004,6 +1051,130 @@ def main():
         root = _files_root_name(datarepo_path, args.sfid)
         _print_or_dump(res, human_line=f"[smallFactory] Moved {kind} within {root}: {args.src} -> {args.dst} on '{args.sfid}'")
 
+    # Entities > Events handlers
+    def _parse_csv_tags(raw: str | None):
+        if raw is None:
+            return None
+        return [s.strip() for s in str(raw).split(",") if s.strip()]
+
+    def cmd_entities_events_ls(args):
+        datarepo_path = _repo_path()
+        try:
+            ent = ent_get_entity(datarepo_path, args.sfid)
+            events = ent.get("events")
+            if events is None:
+                events = []
+            if not isinstance(events, list):
+                raise ValueError("Entity field 'events' must be a list")
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(events, human_line=f"[smallFactory] {args.sfid} has {len(events)} event(s)")
+
+    def cmd_entities_events_append(args):
+        datarepo_path = _repo_path()
+        event = _parse_pairs(getattr(args, "pairs", []))
+        tags = _parse_csv_tags(getattr(args, "tags", None))
+        if tags is not None:
+            event["tags"] = tags
+        try:
+            _ = ent_get_entity(datarepo_path, args.sfid)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        if not str(args.sfid).startswith("b_"):
+            print("[smallFactory] Error: Build events are only supported for build entities ('b_*')")
+            sys.exit(1)
+        files = getattr(args, "files", None)
+        file_links = [str(p).strip() for p in (files or []) if str(p).strip()]
+        uploads = getattr(args, "uploads", None) or []
+        if uploads:
+            ev_id = str(event.get("id") or "").strip()
+            if not ev_id:
+                ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+                ev_id = f"evt_{ts}_{uuid.uuid4().hex[:6]}"
+                event["id"] = ev_id
+            seen_names = set()
+            for up in uploads:
+                src = pathlib.Path(str(up)).expanduser()
+                if not src.exists() or not src.is_file():
+                    print(f"[smallFactory] Error: upload source file not found: {src}")
+                    sys.exit(2)
+                name = src.name
+                stem = src.stem
+                suf = src.suffix
+                cand = name
+                i = 1
+                while cand in seen_names:
+                    cand = f"{stem}_{i}{suf}"
+                    i += 1
+                seen_names.add(cand)
+                dst = f"event attachments/{ev_id}/{cand}"
+                try:
+                    up_res = f_upload_file(
+                        datarepo_path,
+                        args.sfid,
+                        path=dst,
+                        file_bytes=src.read_bytes(),
+                        overwrite=False,
+                    )
+                except Exception as e:
+                    print(f"[smallFactory] Error: {e}")
+                    sys.exit(1)
+                file_links.append(up_res.get("path") or dst)
+        if file_links:
+            dedup = []
+            seen = set()
+            for p in file_links:
+                if p in seen:
+                    continue
+                seen.add(p)
+                dedup.append(p)
+            event["files"] = dedup
+        if not event:
+            print("[smallFactory] Error: no event fields provided (use key=value pairs and/or --tags)")
+            sys.exit(2)
+        try:
+            res = ent_append_build_event(datarepo_path, args.sfid, event)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Appended event on '{args.sfid}'")
+
+    def cmd_entities_events_update(args):
+        datarepo_path = _repo_path()
+        event = _parse_pairs(getattr(args, "pairs", []))
+        tags = _parse_csv_tags(getattr(args, "tags", None))
+        if tags is not None:
+            event["tags"] = tags
+        try:
+            res = ent_update_build_event(datarepo_path, args.sfid, args.event_id, event)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Updated event '{args.event_id}' on '{args.sfid}'")
+
+    def cmd_entities_events_tags(args):
+        datarepo_path = _repo_path()
+        tags = _parse_csv_tags(getattr(args, "tags", None))
+        if tags is None:
+            tags = []
+        try:
+            res = ent_update_build_event_tags(datarepo_path, args.sfid, args.event_id, tags)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Updated tags for event '{args.event_id}' on '{args.sfid}'")
+
+    def cmd_entities_events_link_file(args):
+        datarepo_path = _repo_path()
+        try:
+            res = ent_add_build_event_file_link(datarepo_path, args.sfid, args.event_id, args.path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        _print_or_dump(res, human_line=f"[smallFactory] Linked file to event '{args.event_id}' on '{args.sfid}'")
+
 
     # Entities > Revision handlers
     def cmd_entities_rev_bump(args):
@@ -1311,6 +1482,8 @@ def main():
             sub = f"files:{getattr(args, 'files_cmd', None)}"
         elif ent_sc == "build":
             sub = f"build:{getattr(args, 'build_cmd', None)}"
+        elif ent_sc == "events":
+            sub = f"events:{getattr(args, 'events_cmd', None)}"
         else:
             sub = ent_sc
     elif cmd == "bom":
@@ -1343,6 +1516,11 @@ def main():
         ("entities", "files:mv"): cmd_entities_files_mv,
         ("entities", "build:serial"): cmd_entities_build_serial,
         ("entities", "build:datetime"): cmd_entities_build_datetime,
+        ("entities", "events:ls"): cmd_entities_events_ls,
+        ("entities", "events:append"): cmd_entities_events_append,
+        ("entities", "events:update"): cmd_entities_events_update,
+        ("entities", "events:tags"): cmd_entities_events_tags,
+        ("entities", "events:link-file"): cmd_entities_events_link_file,
         ("bom", "ls"): cmd_bom_ls,
         ("bom", "list"): cmd_bom_ls,
         ("bom", "add"): cmd_bom_add,
