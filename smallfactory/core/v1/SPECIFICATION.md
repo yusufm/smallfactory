@@ -169,7 +169,6 @@ Build event schema (normative):
 - `tags` (array of strings): optional freeform labels; values are normalized to lowercase and deduplicated.
 - `files` (array of relative paths): optional links to files under `entities/<b_sfid>/files/`.
 - Additional fields are allowed and treated as generic event payload.
-- `type` and `kind` are not used.
 - `entity.yml` MUST NOT be used as event storage, and tooling MUST read/write only `events.jsonl`.
 
 Interface parity (normative):
