@@ -58,16 +58,16 @@ sf entities events ls <b_sfid>
 ### Append event
 
 ```sh
-sf entities events append <b_sfid> [key=value ...] [--tags a,b] [--file <files/path>]... [--upload <local/path>]...
+sf entities events append <b_sfid> [--message <text>] [--tags a,b] [--file <files/path>]... [--upload <local/path>]...
 # examples
-sf entities events append b_2024_0001 message="Bench fail" --tags repair,task_open
-sf entities events append b_2024_0001 message="With uploads" --upload ./evidence/log.txt --upload ./evidence/scope.png
+sf entities events append b_2024_0001 --message "Bench fail" --tags repair,task_open
+sf entities events append b_2024_0001 --message "With uploads" --upload ./evidence/log.txt --upload ./evidence/scope.png
 ```
 
 ### Update event
 
 ```sh
-sf entities events update <b_sfid> <event_id> [key=value ...] [--tags a,b]
+sf entities events update <b_sfid> <event_id> [--message <text>] [--tags a,b]
 ```
 
 ### Replace tags
@@ -84,6 +84,7 @@ sf entities events link-file <b_sfid> <event_id> <files/path>
 
 Notes:
 - Stored in `entities/<b_sfid>/events.jsonl`.
+- Allowed event fields are fixed: `id`, `ts`, `tags`, `message`, `files`.
 
 ## Notes
 

@@ -54,7 +54,7 @@ def test_cli_events_ls_matches_api(env, monkeypatch: pytest.MonkeyPatch):
     _run_cli_json(
         monkeypatch,
         sf_cli,
-        ["entities", "events", "append", "b_evt_001", "message=first", "target=p_uut", "--tags", "repair,task_open"],
+        ["entities", "events", "append", "b_evt_001", "--message", "first", "--tags", "repair,task_open"],
     )
 
     cli_events = _run_cli_json(monkeypatch, sf_cli, ["entities", "events", "ls", "b_evt_001"])
@@ -77,7 +77,7 @@ def test_api_and_cli_event_mutations_are_consistent(env, monkeypatch: pytest.Mon
     _run_cli_json(
         monkeypatch,
         sf_cli,
-        ["entities", "events", "update", "b_evt_002", event_id, "message=after", "operator=alice"],
+        ["entities", "events", "update", "b_evt_002", event_id, "--message", "after"],
     )
     _run_cli_json(
         monkeypatch,
@@ -119,7 +119,7 @@ def test_cli_events_append_delegates_to_core(env, monkeypatch: pytest.MonkeyPatc
     out = _run_cli_json(
         monkeypatch,
         sf_cli,
-        ["entities", "events", "append", "b_evt_mock", "message=ok", "--tags", "repair"],
+        ["entities", "events", "append", "b_evt_mock", "--message", "ok", "--tags", "repair"],
     )
     assert out == expected
 
@@ -136,7 +136,8 @@ def test_cli_append_supports_files_at_creation(env, monkeypatch: pytest.MonkeyPa
             "events",
             "append",
             "b_evt_003",
-            "message=created_with_files",
+            "--message",
+            "created_with_files",
             "--tags",
             "repair",
             "--file",
@@ -167,7 +168,8 @@ def test_cli_append_uploads_files_at_creation(env, monkeypatch: pytest.MonkeyPat
             "events",
             "append",
             "b_evt_004",
-            "message=created_with_uploads",
+            "--message",
+            "created_with_uploads",
             "--upload",
             str(src1),
             "--upload",

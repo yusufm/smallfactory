@@ -263,20 +263,20 @@ Manage build events for `b_*` entities.
 python3 sf.py entities events ls b_2024_0001
 
 # Append an event with tags
-python3 sf.py entities events append b_2024_0001 message="Bench test failed" --tags repair,task_open
+python3 sf.py entities events append b_2024_0001 --message "Bench test failed" --tags repair,task_open
 
 # Append and link existing files/ paths
-python3 sf.py entities events append b_2024_0001 message="Added evidence" \
+python3 sf.py entities events append b_2024_0001 --message "Added evidence" \
   --file "event attachments/evt_demo/log.txt" \
   --file "event attachments/evt_demo/scope.png"
 
 # Append and upload local files in one command
-python3 sf.py entities events append b_2024_0001 message="Created with uploads" \
+python3 sf.py entities events append b_2024_0001 --message "Created with uploads" \
   --upload ./captures/log.txt \
   --upload ./captures/scope.png
 
 # Update fields on an event
-python3 sf.py entities events update b_2024_0001 evt_20260227193308 message="Reworked and retested"
+python3 sf.py entities events update b_2024_0001 evt_20260227193308 --message "Reworked and retested"
 
 # Replace tags on an event
 python3 sf.py entities events tags b_2024_0001 evt_20260227193308 --tags repair,measurement
@@ -287,6 +287,7 @@ python3 sf.py entities events link-file b_2024_0001 evt_20260227193308 "event at
 
 Notes:
 - Event storage is `entities/<b_sfid>/events.jsonl` (JSON Lines).
+- Allowed event fields are fixed: `id`, `ts`, `tags`, `message`, `files`.
 
 ## bom (Bill of Materials)
 

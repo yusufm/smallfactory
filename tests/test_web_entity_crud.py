@@ -284,8 +284,7 @@ class TestBuildJournalApi:
             json={
                 "event": {
                     "tags": ["repair_request"],
-                    "target": "p_lan9514",
-                    "reason": "No USB enumeration",
+                    "message": "No USB enumeration",
                 }
             },
         )
@@ -302,6 +301,14 @@ class TestBuildJournalApi:
         assert isinstance(events, list)
         assert len(events) == 1
         assert events[0]["tags"] == ["repair_request"]
+
+    def test_append_rejects_unknown_event_fields(self, client):
+        create_entity(_repo(client), "b_unit_006", {"name": "Build Unit 006"})
+        r1 = client.post(
+            "/api/entities/b_unit_006/events/append",
+            json={"event": {"message": "x", "target": "p_uut"}},
+        )
+        assert r1.status_code == 400
 
     def test_append_event_rejects_non_build_sfid(self, client):
         create_entity(_repo(client), "p_widget", {"name": "Widget"})

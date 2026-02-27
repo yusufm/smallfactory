@@ -1102,9 +1102,37 @@ def _build_events_from_entity(datarepo_path: Path, sfid: str) -> List[dict]:
     for e in events:
         if isinstance(e, dict):
             rec = dict(e)
+            _validate_event_fields(rec)
             rec["tags"] = _normalize_event_tags(rec.get("tags"))
+            msg = _normalize_event_message(rec.get("message"))
+            if msg is None:
+                rec.pop("message", None)
+            else:
+                rec["message"] = msg
+            if "files" in rec:
+                rec["files"] = _normalize_event_files(rec.get("files"))
             out.append(rec)
     return out
+
+
+_ALLOWED_EVENT_FIELDS = {"id", "ts", "tags", "message", "files"}
+
+
+def _validate_event_fields(event: Dict) -> None:
+    unknown = sorted([k for k in event.keys() if k not in _ALLOWED_EVENT_FIELDS])
+    if unknown:
+        raise ValueError(f"Unsupported event field(s): {', '.join(unknown)}")
+
+
+def _normalize_event_message(message):
+    if message is None:
+        return None
+    if not isinstance(message, str):
+        raise ValueError("Event field 'message' must be a string")
+    m = message.strip()
+    if not m:
+        return None
+    return m
 
 
 def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
@@ -1126,7 +1154,15 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
     events = _build_events_from_entity(datarepo_path, sfid)
 
     rec = dict(event)
+    _validate_event_fields(rec)
     rec["tags"] = _normalize_event_tags(rec.get("tags"))
+    msg = _normalize_event_message(rec.get("message"))
+    if msg is None:
+        rec.pop("message", None)
+    else:
+        rec["message"] = msg
+    if "files" in rec:
+        rec["files"] = _normalize_event_files(rec.get("files"))
     if not str(rec.get("id") or "").strip():
         rec["id"] = _build_event_id(events, prefix="evt")
     if not str(rec.get("ts") or "").strip():
@@ -1232,7 +1268,13 @@ def update_build_event(
     rec.update(dict(event))
     rec["id"] = eid
 
+    _validate_event_fields(rec)
     rec["tags"] = _normalize_event_tags(rec.get("tags"))
+    msg = _normalize_event_message(rec.get("message"))
+    if msg is None:
+        rec.pop("message", None)
+    else:
+        rec["message"] = msg
 
     if not str(rec.get("ts") or "").strip():
         rec["ts"] = str(current.get("ts") or datetime.now(timezone.utc).isoformat())

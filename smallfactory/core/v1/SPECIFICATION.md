@@ -159,16 +159,17 @@ Build events are stored separately from `entity.yml` in `entities/<b_sfid>/event
 
 Example `entities/b_2025_0001/events.jsonl`:
 ```json
-{"id":"evt_20260227193308","ts":"2026-02-27T19:33:08.816883+00:00","tags":["repair","task_open"],"message":"No USB enumeration","target":"p_lan9514"}
-{"id":"evt_20260227201510","ts":"2026-02-27T20:15:10.104201+00:00","tags":["measurement"],"message":"Iddq at 3.5V","value":0.0845,"lbound":0.005,"ubound":0.15}
+{"id":"evt_20260227193308","ts":"2026-02-27T19:33:08.816883+00:00","tags":["repair","task_open"],"message":"No USB enumeration"}
+{"id":"evt_20260227201510","ts":"2026-02-27T20:15:10.104201+00:00","tags":["measurement"],"message":"Iddq at 3.5V","files":["event attachments/evt_20260227201510/scope.png"]}
 ```
 
 Build event schema (normative):
 - `id` (string): event identifier, immutable once created.
 - `ts` (ISO datetime string): event timestamp.
 - `tags` (array of strings): optional freeform labels; values are normalized to lowercase and deduplicated.
+- `message` (string): optional event details text.
 - `files` (array of relative paths): optional links to files under `entities/<b_sfid>/files/`.
-- Additional fields are allowed and treated as generic event payload.
+- No other event fields are allowed.
 - `entity.yml` MUST NOT be used as event storage, and tooling MUST read/write only `events.jsonl`.
 
 Interface parity (normative):

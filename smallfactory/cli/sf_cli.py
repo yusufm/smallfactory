@@ -256,7 +256,7 @@ def main():
 
     ev_append = events_sub.add_parser("append", help="Append a build event")
     ev_append.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
-    ev_append.add_argument("pairs", nargs="*", help="key=value event fields (e.g., message=Started target=p_uut)")
+    ev_append.add_argument("--message", default=None, help="Event message/details")
     ev_append.add_argument("--tags", default=None, help="Comma-separated tags (optional)")
     ev_append.add_argument(
         "--file",
@@ -276,7 +276,7 @@ def main():
     ev_update = events_sub.add_parser("update", help="Update an existing build event")
     ev_update.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
     ev_update.add_argument("event_id", help="Event ID to update")
-    ev_update.add_argument("pairs", nargs="*", help="key=value event fields to set")
+    ev_update.add_argument("--message", default=None, help="Event message/details")
     ev_update.add_argument("--tags", default=None, help="Comma-separated tags (optional)")
 
     ev_tags = events_sub.add_parser("tags", help="Replace tags on an event")
@@ -1073,7 +1073,10 @@ def main():
 
     def cmd_entities_events_append(args):
         datarepo_path = _repo_path()
-        event = _parse_pairs(getattr(args, "pairs", []))
+        event = {}
+        msg = str(getattr(args, "message", "") or "").strip()
+        if msg:
+            event["message"] = msg
         tags = _parse_csv_tags(getattr(args, "tags", None))
         if tags is not None:
             event["tags"] = tags
@@ -1132,7 +1135,7 @@ def main():
                 dedup.append(p)
             event["files"] = dedup
         if not event:
-            print("[smallFactory] Error: no event fields provided (use key=value pairs and/or --tags)")
+            print("[smallFactory] Error: no event fields provided (use --message/--tags/--file/--upload)")
             sys.exit(2)
         try:
             res = ent_append_build_event(datarepo_path, args.sfid, event)
@@ -1143,10 +1146,15 @@ def main():
 
     def cmd_entities_events_update(args):
         datarepo_path = _repo_path()
-        event = _parse_pairs(getattr(args, "pairs", []))
+        event = {}
+        if getattr(args, "message", None) is not None:
+            event["message"] = str(getattr(args, "message", "") or "")
         tags = _parse_csv_tags(getattr(args, "tags", None))
         if tags is not None:
             event["tags"] = tags
+        if not event:
+            print("[smallFactory] Error: no updates provided (use --message and/or --tags)")
+            sys.exit(2)
         try:
             res = ent_update_build_event(datarepo_path, args.sfid, args.event_id, event)
         except Exception as e:

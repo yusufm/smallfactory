@@ -116,7 +116,7 @@ def test_build_events_append(tmp_path: Path):
     out = append_build_event(
         repo,
         "b_widget_001",
-        {"tags": ["repair_request"], "target": "p_lan9514", "reason": "No USB enum"},
+        {"tags": ["repair_request"], "message": "No USB enum"},
     )
     ev = out["event"]
     assert ev["tags"] == ["repair_request"]
@@ -219,3 +219,12 @@ def test_build_event_full_update(tmp_path: Path):
     assert updated["message"] == "after"
     assert updated["files"] == ["event attachments/test/a.txt", "event attachments/test/b.txt"]
 
+
+def test_build_event_rejects_unknown_fields(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    create_entity(repo, "b_widget_006", {"name": "Build Widget 006"})
+    with pytest.raises(ValueError, match="Unsupported event field"):
+        append_build_event(repo, "b_widget_006", {"message": "x", "target": "p_uut"})
