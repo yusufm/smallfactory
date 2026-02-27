@@ -286,7 +286,7 @@ python3 sf.py entities events link-file b_2024_0001 evt_20260227193308 "event at
 ```
 
 Notes:
-- Event storage is `entities/<b_sfid>/events.jsonl` (JSON Lines), not `entity.yml`.
+- Event storage is `entities/<b_sfid>/events.jsonl` (JSON Lines).
 
 ## bom (Bill of Materials)
 
