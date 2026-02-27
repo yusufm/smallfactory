@@ -1,12 +1,10 @@
 """Regression tests for _api_exception_response sanitization.
 
 Verifies that:
-- Expected validation exceptions (ValueError, KeyError, etc.) surface their
-  message in 4xx responses so the UI stays actionable.
+- Exception text is never exposed to API callers by default.
 - Unexpected / internal exceptions (RuntimeError, OSError, PermissionError,
   generic Exception) are redacted to a generic message.
 - 5xx responses never leak exception details regardless of type.
-- Multi-line exception text is truncated to the first line only.
 - Custom public_message and hint pass through unchanged.
 """
 from __future__ import annotations
@@ -38,29 +36,7 @@ def _call(mod, exc, status=400, public_message="Request failed", hint=None):
 
 
 # ---------------------------------------------------------------------------
-# Safe types: message SHOULD surface in 4xx responses
-# ---------------------------------------------------------------------------
-
-class TestSafeTypesExposed:
-
-    @pytest.mark.parametrize("exc", [
-        ValueError("Invalid SFID format"),
-        KeyError("missing_field"),
-        IndexError("BOM line 99 out of range"),
-        FileNotFoundError("Entity p_ghost not found"),
-        FileExistsError("Entity p_dup already exists"),
-    ])
-    def test_validation_error_surfaces_in_400(self, _app, exc):
-        data, code = _call(_app, exc, status=400)
-        assert code == 400
-        assert data["success"] is False
-        # The user-facing detail must appear, not the generic fallback
-        assert data["error"] != "Request failed"
-        assert len(data["error"]) > 0
-
-
-# ---------------------------------------------------------------------------
-# Unsafe types: message MUST be redacted in 4xx responses
+# Exception text MUST be redacted in 4xx responses
 # ---------------------------------------------------------------------------
 
 class TestUnsafeTypesRedacted:
@@ -114,20 +90,6 @@ class TestFiveHundredAlwaysRedacted:
         data, code = _call(_app, exc, status=500)
         assert code == 500
         assert data["error"] == "Request failed"
-
-
-# ---------------------------------------------------------------------------
-# Multi-line truncation
-# ---------------------------------------------------------------------------
-
-class TestMultiLineTruncation:
-
-    def test_multiline_valueerror_truncated(self, _app):
-        exc = ValueError("first line\nsecond line with /secret/path\nthird line")
-        data, _ = _call(_app, exc, status=400)
-        assert data["error"] == "first line"
-        assert "second line" not in data["error"]
-        assert "/secret/path" not in data["error"]
 
 
 # ---------------------------------------------------------------------------
