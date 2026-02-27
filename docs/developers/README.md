@@ -19,7 +19,6 @@ Code layout (high level):
   - `update_build_event_tags`
   - `add_build_event_file_link`
 - `entity.yml` is not used for event storage.
-- Event fields `type` and `kind` are unsupported; use `tags`.
 - Keep CLI/API behavior aligned with core:
   - API: `/api/entities/<sfid>/events*`
   - CLI: `sf entities events *`
