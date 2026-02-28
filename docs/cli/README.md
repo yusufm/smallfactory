@@ -51,6 +51,7 @@ Environment variables:
   - build: serial, datetime
   - revision: bump, release
   - files: ls, mkdir, rmdir, add, rm, mv
+  - events: ls, append, update, tags, link-file
 - **bom** — Bill of Materials operations
   - ls, add, rm (remove), set, alt-add, alt-rm
 - **stickers** — Generate a PDF of QR labels (batch)
