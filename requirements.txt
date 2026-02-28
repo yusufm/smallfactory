@@ -2,5 +2,6 @@ pyyaml
 pillow
 qrcode[pil]
 pydantic
+mcp
 pytest
 prometheus-client==0.20.0

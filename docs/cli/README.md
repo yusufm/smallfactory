@@ -43,6 +43,7 @@ Environment variables:
 
 - **init** — Initialize a new datarepo or clone an existing one
 - **web** — Start the web UI server
+- **mcp** — Start read-only MCP server (for Codex/Claude/Cursor/Windsurf)
 - **validate** — Validate datarepo against PLM SPEC
 - **inventory** — Inventory journal and reports
   - post, onhand, rebuild
@@ -86,6 +87,38 @@ python3 sf.py web --port 8080 --host 0.0.0.0 --debug
 ```
 
 - Flags: `--port`, `--host`, `--debug` (auto-reload)
+
+## mcp
+
+Start a read-only MCP server over your smallFactory data. This is the simplest path
+to "bring your own LLM client" workflows (Codex, Claude Desktop, Cursor, Windsurf).
+
+```bash
+# Uses -R/--repo if provided; otherwise default datarepo from .smallfactory.yml
+python3 sf.py mcp
+```
+
+Windsurf local MCP config example:
+
+```json
+{
+  "mcpServers": {
+    "smallfactory": {
+      "command": "python3",
+      "args": ["/ABS/PATH/to/smallfactory/sf.py", "--repo", "/ABS/PATH/to/datarepo", "mcp"]
+    }
+  }
+}
+```
+
+Available tools:
+- `repo_info`
+- `entities_search`
+- `entity_get`
+- `inventory_onhand`
+- `bom_resolved`
+- `build_events_list`
+- `analytics_query`
 
 ## validate
 

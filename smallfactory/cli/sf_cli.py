@@ -350,6 +350,15 @@ def main():
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
 
+    # mcp command (read-only MCP server)
+    mcp_parser = subparsers.add_parser("mcp", help="Start read-only MCP server for SmallFactory data")
+    mcp_parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio"],
+        help="MCP transport (default: stdio)",
+    )
+
     # validate command (repo linter)
     validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
     validate_parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
@@ -1492,6 +1501,17 @@ def main():
             print(f"❌ Error starting web UI: {e}")
             sys.exit(1)
 
+    def cmd_mcp(args):
+        try:
+            from smallfactory.mcp_server import run_mcp_server
+
+            run_mcp_server(repo=str(_repo_path()), transport=getattr(args, "transport", "stdio"))
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+
     # Dispatch via table
     cmd = args.command
 
@@ -1520,6 +1540,7 @@ def main():
     DISPATCH = {
         ("init", None): cmd_init,
         ("web", None): cmd_web,
+        ("mcp", None): cmd_mcp,
         ("validate", None): cmd_validate,
         ("inventory", "post"): cmd_inventory_post,
         ("inventory", "onhand"): cmd_inventory_onhand,
