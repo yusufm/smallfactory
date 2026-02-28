@@ -1470,11 +1470,11 @@ def main():
             if mcp_enabled:
                 try:
                     from starlette.routing import Mount
-                    from starlette.middleware.wsgi import WSGIMiddleware
+                    from a2wsgi import WSGIMiddleware
                     import uvicorn
                     from smallfactory.mcp_server import build_mcp_server
                 except Exception as e:
-                    print(f"❌ Error: integrated MCP requires ASGI deps (uvicorn/starlette): {e}")
+                    print(f"❌ Error: integrated MCP requires ASGI deps (uvicorn/starlette/a2wsgi): {e}")
                     print("   Install web dependencies: pip install -r web/requirements.txt")
                     sys.exit(1)
 
