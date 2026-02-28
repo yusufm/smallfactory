@@ -560,7 +560,7 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 2) `sf part revision cut p_adapter B && sf part revision release p_adapter B`
    - Only `entities/p_adapter/refs/released` changes to `"B"`.
 3) `sf resolve p_toaster_assembly`
-   - Uses `rev: released` pointers; no product files edited.
+   - Uses `rev: released` pointers; no part files edited.
 4) Produce units using the resolved BOM.
   - Work orders and builds reference the resolved state implicitly via repo commit and released pointers.
 
