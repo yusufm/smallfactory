@@ -57,7 +57,7 @@ $ python3 -m venv .venv && source .venv/bin/activate
 
 # Install CLI dependencies
 $ python3 -m pip install -r requirements.txt
-# Optional: Web UI dependencies (if you plan to run the web app)
+# Optional: Web UI + MCP dependencies (if you plan to run the web app / MCP endpoint)
 $ python3 -m pip install -r web/requirements.txt
 
 # Initialize by cloning the example datarepo

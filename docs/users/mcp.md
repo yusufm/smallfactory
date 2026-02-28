@@ -4,6 +4,12 @@ Use this guide to connect AI clients (Windsurf, Cursor, Claude Desktop, Codex) t
 
 ## Run smallFactory with MCP enabled
 
+Install web dependencies first (includes MCP runtime):
+
+```bash
+python3 -m pip install -r web/requirements.txt
+```
+
 From the project root:
 
 ```bash
