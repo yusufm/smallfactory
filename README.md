@@ -131,6 +131,22 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 - **Custom fields & tags** — Capture the details that matter to your business.
 - **Simple onboarding** — Start in minutes with an example repository.
 
+### AI / MCP
+- **Integrated MCP endpoint** — Run once with `sf.py web`; MCP is served at `/mcp` on the same port.
+- **BYO AI client** — Connect Windsurf, Cursor, Claude Desktop, Codex, and other MCP-compatible clients.
+- **Read-only analytics tools** — Query entities, inventory, BOM, build events, and aggregated repair trends.
+- **Resource compatibility** — Includes MCP resources for clients/modes that prefer resource reads over tool calls.
+
+Quick start:
+
+```bash
+python3 -m pip install -r web/requirements.txt
+python3 sf.py web --port 8080
+# MCP endpoint: http://127.0.0.1:8080/mcp
+```
+
+See full setup + client configs: [MCP integration guide](docs/users/mcp.md)
+
 ## GET endpoints are pure (no side effects)
 
 - All HTTP GET routes avoid cache writes and Git mutations.
@@ -143,6 +159,7 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 - [The smallFactory Story](docs/meta/the-smallfactory-story.md)
 - [Start Here](docs/START_HERE.md)
 - [Users docs](docs/users/README.md)
+- [MCP integration guide](docs/users/mcp.md)
 - [Build events guide](docs/users/events.md)
 - [Developers docs](docs/developers/README.md)
 - [Web UI docs](web/README.md)
