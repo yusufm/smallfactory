@@ -94,6 +94,13 @@ Top‑level directories (recap):
   - Re-implement domain logic (e.g., BOM traversal, revision snapshotting, release handling, validation).
   - Depend on core internals or private helpers (names prefixed with `_`); only public core functions are allowed.
 
+### MCP Integrations (normative)
+
+- MCP servers (local or remote) are non-core integration layers and MUST follow the same rule:
+  - All reads/writes MUST go through public core APIs.
+  - MCP layers MUST NOT read/write repository files directly.
+- If MCP exposes read-only tools/resources, those interfaces SHOULD return stable JSON shapes within a major version.
+
 ### Required Core APIs (examples)
 
 - Revisions (in `smallfactory/core/v1/entities.py`):

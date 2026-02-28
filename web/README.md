@@ -46,6 +46,10 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 4. **Access the interface**:
    Open your browser to `http://localhost:8080`
 
+5. **(Optional) Connect AI clients via MCP**:
+   - MCP endpoint (streamable HTTP): `http://localhost:8080/mcp`
+   - See detailed client setup examples: `docs/users/mcp.md`
+
 ## Development
 
 To run in development mode with auto-reload:
