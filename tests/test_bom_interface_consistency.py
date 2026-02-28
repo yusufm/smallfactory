@@ -63,7 +63,7 @@ def test_cli_bom_ls_matches_api_bom_deep_nodes(env, monkeypatch: pytest.MonkeyPa
 
     bom_add_line(repo, "p_root", use="p_mid", qty=2, rev="released")
     bom_add_line(repo, "p_mid", use="p_leaf", qty=3, rev="released")
-    inventory_post(repo, "p_leaf", 4, location="l_main")
+    inventory_post(repo, "p_leaf", 4, l_sfid="l_main")
 
     client = web_mod.app.test_client()
 

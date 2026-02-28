@@ -44,23 +44,23 @@ class TestDefaultLocationResolution:
 
     def test_uses_default_when_location_omitted(self, repo: Path):
         _set_default_location(repo, "l_main")
-        result = inventory_post(repo, "p_bolt", 5, location=None)
+        result = inventory_post(repo, "p_bolt", 5, l_sfid=None)
         assert result["location"] == "l_main"
 
     def test_explicit_location_overrides_default(self, repo: Path):
         _set_default_location(repo, "l_main")
-        result = inventory_post(repo, "p_bolt", 3, location="l_spare")
+        result = inventory_post(repo, "p_bolt", 3, l_sfid="l_spare")
         assert result["location"] == "l_spare"
 
     def test_no_default_and_no_location_raises(self, repo: Path):
         # No sfdatarepo.yml => no default
         with pytest.raises(ValueError, match="location is required"):
-            inventory_post(repo, "p_bolt", 5, location=None)
+            inventory_post(repo, "p_bolt", 5, l_sfid=None)
 
     def test_invalid_location_prefix_raises(self, repo: Path):
         create_entity(repo, "p_not_a_loc", {"name": "Not Location"})
         with pytest.raises(ValueError, match="location must be.*l_"):
-            inventory_post(repo, "p_bolt", 1, location="p_not_a_loc")
+            inventory_post(repo, "p_bolt", 1, l_sfid="p_not_a_loc")
 
 
 # ---------------------------------------------------------------------------
@@ -76,11 +76,11 @@ class TestNegativeGuard:
             inventory_post(repo, "p_bolt", -4)
 
     def test_per_location_below_zero_rejected(self, repo: Path):
-        inventory_post(repo, "p_bolt", 5, location="l_main")
-        inventory_post(repo, "p_bolt", 3, location="l_spare")
+        inventory_post(repo, "p_bolt", 5, l_sfid="l_main")
+        inventory_post(repo, "p_bolt", 3, l_sfid="l_spare")
         # Total is 8, but l_spare only has 3 — removing 4 from l_spare should fail
         with pytest.raises(ValueError, match="below zero"):
-            inventory_post(repo, "p_bolt", -4, location="l_spare")
+            inventory_post(repo, "p_bolt", -4, l_sfid="l_spare")
 
     def test_exact_zero_allowed(self, repo: Path):
         _set_default_location(repo, "l_main")
@@ -102,11 +102,11 @@ class TestInventoryEntityValidation:
 
     def test_nonexistent_part_raises(self, repo: Path):
         with pytest.raises(FileNotFoundError, match="Part sfid"):
-            inventory_post(repo, "p_ghost", 1, location="l_main")
+            inventory_post(repo, "p_ghost", 1, l_sfid="l_main")
 
     def test_nonexistent_location_raises(self, repo: Path):
         with pytest.raises(FileNotFoundError, match="Location sfid"):
-            inventory_post(repo, "p_bolt", 1, location="l_nonexistent")
+            inventory_post(repo, "p_bolt", 1, l_sfid="l_nonexistent")
 
 
 # ---------------------------------------------------------------------------
@@ -131,8 +131,8 @@ class TestOnhandReadonly:
         assert not (repo / "inventory" / "p_bolt" / "onhand.generated.yml").exists()
 
     def test_readonly_by_location(self, repo: Path):
-        inventory_post(repo, "p_bolt", 5, location="l_main")
-        inventory_post(repo, "p_bolt", 3, location="l_spare")
+        inventory_post(repo, "p_bolt", 5, l_sfid="l_main")
+        inventory_post(repo, "p_bolt", 3, l_sfid="l_spare")
         result = inventory_onhand_readonly(repo, location="l_main")
         assert result["parts"]["p_bolt"] == 5
         assert result["total"] == 5
@@ -155,18 +155,18 @@ class TestOnhandReadonly:
 class TestMultiLocation:
 
     def test_post_to_multiple_locations(self, repo: Path):
-        inventory_post(repo, "p_bolt", 10, location="l_main")
-        inventory_post(repo, "p_bolt", 5, location="l_spare")
+        inventory_post(repo, "p_bolt", 10, l_sfid="l_main")
+        inventory_post(repo, "p_bolt", 5, l_sfid="l_spare")
         onhand = inventory_onhand(repo, part="p_bolt")
         assert onhand["total"] == 15
         assert onhand["by_location"]["l_main"] == 10
         assert onhand["by_location"]["l_spare"] == 5
 
     def test_transfer_between_locations(self, repo: Path):
-        inventory_post(repo, "p_bolt", 10, location="l_main")
+        inventory_post(repo, "p_bolt", 10, l_sfid="l_main")
         # "Transfer": remove from main, add to spare
-        inventory_post(repo, "p_bolt", -3, location="l_main")
-        inventory_post(repo, "p_bolt", 3, location="l_spare")
+        inventory_post(repo, "p_bolt", -3, l_sfid="l_main")
+        inventory_post(repo, "p_bolt", 3, l_sfid="l_spare")
         onhand = inventory_onhand(repo, part="p_bolt")
         assert onhand["by_location"]["l_main"] == 7
         assert onhand["by_location"]["l_spare"] == 3
@@ -180,8 +180,8 @@ class TestMultiLocation:
 class TestInventoryRebuild:
 
     def test_rebuild_regenerates_caches(self, repo: Path):
-        inventory_post(repo, "p_bolt", 5, location="l_main")
-        inventory_post(repo, "p_nut", 3, location="l_spare")
+        inventory_post(repo, "p_bolt", 5, l_sfid="l_main")
+        inventory_post(repo, "p_nut", 3, l_sfid="l_spare")
 
         result = inventory_rebuild(repo)
 
@@ -219,7 +219,7 @@ class TestCommitMetadata:
 
     def test_inventory_post_commit_includes_sfid_tokens(self, repo: Path):
         import subprocess
-        inventory_post(repo, "p_bolt", 5, location="l_main")
+        inventory_post(repo, "p_bolt", 5, l_sfid="l_main")
         log = subprocess.run(
             ["git", "log", "-1", "--pretty=%B"], cwd=repo,
             capture_output=True, text=True,

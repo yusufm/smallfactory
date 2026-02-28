@@ -227,7 +227,7 @@ def inventory_post(
     datarepo_path: Path,
     part: str,
     qty_delta: int,
-    location: Optional[str] = None,
+    l_sfid: Optional[str] = None,
     reason: Optional[str] = None,
 ) -> Dict:
     """Append an inventory journal entry per SPEC.
@@ -239,6 +239,7 @@ def inventory_post(
     validate_sfid(part)
     if not _entity_exists(datarepo_path, part):
         raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
+    location = l_sfid
     if location is None or not str(location).strip():
         location = _default_location(datarepo_path)
     if not location:
@@ -454,6 +455,8 @@ def inventory_onhand_readonly(
             "sfid": part_sfid,
             "uom": cache.get("uom", "ea") or "ea",
             "total": total_i,
+            "by_location": cache.get("by_location", {}) or {},
+            "as_of": cache.get("as_of") or _now_iso(),
         })
         grand_total += total_i
     return {"parts": parts_list, "total": grand_total}

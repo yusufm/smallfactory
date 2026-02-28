@@ -738,7 +738,7 @@ def main():
                 datarepo_path,
                 part=args.part,
                 qty_delta=args.qty_delta,
-                location=getattr(args, "l_sfid", None),
+                l_sfid=getattr(args, "l_sfid", None),
                 reason=getattr(args, "reason", None),
             )
         except Exception as e:
