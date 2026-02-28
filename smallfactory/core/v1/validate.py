@@ -5,10 +5,13 @@ import json
 import yaml
 import re
 import subprocess
+import os
+import ntpath
 
 from .config import validate_sfid, load_datarepo_config
 
 ULID_RE = re.compile(r"^[0-7][0-9A-HJKMNP-TV-Z]{25}$")
+_EVENT_ALLOWED_FIELDS = {"id", "ts", "tags", "message", "files"}
 
 
 def _rel(p: Path, root: Path) -> str:
@@ -21,6 +24,122 @@ def _rel(p: Path, root: Path) -> str:
 def _load_yaml(p: Path) -> dict:
     with open(p) as f:
         return yaml.safe_load(f) or {}
+
+
+def _is_abs_any(path_value: str) -> bool:
+    try:
+        return os.path.isabs(path_value) or ntpath.isabs(path_value)
+    except Exception:
+        return False
+
+
+def _scan_events_jsonl(repo: Path, sfid: str, events_fp: Path, issues: List[Dict]) -> None:
+    rel = _rel(events_fp, repo)
+    if not sfid.startswith("b_"):
+        issues.append({
+            "severity": "error",
+            "code": "ENT_EVENTS_NOT_BUILD",
+            "path": rel,
+            "message": "events.jsonl is only allowed for build entities (sfid starting with 'b_')",
+        })
+        return
+
+    seen_ids: set[str] = set()
+    try:
+        raw_lines = events_fp.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        issues.append({
+            "severity": "error",
+            "code": "ENT_EVENTS_JSON_INVALID",
+            "path": rel,
+            "message": "events.jsonl is unreadable or not valid UTF-8",
+        })
+        return
+
+    for ln, raw in enumerate(raw_lines, start=1):
+        line = str(raw or "").strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            issues.append({
+                "severity": "error",
+                "code": "ENT_EVENTS_JSON_INVALID",
+                "path": rel,
+                "message": f"line {ln}: invalid JSON object",
+            })
+            continue
+        if not isinstance(obj, dict):
+            issues.append({
+                "severity": "error",
+                "code": "ENT_EVENTS_JSON_INVALID",
+                "path": rel,
+                "message": f"line {ln}: event entry must be a JSON object",
+            })
+            continue
+
+        unknown = sorted([k for k in obj.keys() if k not in _EVENT_ALLOWED_FIELDS])
+        if unknown:
+            issues.append({
+                "severity": "error",
+                "code": "ENT_EVENTS_FIELD_UNKNOWN",
+                "path": rel,
+                "message": f"line {ln}: unsupported event field(s): {', '.join(unknown)}",
+            })
+
+        event_id = obj.get("id")
+        if not isinstance(event_id, str) or not event_id.strip():
+            issues.append({
+                "severity": "error",
+                "code": "ENT_EVENTS_ID_MISSING_OR_INVALID",
+                "path": rel,
+                "message": f"line {ln}: event 'id' is required and must be a valid SFID",
+            })
+        else:
+            try:
+                validate_sfid(event_id.strip())
+            except Exception:
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_EVENTS_ID_MISSING_OR_INVALID",
+                    "path": rel,
+                    "message": f"line {ln}: event 'id' is not a valid SFID",
+                })
+            else:
+                eid = event_id.strip()
+                if eid in seen_ids:
+                    issues.append({
+                        "severity": "warning",
+                        "code": "ENT_EVENTS_ID_DUPLICATE",
+                        "path": rel,
+                        "message": f"line {ln}: duplicate event id '{eid}'",
+                    })
+                else:
+                    seen_ids.add(eid)
+
+        if "files" in obj:
+            files = obj.get("files")
+            if not isinstance(files, list):
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_EVENTS_FILES_PATH_INVALID",
+                    "path": rel,
+                    "message": f"line {ln}: event 'files' must be a list of relative paths",
+                })
+            else:
+                for idx, fp in enumerate(files, start=1):
+                    p = str(fp or "").strip()
+                    if not p:
+                        continue
+                    norm = p.replace("\\", "/")
+                    if _is_abs_any(p) or ".." in norm.split("/"):
+                        issues.append({
+                            "severity": "error",
+                            "code": "ENT_EVENTS_FILES_PATH_INVALID",
+                            "path": rel,
+                            "message": f"line {ln}: files[{idx}] must be relative to files/ and cannot contain '..'",
+                        })
 
 
 def _scan_entities(repo: Path, issues: List[Dict]) -> None:
@@ -56,6 +175,9 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 "message": "Invalid sfid directory name"
             })
             continue
+        events_jsonl = child / "events.jsonl"
+        if events_jsonl.exists():
+            _scan_events_jsonl(repo, sfid, events_jsonl, issues)
         entity_yml = child / "entity.yml"
         if not entity_yml.exists():
             issues.append({

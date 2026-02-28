@@ -268,6 +268,63 @@ def test_entity_yml_invalid_yaml(tmp_path: Path):
     assert "ENT_ENTITY_YML_INVALID" in _codes(res["issues"])  # invalid yaml should be flagged
 
 
+def test_events_jsonl_validation_for_build_entities(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "b_evt_1" / "entity.yml", "name: Build\n")
+    _write(
+        repo / "entities" / "b_evt_1" / "events.jsonl",
+        "\n".join(
+            [
+                "not-json",
+                json.dumps(["not-an-object"]),
+                json.dumps({"message": "missing id"}),
+                json.dumps({"id": "bad-id"}),
+                json.dumps({"id": "evt_ok_1", "unknown": True}),
+                json.dumps({"id": "evt_ok_2", "files": r"C:\\Windows\\System32\\cmd.exe"}),
+                json.dumps({"id": "evt_ok_3", "files": ["../escape.txt"]}),
+                json.dumps({"id": "evt_dup", "tags": ["note"]}),
+                json.dumps({"id": "evt_dup", "tags": ["note2"]}),
+            ]
+        ) + "\n",
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])
+    assert "ENT_EVENTS_JSON_INVALID" in codes
+    assert "ENT_EVENTS_ID_MISSING_OR_INVALID" in codes
+    assert "ENT_EVENTS_FIELD_UNKNOWN" in codes
+    assert "ENT_EVENTS_FILES_PATH_INVALID" in codes
+    assert "ENT_EVENTS_ID_DUPLICATE" in codes
+
+
+def test_events_jsonl_disallowed_for_non_build_entities(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "p_evt_nope" / "entity.yml", "name: Part\n")
+    _write(repo / "entities" / "p_evt_nope" / "events.jsonl", json.dumps({"id": "evt_1"}) + "\n")
+    res = validate_repo(repo, include_git=False)
+    assert "ENT_EVENTS_NOT_BUILD" in _codes(res["issues"])
+
+
+def test_events_jsonl_valid_file_has_no_event_errors(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "b_evt_ok" / "entity.yml", "name: Build OK\n")
+    _write(
+        repo / "entities" / "b_evt_ok" / "events.jsonl",
+        "\n".join(
+            [
+                json.dumps({"id": "evt_ok_1", "ts": "2026-02-28T00:00:00Z", "tags": ["repair"], "message": "ok"}),
+                json.dumps({"id": "evt_ok_2", "files": ["event_attachments/evt_ok_2/scope.png"]}),
+            ]
+        ) + "\n",
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])
+    assert "ENT_EVENTS_JSON_INVALID" not in codes
+    assert "ENT_EVENTS_ID_MISSING_OR_INVALID" not in codes
+    assert "ENT_EVENTS_FIELD_UNKNOWN" not in codes
+    assert "ENT_EVENTS_FILES_PATH_INVALID" not in codes
+    assert "ENT_EVENTS_NOT_BUILD" not in codes
+
+
 def test_bom_alternates_missing_use_is_ignored(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     # Create child so parent bom 'use' is valid and doesn't trigger missing entity

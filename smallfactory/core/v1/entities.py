@@ -10,6 +10,8 @@ import re
 import tempfile
 import os
 import json
+import ntpath
+import subprocess
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
@@ -71,7 +73,11 @@ def _read_events_jsonl(p: Path) -> List[dict]:
             line = raw.strip()
             if not line:
                 continue
-            obj = json.loads(line)
+            try:
+                obj = json.loads(line)
+            except Exception:
+                # Keep builds readable even if one line is corrupted.
+                continue
             if isinstance(obj, dict):
                 out.append(obj)
     return out
@@ -195,12 +201,20 @@ def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None)
     data_to_write.pop("sfid", None)
     # Atomic write via temp file in target directory.
     tmp_path = None
-    with tempfile.NamedTemporaryFile("w", dir=ent_dir, delete=False) as tf:
-        yaml.safe_dump(data_to_write, tf, sort_keys=False)
-        tmp_path = Path(tf.name)
-    if tmp_path is None:
-        raise RuntimeError("Failed to create temporary entity file")
-    tmp_path.replace(fp)
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=ent_dir, delete=False) as tf:
+            tmp_path = Path(tf.name)
+            yaml.safe_dump(data_to_write, tf, sort_keys=False)
+        if tmp_path is None:
+            raise RuntimeError("Failed to create temporary entity file")
+        tmp_path.replace(fp)
+    except Exception:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+        raise
 
     paths_to_commit = [fp]
     try:
@@ -455,15 +469,19 @@ def cut_revision(
                 "sha256": h.hexdigest(),
             })
 
-    # Source commit (best-effort short SHA)
+    # Source commit and dirty working-tree marker (best-effort).
     source_commit = None
+    source_dirty = None
     try:
-        import subprocess
         r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=datarepo_path, capture_output=True, text=True)
         if r.returncode == 0:
             source_commit = r.stdout.strip() or None
+        d = subprocess.run(["git", "status", "--porcelain"], cwd=datarepo_path, capture_output=True, text=True)
+        if d.returncode == 0:
+            source_dirty = bool((d.stdout or "").strip())
     except Exception:
         source_commit = None
+        source_dirty = None
 
     meta = {
         "rev": label,
@@ -475,6 +493,8 @@ def cut_revision(
         meta["notes"] = str(notes)
     if source_commit:
         meta["source_commit"] = source_commit
+    if source_dirty:
+        meta["dirty"] = True
     if artifacts:
         meta["artifacts"] = artifacts
 
@@ -623,7 +643,7 @@ def _build_bom_tree_nodes(
                     "qty": qty,
                     "rev_spec": rev_spec,
                     "rev": alt_resolved_rev,
-                    "level": level + 1,
+                    "level": level,
                     "is_alt": True,
                     "alternates_group": alt_group,
                     "gross_qty": cum,
@@ -631,7 +651,7 @@ def _build_bom_tree_nodes(
                 }
                 nodes.append(alt_node)
                 if alt_use.startswith("p_") and alt_use not in path_stack:
-                    recurse(alt_use, level + 2, cum if (cum is not None) else parent_mult, path_stack + [alt_use], alt_resolved_rev)
+                    recurse(alt_use, level + 1, cum if (cum is not None) else parent_mult, path_stack + [alt_use], alt_resolved_rev)
 
     recurse(root_sfid, 0, 1, [root_sfid], root_rev)
     return nodes
@@ -1202,7 +1222,7 @@ def _normalize_event_files(files) -> List[str]:
         p = str(raw or "").strip()
         if not p:
             continue
-        if p.startswith("/") or p.startswith("\\"):
+        if os.path.isabs(p) or ntpath.isabs(p):
             raise ValueError("Event file paths must be relative to files/")
         norm = p.replace("\\", "/")
         if ".." in norm.split("/"):
@@ -1352,7 +1372,7 @@ def add_build_event_file_link(
     p = str(path or "").strip()
     if not p:
         raise ValueError("path is required")
-    if p.startswith("/") or p.startswith("\\"):
+    if os.path.isabs(p) or ntpath.isabs(p):
         raise ValueError("path must be relative to files/")
     if ".." in p.replace("\\", "/").split("/"):
         raise ValueError("path cannot contain '..'")

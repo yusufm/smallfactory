@@ -100,3 +100,19 @@ def test_bump_with_custom_label(tmp_path: Path):
     # Auto bump should still follow numeric sequence for numeric labels.
     r2 = bump_revision(repo, "p_seq_custom")
     assert r2["new_rev"] == "1"
+
+
+def test_cut_revision_marks_dirty_when_working_tree_has_uncommitted_changes(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    create_entity(repo, "p_dirty", {"name": "Dirty Part"})
+
+    ent_fp = repo / "entities" / "p_dirty" / "entity.yml"
+    ent_fp.write_text("name: Dirty Part (edited)\n", encoding="utf-8")
+
+    cut_revision(repo, "p_dirty", rev="1")
+    meta_fp = repo / "entities" / "p_dirty" / "revisions" / "1" / "meta.yml"
+    meta = read_yaml(meta_fp)
+    assert isinstance(meta.get("source_commit"), str) and meta.get("source_commit")
+    assert meta.get("dirty") is True
