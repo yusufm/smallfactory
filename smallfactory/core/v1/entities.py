@@ -1245,7 +1245,7 @@ def update_build_event(
     event_id: str,
     event: Dict,
 ) -> dict:
-    """Update a build journal event (except immutable id)."""
+    """Update a build event (except immutable id)."""
     if not isinstance(event, dict):
         raise ValueError("event must be an object")
     _validate_sfid_local(sfid)

@@ -320,7 +320,7 @@
 
 
       {% if entity.sfid and entity.sfid[:2] == 'b_' %}
-      <div id="build-journal-root" class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" data-sfid="{{ entity.sfid }}">
+      <div id="build-events-root" class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" data-sfid="{{ entity.sfid }}">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 class="text-lg font-semibold text-gray-900">Events</h2>
           <div class="flex items-center gap-2 text-xs">
@@ -1869,7 +1869,7 @@ async function bjEditAttachSelected(ev){
 }
 
 async function bjLoad(){
-  const root = document.getElementById('build-journal-root');
+  const root = document.getElementById('build-events-root');
   if(!root) return;
   try{
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/events`);

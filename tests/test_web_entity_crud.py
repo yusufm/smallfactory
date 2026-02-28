@@ -271,7 +271,7 @@ class TestEntityFilesApi:
 
 
 # ---------------------------------------------------------------------------
-# Build Journal API (GET/append events, tags editing)
+# Build Events API (GET/append events, tags editing)
 # ---------------------------------------------------------------------------
 
 class TestBuildJournalApi:

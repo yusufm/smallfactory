@@ -2532,7 +2532,7 @@ def api_entities_events_append(sfid):
 
 @app.route('/api/entities/<sfid>/events/<event_id>/tags', methods=['POST'])
 def api_entities_event_set_tags(sfid, event_id):
-    """Update only tags for a build journal event."""
+    """Update only tags for a build event."""
     try:
         datarepo_path = get_datarepo_path()
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
@@ -2552,7 +2552,7 @@ def api_entities_event_set_tags(sfid, event_id):
 
 @app.route('/api/entities/<sfid>/events/<event_id>/update', methods=['POST'])
 def api_entities_event_update(sfid, event_id):
-    """Update a build journal event payload (tags/details/files/etc)."""
+    """Update a build event payload (tags/message/files)."""
     try:
         datarepo_path = get_datarepo_path()
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
@@ -2575,7 +2575,7 @@ def api_entities_event_update(sfid, event_id):
 
 @app.route('/api/entities/<sfid>/events/<event_id>/files/link', methods=['POST'])
 def api_entities_event_link_file(sfid, event_id):
-    """Link an existing files/<path> item to a build journal event."""
+    """Link an existing files/<path> item to a build event."""
     try:
         datarepo_path = get_datarepo_path()
         payload = request.get_json(force=True, silent=True) or request.form.to_dict(flat=True)
