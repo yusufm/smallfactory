@@ -20,3 +20,8 @@ requests
 
 # Production WSGI server
 gunicorn
+
+# ASGI server (used when MCP is integrated into `sf web`)
+mcp
+uvicorn
+a2wsgi

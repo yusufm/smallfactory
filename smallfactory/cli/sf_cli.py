@@ -1454,30 +1454,82 @@ def main():
             # Add the project root to Python path for web imports
             project_root = pathlib.Path(__file__).parent.parent.parent
             sys.path.insert(0, str(project_root))
-            
-            from web.app import app
-            
-            print("🏭 Starting smallFactory Web UI...")
-            print(f"📍 Access the interface at: http://localhost:{args.port}")
-            print("🔧 Git-native PLM for 1-4 person teams")
-            print("=" * 50)
-            
-            try:
-                app.run(
-                    debug=args.debug,
+
+            from web.app import app as flask_app
+            datarepo_path = _repo_path()
+            # Keep web and MCP in the same repo context.
+            os.environ["SF_DATAREPO"] = str(datarepo_path)
+
+            mcp_enabled = str(os.getenv("SF_WEB_ENABLE_MCP", "1")).strip().lower() not in ("0", "false", "no", "off")
+            mcp_path = os.getenv("SF_MCP_PATH", "/mcp")
+            if not mcp_path.startswith("/"):
+                mcp_path = "/" + mcp_path
+            if len(mcp_path) > 1:
+                mcp_path = mcp_path.rstrip("/")
+
+            if mcp_enabled:
+                try:
+                    from starlette.routing import Mount
+                    from a2wsgi import WSGIMiddleware
+                    import uvicorn
+                    from smallfactory.mcp_server import build_mcp_server
+                except Exception as e:
+                    print(f"❌ Error: integrated MCP requires ASGI deps (uvicorn/starlette/a2wsgi): {e}")
+                    print("   Install web dependencies: pip install -r web/requirements.txt")
+                    sys.exit(1)
+
+                # Build MCP ASGI app and append Flask as fallback under the same ASGI app.
+                # Keeping MCP as the root ASGI app ensures its startup/shutdown lifecycle runs.
+                mcp_server = build_mcp_server(
+                    datarepo_path=datarepo_path,
                     host=args.host,
                     port=args.port,
-                    use_reloader=args.debug
+                    streamable_http_path=mcp_path,
                 )
-            except KeyboardInterrupt:
-                print("\n👋 Shutting down smallFactory Web UI...")
-            except Exception as e:
-                if "Address already in use" in str(e):
-                    print(f"❌ Error: Port {args.port} is already in use.")
-                    print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
-                else:
-                    print(f"❌ Error starting web server: {e}")
-                sys.exit(1)
+                asgi_app = mcp_server.streamable_http_app()
+                asgi_app.router.routes.append(Mount("/", app=WSGIMiddleware(flask_app)))
+
+                print("🏭 Starting smallFactory Web UI + MCP...")
+                print(f"📍 Web UI: http://localhost:{args.port}")
+                print(f"🤖 MCP endpoint: http://localhost:{args.port}{mcp_path}")
+                print("🔧 Git-native PLM for 1-4 person teams")
+                print("=" * 50)
+                if args.debug:
+                    print("[smallFactory] Note: --debug does not enable auto-reload in integrated ASGI mode.")
+
+                try:
+                    uvicorn.run(asgi_app, host=args.host, port=args.port, log_level="info")
+                except KeyboardInterrupt:
+                    print("\n👋 Shutting down smallFactory Web UI...")
+                except Exception as e:
+                    if "Address already in use" in str(e):
+                        print(f"❌ Error: Port {args.port} is already in use.")
+                        print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
+                    else:
+                        print(f"❌ Error starting web server: {e}")
+                    sys.exit(1)
+            else:
+                print("🏭 Starting smallFactory Web UI...")
+                print(f"📍 Access the interface at: http://localhost:{args.port}")
+                print("🔧 Git-native PLM for 1-4 person teams")
+                print("=" * 50)
+
+                try:
+                    flask_app.run(
+                        debug=args.debug,
+                        host=args.host,
+                        port=args.port,
+                        use_reloader=args.debug
+                    )
+                except KeyboardInterrupt:
+                    print("\n👋 Shutting down smallFactory Web UI...")
+                except Exception as e:
+                    if "Address already in use" in str(e):
+                        print(f"❌ Error: Port {args.port} is already in use.")
+                        print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
+                    else:
+                        print(f"❌ Error starting web server: {e}")
+                    sys.exit(1)
                 
         except ImportError as e:
             # Be specific: only claim Flask is missing if that's the failing module

@@ -79,13 +79,52 @@ Notes:
 
 ## web
 
-Start the Flask-based web UI.
+Start the Flask-based web UI. By default this also starts the read-only MCP
+server in the same runtime on the same port under `/mcp`, using the same resolved datarepo.
 
 ```bash
 python3 sf.py web --port 8080 --host 0.0.0.0 --debug
 ```
 
-- Flags: `--port`, `--host`, `--debug` (auto-reload)
+- Flags: `--port`, `--host`, `--debug` (auto-reload when MCP integration is disabled)
+- MCP is enabled by default:
+  - Web UI: `http://<host>:<port>`
+  - MCP (streamable HTTP): `http://<host>:<port>/mcp`
+- MCP env controls:
+  - `SF_WEB_ENABLE_MCP` (default `1`)
+  - `SF_MCP_PATH` (default `/mcp`)
+
+Windsurf MCP config example:
+
+```json
+{
+  "mcpServers": {
+    "smallfactory": {
+      "serverUrl": "http://127.0.0.1:8080/mcp"
+    }
+  }
+}
+```
+
+Default available tools:
+- `server_status`
+- `repo_info`
+- `data_model_guide`
+- `entities_search`
+- `entity_get`
+- `inventory_onhand`
+- `parts_inventory_list` (bulk part table; supports `query`, `status_bucket`, `qty_gte/qty_lte`, `sort_by`, `sort_dir`, cursor pagination)
+- `bom_resolved`
+- `build_events_list`
+- `analytics_query`
+
+Compatibility resources (for resource-first MCP clients):
+- `mcp://smallfactory`
+- `smallfactory://status` (alias: `mcp://smallfactory/status`)
+- `smallfactory://repo_info` (alias: `mcp://smallfactory/repo_info`)
+- `smallfactory://data_model_guide` (alias: `mcp://smallfactory/data_model_guide`)
+- `smallfactory://inventory/summary` (alias: `mcp://smallfactory/inventory_summary`)
+- `smallfactory://parts/quantities` (alias: `mcp://smallfactory/parts_quantities`)
 
 ## validate
 

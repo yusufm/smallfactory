@@ -6,6 +6,7 @@ Welcome to the smallFactory documentation.
 - [Start Here](START_HERE.md)
 - [Web UI guide](../web/README.md)
 - [CLI basics](cli/README.md)
+- [MCP integration](users/mcp.md)
 
 ## Developers
 - [PLM SPEC (Core v1)](../smallfactory/core/v1/SPECIFICATION.md)
