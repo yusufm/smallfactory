@@ -9,6 +9,7 @@ import yaml
 import re
 import tempfile
 import os
+import json
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
@@ -47,6 +48,10 @@ def _entity_file(datarepo_path: Path, sfid: str) -> Path:
     raise FileNotFoundError(f"Entity '{sfid}' not found")
 
 
+def _events_file(datarepo_path: Path, sfid: str) -> Path:
+    return _entity_file(datarepo_path, sfid).parent / "events.jsonl"
+
+
 def _read_yaml(p: Path) -> dict:
     with open(p) as f:
         return yaml.safe_load(f) or {}
@@ -55,6 +60,29 @@ def _read_yaml(p: Path) -> dict:
 def _write_yaml(p: Path, data: dict) -> None:
     with open(p, "w") as f:
         yaml.safe_dump(data, f, sort_keys=False)
+
+
+def _read_events_jsonl(p: Path) -> List[dict]:
+    if not p.exists():
+        return []
+    out: List[dict] = []
+    with open(p, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if isinstance(obj, dict):
+                out.append(obj)
+    return out
+
+
+def _write_events_jsonl(p: Path, events: List[dict]) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        for ev in events:
+            f.write(json.dumps(ev, separators=(",", ":"), ensure_ascii=True))
+            f.write("\n")
 
 
 # -------------------------------
@@ -119,6 +147,8 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
     data = _read_yaml(fp)
     if not isinstance(data, dict):
         data = {}
+    if _is_build_sfid(sfid):
+        data["events"] = _build_events_from_entity(datarepo_path, sfid)
     data.setdefault("sfid", sfid)
     return data
 
@@ -1033,6 +1063,327 @@ def bom_alt_remove(
     )
     git_commit_paths(datarepo_path, [fp_parent], msg)
     return {"sfid": parent_sfid, "index": index, "removed": removed, "line": line, "bom": bom}
+
+
+def _is_build_sfid(sfid: str) -> bool:
+    return bool(sfid) and sfid.startswith("b_")
+
+
+def _build_event_id(existing: List[dict], *, prefix: str = "evt") -> str:
+    """Generate a best-effort unique event id for a build entity."""
+    existing_ids = set()
+    for e in existing:
+        if not isinstance(e, dict):
+            continue
+        ev_id = e.get("id")
+        if ev_id is None:
+            continue
+        try:
+            existing_ids.add(str(ev_id))
+        except Exception:
+            continue
+    base = f"{prefix}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    if base not in existing_ids:
+        return base
+    i = 1
+    while True:
+        cand = f"{base}_{i}"
+        if cand not in existing_ids:
+            return cand
+        i += 1
+
+
+def _normalize_event_id_for_append(event_id, *, existing: List[dict] | None = None, prefix: str = "evt") -> str:
+    raw = str(event_id or "").strip()
+    if not raw:
+        raw = _build_event_id(existing or [], prefix=prefix)
+    validate_sfid(raw)
+    return raw
+
+
+def _require_event_id(event_id) -> str:
+    raw = str(event_id or "").strip()
+    if not raw:
+        raise ValueError("Event field 'id' is required")
+    validate_sfid(raw)
+    return raw
+
+
+def _build_events_from_entity(datarepo_path: Path, sfid: str) -> List[dict]:
+    events_fp = _events_file(datarepo_path, sfid)
+    events = _read_events_jsonl(events_fp)
+    if not isinstance(events, list):
+        raise ValueError("Build events must be a list")
+    out: List[dict] = []
+    for e in events:
+        if isinstance(e, dict):
+            rec = dict(e)
+            _validate_event_fields(rec)
+            rec["id"] = _require_event_id(rec.get("id"))
+            rec["tags"] = _normalize_event_tags(rec.get("tags"))
+            msg = _normalize_event_message(rec.get("message"))
+            if msg is None:
+                rec.pop("message", None)
+            else:
+                rec["message"] = msg
+            if "files" in rec:
+                rec["files"] = _normalize_event_files(rec.get("files"))
+            out.append(rec)
+    return out
+
+
+_ALLOWED_EVENT_FIELDS = {"id", "ts", "tags", "message", "files"}
+
+
+def _validate_event_fields(event: Dict) -> None:
+    unknown = sorted([k for k in event.keys() if k not in _ALLOWED_EVENT_FIELDS])
+    if unknown:
+        raise ValueError(f"Unsupported event field(s): {', '.join(unknown)}")
+
+
+def _normalize_event_message(message):
+    if message is None:
+        return None
+    if not isinstance(message, str):
+        raise ValueError("Event field 'message' must be a string")
+    m = message.strip()
+    if not m:
+        return None
+    return m
+
+
+def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
+    """Append an immutable event entry to a build entity.
+
+    Returns:
+      { sfid, event, events }
+    """
+    if not isinstance(event, dict) or not event:
+        raise ValueError("event must be a non-empty object")
+    _validate_sfid_local(sfid)
+    if not _is_build_sfid(sfid):
+        raise ValueError("Build events are only supported for build entities ('b_*')")
+    _ = _entity_file(datarepo_path, sfid)
+    events_fp = _events_file(datarepo_path, sfid)
+    events = _build_events_from_entity(datarepo_path, sfid)
+
+    rec = dict(event)
+    _validate_event_fields(rec)
+    rec["tags"] = _normalize_event_tags(rec.get("tags"))
+    msg = _normalize_event_message(rec.get("message"))
+    if msg is None:
+        rec.pop("message", None)
+    else:
+        rec["message"] = msg
+    if "files" in rec:
+        rec["files"] = _normalize_event_files(rec.get("files"))
+    rec["id"] = _normalize_event_id_for_append(rec.get("id"), existing=events, prefix="evt")
+    if not str(rec.get("ts") or "").strip():
+        rec["ts"] = datetime.now(timezone.utc).isoformat()
+    events.append(rec)
+
+    _write_events_jsonl(events_fp, events)
+    msg = (
+        f"[smallFactory] Appended build event on {sfid} ({','.join(rec['tags']) or 'untagged'})\n"
+        f"::sfid::{sfid}\n::sf-op::build-event-append\n::sf-event-tags::{','.join(rec['tags'])}"
+    )
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": rec, "events": events}
+
+
+def _normalize_event_files(files) -> List[str]:
+    if files is None:
+        return []
+    if not isinstance(files, list):
+        raise ValueError("Event field 'files' must be a list")
+    out: List[str] = []
+    seen = set()
+    for raw in files:
+        p = str(raw or "").strip()
+        if not p:
+            continue
+        if p.startswith("/") or p.startswith("\\"):
+            raise ValueError("Event file paths must be relative to files/")
+        norm = p.replace("\\", "/")
+        if ".." in norm.split("/"):
+            raise ValueError("Event file paths cannot contain '..'")
+        if norm in seen:
+            continue
+        seen.add(norm)
+        out.append(norm)
+    return out
+
+
+def _normalize_event_tags(tags) -> List[str]:
+    src = tags
+    if src is None:
+        return []
+    if isinstance(src, str):
+        # Support both single-tag and comma-separated user input.
+        src = [t.strip() for t in src.split(",")]
+    if not isinstance(src, list):
+        raise ValueError("Event field 'tags' must be a list or comma-separated string")
+    out: List[str] = []
+    seen = set()
+    for raw in src:
+        t = str(raw or "").strip().lower()
+        if not t:
+            continue
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
+def update_build_event(
+    datarepo_path: Path,
+    sfid: str,
+    event_id: str,
+    event: Dict,
+) -> dict:
+    """Update a build event (except immutable id)."""
+    if not isinstance(event, dict):
+        raise ValueError("event must be an object")
+    _validate_sfid_local(sfid)
+    if not _is_build_sfid(sfid):
+        raise ValueError("Build events are only supported for build entities ('b_*')")
+    eid = str(event_id or "").strip()
+    if not eid:
+        raise ValueError("event_id is required")
+    validate_sfid(eid)
+    _ = _entity_file(datarepo_path, sfid)
+    events_fp = _events_file(datarepo_path, sfid)
+    events = _build_events_from_entity(datarepo_path, sfid)
+
+    target_idx = None
+    for i, e in enumerate(events):
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("id") or "").strip() == eid:
+            target_idx = i
+            break
+    if target_idx is None:
+        raise ValueError(f"Event '{eid}' not found")
+
+    current = dict(events[target_idx])
+    rec = dict(current)
+    rec.update(dict(event))
+    rec["id"] = eid
+
+    _validate_event_fields(rec)
+    rec["tags"] = _normalize_event_tags(rec.get("tags"))
+    msg = _normalize_event_message(rec.get("message"))
+    if msg is None:
+        rec.pop("message", None)
+    else:
+        rec["message"] = msg
+
+    if not str(rec.get("ts") or "").strip():
+        rec["ts"] = str(current.get("ts") or datetime.now(timezone.utc).isoformat())
+
+    if "files" in rec:
+        rec["files"] = _normalize_event_files(rec.get("files"))
+
+    events[target_idx] = rec
+
+    _write_events_jsonl(events_fp, events)
+    msg = (
+        f"[smallFactory] Updated build event on {sfid} ({eid})\n"
+        f"::sfid::{sfid}\n::sf-op::build-event-update\n::sf-event::{eid}\n::sf-event-tags::{','.join(rec['tags'])}"
+    )
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": rec, "events": events}
+
+
+def update_build_event_tags(
+    datarepo_path: Path,
+    sfid: str,
+    event_id: str,
+    tags,
+) -> dict:
+    """Update only the 'tags' field for a specific build event."""
+    _validate_sfid_local(sfid)
+    if not _is_build_sfid(sfid):
+        raise ValueError("Build events are only supported for build entities ('b_*')")
+    eid = str(event_id or "").strip()
+    if not eid:
+        raise ValueError("event_id is required")
+    validate_sfid(eid)
+    _ = _entity_file(datarepo_path, sfid)
+    events_fp = _events_file(datarepo_path, sfid)
+    events = _build_events_from_entity(datarepo_path, sfid)
+
+    target_idx = None
+    for i, e in enumerate(events):
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("id") or "").strip() == eid:
+            target_idx = i
+            break
+    if target_idx is None:
+        raise ValueError(f"Event '{eid}' not found")
+
+    norm_tags = _normalize_event_tags(tags)
+    events[target_idx]["tags"] = norm_tags
+
+    _write_events_jsonl(events_fp, events)
+    msg = (
+        f"[smallFactory] Updated build event tags on {sfid} ({eid})\n"
+        f"::sfid::{sfid}\n::sf-op::build-event-tags-set\n::sf-event::{eid}\n::sf-event-tags::{','.join(norm_tags)}"
+    )
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": events[target_idx], "events": events}
+
+def add_build_event_file_link(
+    datarepo_path: Path,
+    sfid: str,
+    event_id: str,
+    path: str,
+) -> dict:
+    """Attach a files/ relative path to a build event's `files` list."""
+    _validate_sfid_local(sfid)
+    if not _is_build_sfid(sfid):
+        raise ValueError("Build events are only supported for build entities ('b_*')")
+    eid = str(event_id or "").strip()
+    if not eid:
+        raise ValueError("event_id is required")
+    validate_sfid(eid)
+    p = str(path or "").strip()
+    if not p:
+        raise ValueError("path is required")
+    if p.startswith("/") or p.startswith("\\"):
+        raise ValueError("path must be relative to files/")
+    if ".." in p.replace("\\", "/").split("/"):
+        raise ValueError("path cannot contain '..'")
+    p = p.replace("\\", "/")
+
+    _ = _entity_file(datarepo_path, sfid)
+    events_fp = _events_file(datarepo_path, sfid)
+    events = _build_events_from_entity(datarepo_path, sfid)
+
+    target_idx = None
+    for i, e in enumerate(events):
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("id") or "").strip() == eid:
+            target_idx = i
+            break
+    if target_idx is None:
+        raise ValueError(f"Event '{eid}' not found")
+
+    files = _normalize_event_files(events[target_idx].get("files"))
+    if p not in files:
+        files.append(p)
+    events[target_idx]["files"] = files
+
+    _write_events_jsonl(events_fp, events)
+    msg = (
+        f"[smallFactory] Linked file to build event on {sfid} ({eid})\n"
+        f"::sfid::{sfid}\n::sf-op::build-event-file-link\n::sf-event::{eid}\n::sf-path::{p}"
+    )
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": events[target_idx], "events": events}
 
 
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:

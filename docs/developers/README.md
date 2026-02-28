@@ -10,6 +10,20 @@ Code layout (high level):
 - CLI wrapper: ../../smallfactory/cli/sf_cli.py
 - Web app: ../../web/
 
+## Build events contract (v1)
+
+- Build events are first-class records stored at `entities/<b_sfid>/events.jsonl` (JSON Lines).
+- Core is the source of truth for event normalization/validation:
+  - `append_build_event`
+  - `update_build_event`
+  - `update_build_event_tags`
+  - `add_build_event_file_link`
+- `entity.yml` is not used for event storage.
+- Allowed event fields are fixed: `id`, `ts`, `tags`, `message`, `files`.
+- Keep CLI/API behavior aligned with core:
+  - API: `/api/entities/<sfid>/events*`
+  - CLI: `sf entities events *`
+
 ## Running behind Cloudflare Access or another auth proxy
 
 smallFactory's web app can run behind an authentication proxy (e.g., Cloudflare Access, OAuth2/OIDC gateways, Nginx with SSO). When an upstream proxy authenticates the user and injects identity headers, the app will:

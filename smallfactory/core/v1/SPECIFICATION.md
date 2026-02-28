@@ -150,20 +150,41 @@ status: open                       # open|in_progress|completed|canceled
 opened_at: 2025-08-10T19:40:00Z    # optional timestamps
 closed_at: 2025-08-11T02:12:00Z
 notes: "First pilot run on new fixture"
-
-# Per-unit tracking lives here; no top-level serials/ directory
-units:
-  - serial: 01J9Z9Q6H3J6NRS4K1YV3M8U5K   # ULID or OEM serial; unique per unit
-    label: TOAST-25-223-0001             # optional human label
-    status: built                        # built|shipped|scrapped|reworked|...
-    events:
-      - ts: 2025-08-10T20:12:33Z
-        action: test
-        result: pass
 ```
 
 Notes:
  - Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
+
+Build events are stored separately from `entity.yml` in `entities/<b_sfid>/events.jsonl` (JSON Lines; one event object per line).
+
+Example `entities/b_2025_0001/events.jsonl`:
+```json
+{"id":"evt_20260227193308","ts":"2026-02-27T19:33:08.816883+00:00","tags":["repair","task_open"],"message":"No USB enumeration"}
+{"id":"evt_20260227201510","ts":"2026-02-27T20:15:10.104201+00:00","tags":["measurement"],"message":"Iddq at 3.5V","files":["event_attachments/evt_20260227201510/scope.png"]}
+```
+
+Build event schema (normative):
+- `id` (string): event identifier, immutable once created, and MUST pass SFID validation.
+- `ts` (ISO datetime string): event timestamp.
+- `tags` (array of strings): optional freeform labels; values are normalized to lowercase and deduplicated.
+- `message` (string): optional event details text.
+- `files` (array of relative paths): optional links to files under `entities/<b_sfid>/files/`.
+- No other event fields are allowed.
+- `entity.yml` MUST NOT be used as event storage, and tooling MUST read/write only `events.jsonl`.
+
+Interface parity (normative):
+- API:
+  - `GET /api/entities/<sfid>/events`
+  - `POST /api/entities/<sfid>/events/append`
+  - `POST /api/entities/<sfid>/events/<event_id>/update`
+  - `POST /api/entities/<sfid>/events/<event_id>/tags`
+  - `POST /api/entities/<sfid>/events/<event_id>/files/link`
+- CLI:
+  - `sf entities events ls <b_sfid>`
+  - `sf entities events append <b_sfid> ...`
+  - `sf entities events update <b_sfid> <event_id> ...`
+  - `sf entities events tags <b_sfid> <event_id> --tags ...`
+  - `sf entities events link-file <b_sfid> <event_id> <path>`
 
 ### `entity.yml` (all entities; parts may be explicit or inferred)
 ```yaml
@@ -286,7 +307,7 @@ qty: 3
 site: l_sanjose
 opened_at: 2025-08-10T19:40:00Z
 ```
-Per‑unit records (serials, events) are captured under the associated Build’s `entities/b_*/entity.yml` in the `units` list.
+Event records are captured under the associated Build’s `entities/b_*/events.jsonl`.
 
 ---
 
