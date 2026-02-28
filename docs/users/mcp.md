@@ -7,12 +7,26 @@ Use this guide to connect AI clients (Windsurf, Cursor, Claude Desktop, Codex) t
 From the project root:
 
 ```bash
-python3 sf.py web --repo /ABS/PATH/TO/YOUR/DATAREPO --port 8080
+python3 sf.py web --port 8080
 ```
 
 By default:
 - Web UI: `http://127.0.0.1:8080`
 - MCP endpoint: `http://127.0.0.1:8080/mcp`
+
+Repo selection is resolved automatically in this order:
+1. `--repo`
+2. `SF_DATAREPO`
+3. `.smallfactory.yml` `default_datarepo`
+
+Use `--repo /ABS/PATH/...` only when you want to pin a specific datarepo explicitly.
+
+### Endpoint mapping note
+
+Your MCP URL depends on the web bind settings:
+- If you run `python3 sf.py web --host 0.0.0.0 --port 8080`, local clients still usually connect to `http://127.0.0.1:8080/mcp`.
+- If you change port, update client URL to match (`http://127.0.0.1:<PORT>/mcp`).
+- If you set `SF_MCP_PATH`, replace `/mcp` with that path.
 
 Quick health check:
 
