@@ -1469,7 +1469,6 @@ def main():
 
             if mcp_enabled:
                 try:
-                    from starlette.applications import Starlette
                     from starlette.routing import Mount
                     from starlette.middleware.wsgi import WSGIMiddleware
                     import uvicorn
@@ -1479,20 +1478,16 @@ def main():
                     print("   Install web dependencies: pip install -r web/requirements.txt")
                     sys.exit(1)
 
-                # Build MCP ASGI app and mount under the Flask-served site on one port.
+                # Build MCP ASGI app and append Flask as fallback under the same ASGI app.
+                # Keeping MCP as the root ASGI app ensures its startup/shutdown lifecycle runs.
                 mcp_server = build_mcp_server(
                     datarepo_path=datarepo_path,
                     host=args.host,
                     port=args.port,
-                    streamable_http_path="/",
+                    streamable_http_path=mcp_path,
                 )
-                mcp_asgi = mcp_server.streamable_http_app()
-                asgi_app = Starlette(
-                    routes=[
-                        Mount(mcp_path, app=mcp_asgi),
-                        Mount("/", app=WSGIMiddleware(flask_app)),
-                    ]
-                )
+                asgi_app = mcp_server.streamable_http_app()
+                asgi_app.router.routes.append(Mount("/", app=WSGIMiddleware(flask_app)))
 
                 print("🏭 Starting smallFactory Web UI + MCP...")
                 print(f"📍 Web UI: http://localhost:{args.port}")
