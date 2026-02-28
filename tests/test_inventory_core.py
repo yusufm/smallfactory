@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import yaml
 
 from conftest import init_git_repo, git_commit_count
 from smallfactory.core.v1.entities import create_entity
+from smallfactory.core.v1 import inventory as inventory_mod
 from smallfactory.core.v1.inventory import (
     inventory_onhand,
     inventory_onhand_readonly,
@@ -75,6 +77,44 @@ def test_inventory_post_blocks_location_negative_even_if_global_total_positive(r
     journal = repo / "inventory" / "p_inv" / "journal.ndjson"
     lines = [ln for ln in journal.read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert len(lines) == 2
+
+
+def test_inventory_post_serializes_concurrent_negative_checks(repo: Path, monkeypatch: pytest.MonkeyPatch):
+    inventory_post(repo, "p_inv", 5, l_sfid="l_main")
+
+    barrier = threading.Barrier(2)
+    original_compute = inventory_mod._compute_part_onhand_from_journal
+
+    def _compute_with_overlap(journal_path: Path):
+        try:
+            barrier.wait(timeout=0.2)
+        except threading.BrokenBarrierError:
+            pass
+        return original_compute(journal_path)
+
+    monkeypatch.setattr(inventory_mod, "_compute_part_onhand_from_journal", _compute_with_overlap)
+
+    results: list[dict] = []
+    errors: list[str] = []
+
+    def _worker():
+        try:
+            results.append(inventory_post(repo, "p_inv", -4, l_sfid="l_main"))
+        except Exception as e:
+            errors.append(str(e))
+
+    t1 = threading.Thread(target=_worker)
+    t2 = threading.Thread(target=_worker)
+    t1.start()
+    t2.start()
+    t1.join(timeout=3)
+    t2.join(timeout=3)
+
+    assert len(results) == 1
+    assert len(errors) == 1
+    assert "below zero" in errors[0]
+    onhand = inventory_onhand(repo, part="p_inv")
+    assert int(onhand.get("total", -1)) == 1
 
 
 def test_readonly_onhand_computes_without_materializing_caches(repo: Path):

@@ -119,3 +119,34 @@ def test_core_bom_tree_level_contract_and_view_offset(env):
     immediate = resolved_bom_tree(repo, "p_root_lv", max_depth=0)
     assert {n.get("use") for n in immediate} == {"p_mid_lv"}
     assert all(int(n.get("level", -1)) == 0 for n in immediate)
+
+
+def test_alternate_nodes_share_level_with_primary_and_depth_semantics(env):
+    repo, _, _ = env
+    create_entity(repo, "p_root_altlv", {"name": "RootAltLV"})
+    create_entity(repo, "p_primary_altlv", {"name": "PrimaryAltLV"})
+    create_entity(repo, "p_alt_altlv", {"name": "AltAltLV"})
+    create_entity(repo, "p_child_primary_altlv", {"name": "ChildPrimaryAltLV"})
+    create_entity(repo, "p_child_alt_altlv", {"name": "ChildAltAltLV"})
+
+    bom_add_line(repo, "p_primary_altlv", use="p_child_primary_altlv", qty=1, rev="released")
+    bom_add_line(repo, "p_alt_altlv", use="p_child_alt_altlv", qty=1, rev="released")
+    bom_add_line(
+        repo,
+        "p_root_altlv",
+        use="p_primary_altlv",
+        qty=1,
+        rev="released",
+        alternates=[{"use": "p_alt_altlv"}],
+    )
+
+    nodes = resolved_bom_tree(repo, "p_root_altlv")
+    primary = next(n for n in nodes if n.get("use") == "p_primary_altlv" and not n.get("is_alt"))
+    alt = next(n for n in nodes if n.get("use") == "p_alt_altlv" and n.get("is_alt"))
+    child_primary = next(n for n in nodes if n.get("use") == "p_child_primary_altlv")
+    child_alt = next(n for n in nodes if n.get("use") == "p_child_alt_altlv")
+
+    assert int(primary.get("level", -1)) == 0
+    assert int(alt.get("level", -1)) == 0
+    assert int(child_primary.get("level", -1)) == 1
+    assert int(child_alt.get("level", -1)) == 1

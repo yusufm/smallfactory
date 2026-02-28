@@ -4,8 +4,9 @@ import json
 import yaml
 import time
 import os
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Iterator
 from collections import defaultdict
+from contextlib import contextmanager
 
 from .gitutils import git_commit_paths
 from .config import validate_sfid, load_datarepo_config
@@ -90,6 +91,36 @@ def _append_line(p: Path, line: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a") as f:
         f.write(line + "\n")
+
+
+@contextmanager
+def _exclusive_journal_lock(journal_path: Path) -> Iterator[None]:
+    """Cross-platform advisory lock over the journal file."""
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(journal_path, "a+b") as lock_fh:
+        if os.name == "nt":
+            import msvcrt
+
+            # msvcrt.locking requires a byte range; ensure at least one byte exists.
+            lock_fh.seek(0, os.SEEK_END)
+            if lock_fh.tell() == 0:
+                lock_fh.write(b"\0")
+                lock_fh.flush()
+            lock_fh.seek(0)
+            msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock_fh.seek(0)
+                msvcrt.locking(lock_fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
 
 
 _CROCKFORD32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -253,55 +284,55 @@ def inventory_post(
     if delta == 0:
         raise ValueError("qty_delta must be non-zero")
 
-    # Guard: do not allow resulting on-hand to go below zero (per SPEC)
-    # Compute current totals from the journal to avoid stale caches
-    journal_path = _journal_file(datarepo_path, part)
-    by_loc, total = _compute_part_onhand_from_journal(journal_path)
-    try:
-        cur_total = int(total)
-    except Exception:
-        cur_total = 0
-    try:
-        cur_loc = int(by_loc.get(l_sfid, 0))
-    except Exception:
-        cur_loc = 0
-    new_total = cur_total + delta
-    new_loc = cur_loc + delta
-    if new_total < 0:
-        raise ValueError("qty_delta would cause total on-hand to go below zero")
-    if new_loc < 0:
-        raise ValueError(f"qty_delta would cause on-hand at {l_sfid} to go below zero")
-
-    # Append NDJSON line
-    entry = {
-        "txn": _new_ulid(),
-        "location": l_sfid,
-        "qty_delta": delta,
-    }
-    if reason is not None:
-        entry["reason"] = str(reason)
     journal = _journal_file(datarepo_path, part)
-    _append_line(journal, json.dumps(entry, separators=(",", ":")))
+    with _exclusive_journal_lock(journal):
+        # Guard: do not allow resulting on-hand to go below zero (per SPEC)
+        # Compute current totals from the journal to avoid stale caches.
+        by_loc, total = _compute_part_onhand_from_journal(journal)
+        try:
+            cur_total = int(total)
+        except Exception:
+            cur_total = 0
+        try:
+            cur_loc = int(by_loc.get(l_sfid, 0))
+        except Exception:
+            cur_loc = 0
+        new_total = cur_total + delta
+        new_loc = cur_loc + delta
+        if new_total < 0:
+            raise ValueError("qty_delta would cause total on-hand to go below zero")
+        if new_loc < 0:
+            raise ValueError(f"qty_delta would cause on-hand at {l_sfid} to go below zero")
 
-    # Update caches
-    part_cache = _write_part_cache(datarepo_path, part)
-    loc_cache = _write_location_cache(datarepo_path, l_sfid)
+        # Append NDJSON line
+        entry = {
+            "txn": _new_ulid(),
+            "location": l_sfid,
+            "qty_delta": delta,
+        }
+        if reason is not None:
+            entry["reason"] = str(reason)
+        _append_line(journal, json.dumps(entry, separators=(",", ":")))
 
-    # Commit journal and caches together
-    paths = [journal, _part_onhand_file(datarepo_path, part), _location_cache_file(datarepo_path, l_sfid)]
-    msg = (
-        f"[smallFactory] Inventory post for {part} at {l_sfid} qty_delta {delta}\n"
-        f"::sfid::{part}\n::sfid::{l_sfid}\n::sf-delta::{delta}"
-    )
-    git_commit_paths(datarepo_path, paths, msg)
+        # Update caches
+        part_cache = _write_part_cache(datarepo_path, part)
+        _ = _write_location_cache(datarepo_path, l_sfid)
 
-    return {
-        "part": part,
-        "location": l_sfid,
-        "qty_delta": delta,
-        "txn": entry["txn"],
-        "onhand": part_cache,
-    }
+        # Commit journal and caches together
+        paths = [journal, _part_onhand_file(datarepo_path, part), _location_cache_file(datarepo_path, l_sfid)]
+        msg = (
+            f"[smallFactory] Inventory post for {part} at {l_sfid} qty_delta {delta}\n"
+            f"::sfid::{part}\n::sfid::{l_sfid}\n::sf-delta::{delta}"
+        )
+        git_commit_paths(datarepo_path, paths, msg)
+
+        return {
+            "part": part,
+            "location": l_sfid,
+            "qty_delta": delta,
+            "txn": entry["txn"],
+            "onhand": part_cache,
+        }
 
 
 def inventory_onhand(

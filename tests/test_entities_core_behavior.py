@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from conftest import init_git_repo
+from smallfactory.core.v1 import entities as entities_mod
 from smallfactory.core.v1.entities import (
     add_build_event_file_link,
     append_build_event,
@@ -166,6 +167,26 @@ def test_build_events_read_rejects_missing_id(tmp_path: Path):
     with pytest.raises(ValueError, match="Event field 'id' is required"):
         _ = get_entity(repo, "b_widget_008")
 
+
+def test_build_events_read_skips_malformed_json_lines(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    create_entity(repo, "b_widget_010", {"name": "Build Widget 010"})
+    events_fp = repo / "entities" / "b_widget_010" / "events.jsonl"
+    events_fp.write_text(
+        '{"id":"evt_ok","tags":["note"],"message":"ok"}\n'
+        '{not valid json}\n',
+        encoding="utf-8",
+    )
+
+    ent = get_entity(repo, "b_widget_010")
+    events = ent.get("events") or []
+    assert len(events) == 1
+    assert events[0]["id"] == "evt_ok"
+
+
 def test_build_events_reject_non_build_entities(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
@@ -208,6 +229,19 @@ def test_build_event_file_link(tmp_path: Path):
     files = out2["event"].get("files") or []
     assert isinstance(files, list)
     assert "event_attachments/test/photo1.jpg" in files
+
+
+def test_build_event_file_link_rejects_windows_absolute_paths(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    create_entity(repo, "b_widget_011", {"name": "Build Widget 011"})
+    out = append_build_event(repo, "b_widget_011", {"message": "event with file"})
+    ev = out["event"]
+
+    with pytest.raises(ValueError, match="relative to files"):
+        add_build_event_file_link(repo, "b_widget_011", ev["id"], r"C:\Windows\System32\cmd.exe")
 
 
 def test_build_event_full_update(tmp_path: Path):
@@ -308,3 +342,21 @@ def test_event_mutations_do_not_rewrite_entity_yaml(tmp_path: Path):
     assert "entities/b_widget_009/events.jsonl" in show4
     assert "entities/b_widget_009/entity.yml" not in show4
     assert events_fp.exists()
+
+
+def test_create_entity_temp_file_is_cleaned_on_dump_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("dump failed")
+
+    monkeypatch.setattr(entities_mod.yaml, "safe_dump", _boom)
+    with pytest.raises(RuntimeError, match="dump failed"):
+        create_entity(repo, "p_tmp_cleanup", {"name": "Tmp Cleanup"})
+
+    ent_dir = repo / "entities" / "p_tmp_cleanup"
+    if ent_dir.exists():
+        leaked = [p for p in ent_dir.iterdir() if p.is_file() and p.name.startswith("tmp")]
+        assert leaked == []
