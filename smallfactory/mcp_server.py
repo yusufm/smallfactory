@@ -343,7 +343,13 @@ def _analytics_query_impl(
     }
 
 
-def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> None:
+def build_mcp_server(
+    *,
+    datarepo_path: Path,
+    host: str = "127.0.0.1",
+    port: int = 8081,
+    streamable_http_path: str = "/mcp",
+):
     try:
         from mcp.server.fastmcp import FastMCP
     except Exception as exc:
@@ -351,10 +357,12 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
             "MCP dependency is missing. Install with: pip install mcp"
         ) from exc
 
-    datarepo_path = _resolve_datarepo_path(repo)
     server = FastMCP(
         "smallfactory",
         instructions=SMALLFACTORY_MCP_INSTRUCTIONS,
+        host=host,
+        port=port,
+        streamable_http_path=streamable_http_path,
     )
 
     @server.tool()
@@ -503,7 +511,25 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
             limit=limit,
         )
 
+    return server
+
+
+def run_mcp_http_server(
+    *,
+    repo: Optional[str] = None,
+    host: str = "127.0.0.1",
+    port: int = 8081,
+    mount_path: str = "/mcp",
+) -> None:
+    datarepo_path = _resolve_datarepo_path(repo)
+    server = build_mcp_server(
+        datarepo_path=datarepo_path,
+        host=host,
+        port=port,
+        streamable_http_path=mount_path,
+    )
     try:
-        server.run(transport=transport)
+        server.run(transport="streamable-http")
     except TypeError:
+        # Backward compatibility with older FastMCP signatures.
         server.run()

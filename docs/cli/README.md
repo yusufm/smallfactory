@@ -43,7 +43,6 @@ Environment variables:
 
 - **init** — Initialize a new datarepo or clone an existing one
 - **web** — Start the web UI server
-- **mcp** — Start read-only MCP server (for Codex/Claude/Cursor/Windsurf)
 - **validate** — Validate datarepo against PLM SPEC
 - **inventory** — Inventory journal and reports
   - post, onhand, rebuild
@@ -80,38 +79,36 @@ Notes:
 
 ## web
 
-Start the Flask-based web UI.
+Start the Flask-based web UI. By default this also starts the read-only MCP
+server in the same runtime (separate port) using the same resolved datarepo.
 
 ```bash
 python3 sf.py web --port 8080 --host 0.0.0.0 --debug
 ```
 
 - Flags: `--port`, `--host`, `--debug` (auto-reload)
+- MCP is enabled by default:
+  - Web UI: `http://<host>:<port>`
+  - MCP (streamable HTTP): `http://<mcp_host>:<mcp_port>/mcp`
+- MCP env controls:
+  - `SF_WEB_ENABLE_MCP` (default `1`)
+  - `SF_MCP_HOST` (default web host)
+  - `SF_MCP_PORT` (default `web_port + 1`)
+  - `SF_MCP_PATH` (default `/mcp`)
 
-## mcp
-
-Start a read-only MCP server over your smallFactory data. This is the simplest path
-to "bring your own LLM client" workflows (Codex, Claude Desktop, Cursor, Windsurf).
-
-```bash
-# Uses -R/--repo if provided; otherwise default datarepo from .smallfactory.yml
-python3 sf.py mcp
-```
-
-Windsurf local MCP config example:
+Windsurf MCP config example:
 
 ```json
 {
   "mcpServers": {
     "smallfactory": {
-      "command": "python3",
-      "args": ["/ABS/PATH/to/smallfactory/sf.py", "--repo", "/ABS/PATH/to/datarepo", "mcp"]
+      "serverUrl": "http://127.0.0.1:8081/mcp"
     }
   }
 }
 ```
 
-Available tools:
+Default available tools:
 - `repo_info`
 - `data_model_guide`
 - `entities_search`

@@ -5,6 +5,7 @@ import pathlib
 import json
 import yaml
 import datetime
+import threading
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
@@ -349,15 +350,6 @@ def main():
     web_parser.add_argument("--port", type=int, default=8080, help="Port to run the web server on (default: 8080)")
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
-
-    # mcp command (read-only MCP server)
-    mcp_parser = subparsers.add_parser("mcp", help="Start read-only MCP server for SmallFactory data")
-    mcp_parser.add_argument(
-        "--transport",
-        default="stdio",
-        choices=["stdio"],
-        help="MCP transport (default: stdio)",
-    )
 
     # validate command (repo linter)
     validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
@@ -1463,14 +1455,47 @@ def main():
             # Add the project root to Python path for web imports
             project_root = pathlib.Path(__file__).parent.parent.parent
             sys.path.insert(0, str(project_root))
-            
+
             from web.app import app
-            
+            datarepo_path = _repo_path()
+            # Keep web and MCP in the same repo context.
+            os.environ["SF_DATAREPO"] = str(datarepo_path)
+
+            mcp_enabled = str(os.getenv("SF_WEB_ENABLE_MCP", "1")).strip().lower() not in ("0", "false", "no", "off")
+            mcp_host = os.getenv("SF_MCP_HOST", args.host)
+            try:
+                mcp_port = int(os.getenv("SF_MCP_PORT", str(int(args.port) + 1)))
+            except Exception:
+                mcp_port = int(args.port) + 1
+            mcp_path = os.getenv("SF_MCP_PATH", "/mcp")
+
+            # In debug-reload mode, avoid starting duplicate MCP threads from the reloader parent.
+            should_start_mcp = (not args.debug) or (os.environ.get("WERKZEUG_RUN_MAIN") == "true")
+            if mcp_enabled and should_start_mcp:
+                try:
+                    from smallfactory.mcp_server import run_mcp_http_server
+
+                    t = threading.Thread(
+                        target=run_mcp_http_server,
+                        kwargs={
+                            "repo": str(datarepo_path),
+                            "host": mcp_host,
+                            "port": mcp_port,
+                            "mount_path": mcp_path,
+                        },
+                        daemon=True,
+                    )
+                    t.start()
+                except Exception as e:
+                    print(f"[smallFactory] Warning: MCP server failed to start: {e}")
+
             print("🏭 Starting smallFactory Web UI...")
             print(f"📍 Access the interface at: http://localhost:{args.port}")
+            if mcp_enabled:
+                print(f"🤖 MCP endpoint: http://{mcp_host}:{mcp_port}{mcp_path}")
             print("🔧 Git-native PLM for 1-4 person teams")
             print("=" * 50)
-            
+
             try:
                 app.run(
                     debug=args.debug,
@@ -1501,17 +1526,6 @@ def main():
             print(f"❌ Error starting web UI: {e}")
             sys.exit(1)
 
-    def cmd_mcp(args):
-        try:
-            from smallfactory.mcp_server import run_mcp_server
-
-            run_mcp_server(repo=str(_repo_path()), transport=getattr(args, "transport", "stdio"))
-        except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            print(f"[smallFactory] Error: {e}")
-            sys.exit(1)
-
     # Dispatch via table
     cmd = args.command
 
@@ -1540,7 +1554,6 @@ def main():
     DISPATCH = {
         ("init", None): cmd_init,
         ("web", None): cmd_web,
-        ("mcp", None): cmd_mcp,
         ("validate", None): cmd_validate,
         ("inventory", "post"): cmd_inventory_post,
         ("inventory", "onhand"): cmd_inventory_onhand,
