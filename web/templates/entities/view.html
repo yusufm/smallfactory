@@ -1509,7 +1509,7 @@ function bjCreateAttachSelected(ev){
 
 async function bjUploadAndLinkFileToEvent(eventId, file){
   const uniqueName = `${Date.now()}_${bjSafeFileName(file.name)}`;
-  const path = `event attachments/${eventId}/${uniqueName}`;
+  const path = `event_attachments/${eventId}/${uniqueName}`;
   const form = new FormData();
   form.set('path', path);
   form.set('overwrite', 'false');
@@ -1839,7 +1839,7 @@ async function bjEditAttachSelected(ev){
   }
   try{
     const uniqueName = `${Date.now()}_${bjSafeFileName(file.name)}`;
-    const path = `event attachments/${eventId}/${uniqueName}`;
+    const path = `event_attachments/${eventId}/${uniqueName}`;
     const form = new FormData();
     form.set('path', path);
     form.set('overwrite', 'false');

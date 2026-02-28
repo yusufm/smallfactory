@@ -188,10 +188,10 @@ def test_build_event_file_link(tmp_path: Path):
     out = append_build_event(repo, "b_widget_003", {"message": "event with file"})
     ev = out["event"]
 
-    out2 = add_build_event_file_link(repo, "b_widget_003", ev["id"], "event attachments/test/photo1.jpg")
+    out2 = add_build_event_file_link(repo, "b_widget_003", ev["id"], "event_attachments/test/photo1.jpg")
     files = out2["event"].get("files") or []
     assert isinstance(files, list)
-    assert "event attachments/test/photo1.jpg" in files
+    assert "event_attachments/test/photo1.jpg" in files
 
 
 def test_build_event_full_update(tmp_path: Path):
@@ -210,14 +210,14 @@ def test_build_event_full_update(tmp_path: Path):
         {
             "tags": ["qa_review"],
             "message": "after",
-            "files": ["event attachments/test/a.txt", "event attachments/test/b.txt"],
+            "files": ["event_attachments/test/a.txt", "event_attachments/test/b.txt"],
         },
     )
     updated = out2["event"]
     assert updated["id"] == ev["id"]
     assert updated["tags"] == ["qa_review"]
     assert updated["message"] == "after"
-    assert updated["files"] == ["event attachments/test/a.txt", "event attachments/test/b.txt"]
+    assert updated["files"] == ["event_attachments/test/a.txt", "event_attachments/test/b.txt"]
 
 
 def test_build_event_rejects_unknown_fields(tmp_path: Path):

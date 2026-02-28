@@ -361,7 +361,7 @@ class TestBuildJournalApi:
                     "event": {
                     "tags": ["qa_review"],
                     "message": "after",
-                    "files": ["event attachments/test/evidence.txt"],
+                    "files": ["event_attachments/test/evidence.txt"],
                 }
             },
         )
@@ -371,7 +371,7 @@ class TestBuildJournalApi:
         assert d2["event"]["id"] == event_id
         assert d2["event"]["tags"] == ["qa_review"]
         assert d2["event"]["message"] == "after"
-        assert d2["event"]["files"] == ["event attachments/test/evidence.txt"]
+        assert d2["event"]["files"] == ["event_attachments/test/evidence.txt"]
 
     def test_attach_file_link_to_event(self, client):
         create_entity(_repo(client), "b_unit_003", {"name": "Build Unit 003"})
@@ -385,7 +385,7 @@ class TestBuildJournalApi:
 
         up = client.post(
             "/api/entities/b_unit_003/files/upload",
-            data={"file": (io.BytesIO(b"abc"), "evidence.txt"), "path": f"event attachments/{ev_id}/evidence.txt"},
+            data={"file": (io.BytesIO(b"abc"), "evidence.txt"), "path": f"event_attachments/{ev_id}/evidence.txt"},
             content_type="multipart/form-data",
         )
         assert up.status_code == 200

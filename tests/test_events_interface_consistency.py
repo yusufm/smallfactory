@@ -93,7 +93,7 @@ def test_api_and_cli_event_mutations_are_consistent(env, monkeypatch: pytest.Mon
             "link-file",
             "b_evt_002",
             event_id,
-            f"event attachments/{event_id}/evidence.txt",
+            f"event_attachments/{event_id}/evidence.txt",
         ],
     )
 
@@ -102,7 +102,7 @@ def test_api_and_cli_event_mutations_are_consistent(env, monkeypatch: pytest.Mon
     assert cli_events == api_events
     assert cli_events[0]["message"] == "after"
     assert cli_events[0]["tags"] == ["repair", "measurement"]
-    assert f"event attachments/{event_id}/evidence.txt" in (cli_events[0].get("files") or [])
+    assert f"event_attachments/{event_id}/evidence.txt" in (cli_events[0].get("files") or [])
 
 
 def test_cli_events_append_delegates_to_core(env, monkeypatch: pytest.MonkeyPatch):
@@ -141,14 +141,14 @@ def test_cli_append_supports_files_at_creation(env, monkeypatch: pytest.MonkeyPa
             "--tags",
             "repair",
             "--file",
-            "event attachments/new/a.txt",
+            "event_attachments/new/a.txt",
             "--file",
-            "event attachments/new/b.png",
+            "event_attachments/new/b.png",
         ],
     )
 
     files = (created.get("event") or {}).get("files") or []
-    assert files == ["event attachments/new/a.txt", "event attachments/new/b.png"]
+    assert files == ["event_attachments/new/a.txt", "event_attachments/new/b.png"]
 
 
 def test_cli_append_uploads_files_at_creation(env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -182,6 +182,6 @@ def test_cli_append_uploads_files_at_creation(env, monkeypatch: pytest.MonkeyPat
     files = event.get("files") or []
     assert ev_id
     assert len(files) == 2
-    assert all(str(p).startswith(f"event attachments/{ev_id}/") for p in files)
+    assert all(str(p).startswith(f"event_attachments/{ev_id}/") for p in files)
     for rel in files:
         assert (repo / "entities" / "b_evt_004" / "files" / rel).exists()

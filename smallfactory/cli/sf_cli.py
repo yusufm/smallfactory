@@ -287,7 +287,7 @@ def main():
     ev_link = events_sub.add_parser("link-file", help="Link a files/ path to an event")
     ev_link.add_argument("sfid", help="Build SFID (e.g., b_2024_0001)")
     ev_link.add_argument("event_id", help="Event ID to modify")
-    ev_link.add_argument("path", help="Path under files/ to link (e.g., event attachments/evt_.../evidence.txt)")
+    ev_link.add_argument("path", help="Path under files/ to link (e.g., event_attachments/evt_.../evidence.txt)")
 
     # bom group (bill of materials ops)
     bom_parser = subparsers.add_parser("bom", help="Bill of Materials operations for part entities")
@@ -1112,7 +1112,7 @@ def main():
                     cand = f"{stem}_{i}{suf}"
                     i += 1
                 seen_names.add(cand)
-                dst = f"event attachments/{ev_id}/{cand}"
+                dst = f"event_attachments/{ev_id}/{cand}"
                 try:
                     up_res = f_upload_file(
                         datarepo_path,

@@ -267,8 +267,8 @@ python3 sf.py entities events append b_2024_0001 --message "Bench test failed" -
 
 # Append and link existing files/ paths
 python3 sf.py entities events append b_2024_0001 --message "Added evidence" \
-  --file "event attachments/evt_demo/log.txt" \
-  --file "event attachments/evt_demo/scope.png"
+  --file "event_attachments/evt_demo/log.txt" \
+  --file "event_attachments/evt_demo/scope.png"
 
 # Append and upload local files in one command
 python3 sf.py entities events append b_2024_0001 --message "Created with uploads" \
@@ -282,7 +282,7 @@ python3 sf.py entities events update b_2024_0001 evt_20260227193308 --message "R
 python3 sf.py entities events tags b_2024_0001 evt_20260227193308 --tags repair,measurement
 
 # Link a files/ path to an existing event
-python3 sf.py entities events link-file b_2024_0001 evt_20260227193308 "event attachments/evt_20260227193308/photo.png"
+python3 sf.py entities events link-file b_2024_0001 evt_20260227193308 "event_attachments/evt_20260227193308/photo.png"
 ```
 
 Notes:

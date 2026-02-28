@@ -160,7 +160,7 @@ Build events are stored separately from `entity.yml` in `entities/<b_sfid>/event
 Example `entities/b_2025_0001/events.jsonl`:
 ```json
 {"id":"evt_20260227193308","ts":"2026-02-27T19:33:08.816883+00:00","tags":["repair","task_open"],"message":"No USB enumeration"}
-{"id":"evt_20260227201510","ts":"2026-02-27T20:15:10.104201+00:00","tags":["measurement"],"message":"Iddq at 3.5V","files":["event attachments/evt_20260227201510/scope.png"]}
+{"id":"evt_20260227201510","ts":"2026-02-27T20:15:10.104201+00:00","tags":["measurement"],"message":"Iddq at 3.5V","files":["event_attachments/evt_20260227201510/scope.png"]}
 ```
 
 Build event schema (normative):
