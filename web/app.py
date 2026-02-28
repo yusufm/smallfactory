@@ -899,7 +899,8 @@ def _repo_process_lock(datarepo_path: Path):
         yield
         return
 
-    lock_path = Path(datarepo_path) / ".smallfactory.repo.lock"
+    # Keep lock artifacts inside .git so they never dirty the working tree.
+    lock_path = Path(datarepo_path) / ".git" / ".smallfactory.repo.lock"
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     timeout_sec = _get_repo_txn_lock_timeout_sec()
 
@@ -1953,9 +1954,9 @@ def entities_build(sfid):
     try:
         datarepo_path = get_datarepo_path()
 
-        # Ensure entity exists and is a product-like entity
+        # Ensure entity exists and is a part entity
         entity = get_entity(datarepo_path, sfid)
-        is_product = bool(sfid and sfid.startswith('p_'))
+        is_part = bool(sfid and sfid.startswith('p_'))
 
         # Determine revisions info for this part (released pointer + list)
         released_rev = None
@@ -1972,8 +1973,8 @@ def entities_build(sfid):
 
         # Extract inputs
         if request.method == 'POST':
-            if not is_product:
-                flash('Build is only available for product entities (sfid starts with p_)', 'error')
+            if not is_part:
+                flash('Build is only available for part entities (sfid starts with p_)', 'error')
                 return redirect(url_for('entities_view', sfid=sfid))
 
             l_sfid = (request.form.get('l_sfid') or '').strip() or None
@@ -2056,7 +2057,7 @@ def entities_build(sfid):
             notes=notes,
             rev_selected=rev_selected,
             can_build=can_build,
-            is_product=is_product,
+            is_part=is_part,
         )
     except Exception as e:
         flash(f'Error loading build page: {e}', 'error')
@@ -2074,7 +2075,7 @@ def entities_build_create_revision(sfid):
         # Prefer explicit product_sfid from form, fallback to path param
         target = (request.form.get('product_sfid') or '').strip() or sfid
         if not (target and target.startswith('p_')):
-            flash('Revisions are only supported on product entities (p_*)', 'error')
+            flash('Revisions are only supported on part entities (p_*)', 'error')
             return redirect(url_for('entities_build', sfid=sfid))
         # Ensure the entity exists
         try:

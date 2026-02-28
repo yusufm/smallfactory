@@ -483,6 +483,8 @@
         </div>
       </div>
 
+      {% set is_part = (entity.sfid and entity.sfid[:2] == 'p_') %}
+      {% if is_part %}
       <!-- Revisions -->
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -513,8 +515,6 @@
         </div>
       </div>
 
-      {% set is_part = (entity.sfid and entity.sfid[:2] == 'p_') %}
-      {% if is_part %}
       <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6" id="bom-card">
         <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div class="flex items-center gap-3">
@@ -1960,8 +1960,10 @@ async function submitBjEntryDialog(){
 
 // Initial load from files root
 dfLoad();
-loadRevisions();
-if(isPart){ bomLoad(); }
+if(isPart){
+  loadRevisions();
+  bomLoad();
+}
 bjRefreshDetailMoreButtons();
 window.addEventListener('resize', bjRefreshDetailMoreButtons);
 bjLoad();
