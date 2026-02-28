@@ -12,6 +12,9 @@ from smallfactory.mcp_server import (
     _collect_build_events,
     _entities_search_impl,
     _inventory_onhand_with_zero_parts,
+    _paginate_list,
+    _parts_inventory_rows,
+    _result,
 )
 
 
@@ -65,6 +68,7 @@ def test_entities_search_filters_type_and_tags(repo: Path):
     out = _entities_search_impl(repo, query="alpha", type_prefix="p", tags=["repair"])
     assert out["count"] == 1
     assert out["results"][0]["sfid"] == "p_alpha"
+    assert out["next_cursor"] == ""
 
 
 def test_inventory_summary_includes_zero_parts(repo: Path):
@@ -102,3 +106,52 @@ def test_inventory_location_includes_zero_parts(repo: Path):
     assert parts["p_a"] == 3
     assert parts["p_b"] == 0
     assert out["parts_count"] == 2
+
+
+def test_entities_search_paginates_with_cursor(repo: Path):
+    create_entity(repo, "p_a1", {"name": "A1"})
+    create_entity(repo, "p_a2", {"name": "A2"})
+    create_entity(repo, "p_a3", {"name": "A3"})
+
+    page1 = _entities_search_impl(repo, query="p_a", type_prefix="p", limit=2)
+    assert page1["count"] == 2
+    assert page1["next_cursor"] == "2"
+
+    page2 = _entities_search_impl(repo, query="p_a", type_prefix="p", limit=2, cursor=page1["next_cursor"])
+    assert page2["count"] == 1
+    assert page2["next_cursor"] == ""
+
+
+def test_build_events_list_style_cursor_pagination(repo: Path):
+    create_entity(repo, "p_evt", {"name": "Evt"})
+    create_entity(repo, "b_evt_1", {"name": "Build Evt", "part_sfid": "p_evt"})
+    append_build_event(repo, "b_evt_1", {"message": "m1", "tags": ["repair"]})
+    append_build_event(repo, "b_evt_1", {"message": "m2", "tags": ["repair"]})
+    append_build_event(repo, "b_evt_1", {"message": "m3", "tags": ["repair"]})
+
+    events = _collect_build_events(repo, build_sfid="b_evt_1")
+    assert len(events) == 3
+    page1 = _paginate_list(events, limit=2, cursor=None)
+    assert page1["count"] == 2
+    assert page1["next_cursor"] == "2"
+    page2 = _paginate_list(events, limit=2, cursor=page1["next_cursor"])
+    assert page2["count"] == 1
+    assert page2["next_cursor"] == ""
+
+
+def test_parts_inventory_rows_return_full_table(repo: Path):
+    create_entity(repo, "l_main", {"name": "Main"})
+    create_entity(repo, "p_r1", {"name": "R1"})
+    create_entity(repo, "p_r2", {"name": "R2"})
+    inventory_post(repo, "p_r1", 7, l_sfid="l_main")
+
+    rows = _parts_inventory_rows(repo)
+    by_id = {r["sfid"]: r for r in rows}
+    assert by_id["p_r1"]["qty"] == 7
+    assert by_id["p_r2"]["qty"] == 0
+
+
+def test_result_envelope_adds_schema_version():
+    out = _result({"a": 1})
+    assert out["a"] == 1
+    assert out["schema_version"] == "1.1.0"

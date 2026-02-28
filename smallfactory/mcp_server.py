@@ -5,11 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 import os
+import json
 
 from smallfactory.core.v1.config import get_datarepo_path
 from smallfactory.core.v1.entities import get_entity, list_entities, resolved_bom_view
 from smallfactory.core.v1.inventory import inventory_onhand_readonly
 
+MCP_SCHEMA_VERSION = "1.1.0"
+MCP_SERVER_NAME = "smallfactory"
 
 SMALLFACTORY_MCP_INSTRUCTIONS = """
 You are connected to a read-only SmallFactory repository.
@@ -37,7 +40,8 @@ Query strategy:
 2) Use `entity_get` for authoritative metadata on one entity.
 3) Use `build_events_list` for event-level detail.
 4) Use `analytics_query` for grouped counts/trends.
-5) Use `inventory_onhand` and `bom_resolved` for stock and structure context.
+5) Use `parts_inventory_list` for full part quantity tables.
+6) Use `inventory_onhand` and `bom_resolved` for stock and structure context.
 
 Tooling contract:
 - Do not invent fields not returned by tools.
@@ -67,6 +71,16 @@ def _parse_iso8601(value: Optional[str]) -> Optional[datetime]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _json_text(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _result(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    out.setdefault("schema_version", MCP_SCHEMA_VERSION)
+    return out
 
 
 def _normalize_tags(tags: Optional[Iterable[str]]) -> List[str]:
@@ -162,6 +176,90 @@ def _inventory_onhand_with_zero_parts(
     return base
 
 
+def _parse_cursor(cursor: Optional[str]) -> int:
+    if cursor is None:
+        return 0
+    s = str(cursor).strip()
+    if not s:
+        return 0
+    try:
+        v = int(s)
+    except Exception:
+        raise ValueError("cursor must be an integer offset encoded as string")
+    if v < 0:
+        raise ValueError("cursor must be >= 0")
+    return v
+
+
+def _paginate_list(items: List[Dict[str, Any]], *, limit: int, cursor: Optional[str]) -> Dict[str, Any]:
+    if limit < 1:
+        limit = 1
+    if limit > 1000:
+        limit = 1000
+    start = _parse_cursor(cursor)
+    total = len(items)
+    if start > total:
+        start = total
+    end = min(total, start + limit)
+    page = items[start:end]
+    next_cursor = str(end) if end < total else ""
+    return {
+        "items": page,
+        "count": len(page),
+        "total_matches": total,
+        "cursor": str(start),
+        "next_cursor": next_cursor,
+    }
+
+
+def _parts_inventory_rows(datarepo_path: Path, *, location_sfid: Optional[str] = None) -> List[Dict[str, Any]]:
+    summary = _inventory_onhand_with_zero_parts(
+        datarepo_path,
+        part_sfid=None,
+        location_sfid=location_sfid,
+        include_zero_parts=True,
+    )
+    part_meta = _part_entities_by_sfid(datarepo_path)
+    rows: List[Dict[str, Any]] = []
+    if location_sfid:
+        parts_map = summary.get("parts") if isinstance(summary.get("parts"), dict) else {}
+        for sfid in sorted(part_meta.keys()):
+            ent = part_meta.get(sfid) or {}
+            rows.append(
+                {
+                    "sfid": sfid,
+                    "name": ent.get("name"),
+                    "uom": ent.get("uom", "ea"),
+                    "location_sfid": location_sfid,
+                    "qty": int(parts_map.get(sfid, 0) or 0),
+                }
+            )
+        return rows
+
+    parts_rows = summary.get("parts") if isinstance(summary.get("parts"), list) else []
+    by_sfid: Dict[str, Dict[str, Any]] = {}
+    for row in parts_rows:
+        if not isinstance(row, dict):
+            continue
+        sfid = str(row.get("sfid", "")).strip()
+        if not sfid:
+            continue
+        by_sfid[sfid] = row
+    for sfid in sorted(part_meta.keys()):
+        ent = part_meta.get(sfid) or {}
+        inv = by_sfid.get(sfid) or {}
+        rows.append(
+            {
+                "sfid": sfid,
+                "name": ent.get("name"),
+                "uom": inv.get("uom", ent.get("uom", "ea")),
+                "qty": int(inv.get("total", 0) or 0),
+                "by_location": inv.get("by_location", {}) if isinstance(inv.get("by_location"), dict) else {},
+            }
+        )
+    return rows
+
+
 def _collect_build_events(
     datarepo_path: Path,
     *,
@@ -231,6 +329,7 @@ def _entities_search_impl(
     type_prefix: Optional[str] = None,
     tags: Optional[Iterable[str]] = None,
     limit: int = 20,
+    cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
     q = str(query or "").strip().lower()
     wanted_tags = set(_normalize_tags(tags))
@@ -275,7 +374,14 @@ def _entities_search_impl(
         )
 
     results.sort(key=lambda x: str(x.get("sfid") or ""))
-    return {"results": results[:limit], "count": len(results[:limit]), "total_matches": len(results)}
+    page = _paginate_list(results, limit=limit, cursor=cursor)
+    return {
+        "results": page["items"],
+        "count": page["count"],
+        "total_matches": page["total_matches"],
+        "cursor": page["cursor"],
+        "next_cursor": page["next_cursor"],
+    }
 
 
 def _analytics_query_impl(
@@ -288,6 +394,7 @@ def _analytics_query_impl(
     start_ts: Optional[str] = None,
     end_ts: Optional[str] = None,
     limit: int = 20,
+    cursor: Optional[str] = None,
 ) -> Dict[str, Any]:
     if str(subject).strip().lower() != "build_events":
         raise ValueError("Only subject='build_events' is currently supported")
@@ -327,12 +434,16 @@ def _analytics_query_impl(
     if limit > 200:
         limit = 200
 
-    rows = [{"key": k, "count": int(v)} for k, v in counts.most_common(limit)]
+    all_rows = [{"key": k, "count": int(v)} for k, v in counts.most_common()]
+    page = _paginate_list(all_rows, limit=limit, cursor=cursor)
     return {
         "subject": "build_events",
         "group_by": mode,
-        "rows": rows,
-        "rows_count": len(rows),
+        "rows": page["items"],
+        "rows_count": page["count"],
+        "total_rows": page["total_matches"],
+        "cursor": page["cursor"],
+        "next_cursor": page["next_cursor"],
         "total_events_considered": len(events),
         "filters": {
             "part_sfid": part_sfid,
@@ -365,13 +476,133 @@ def build_mcp_server(
         streamable_http_path=streamable_http_path,
     )
 
+    # Resources for clients/workflows that prefer resource reads over tool calls.
+    @server.resource("mcp://smallfactory", name="smallfactory_root")
+    def resource_smallfactory_root() -> str:
+        return _json_text(
+            {
+                "name": MCP_SERVER_NAME,
+                "schema_version": MCP_SCHEMA_VERSION,
+                "resources": [
+                    "mcp://smallfactory",
+                    "smallfactory://repo_info",
+                    "mcp://smallfactory/repo_info",
+                    "smallfactory://data_model_guide",
+                    "mcp://smallfactory/data_model_guide",
+                    "smallfactory://inventory/summary",
+                    "mcp://smallfactory/inventory_summary",
+                ],
+                "tools_hint": [
+                    "repo_info",
+                    "data_model_guide",
+                    "entities_search",
+                    "entity_get",
+                    "inventory_onhand",
+                    "parts_inventory_list",
+                    "bom_resolved",
+                    "build_events_list",
+                    "analytics_query",
+                ],
+            }
+        )
+
+    @server.resource("smallfactory://repo_info", name="repo_info")
+    @server.resource("mcp://smallfactory/repo_info", name="repo_info_alias")
+    def resource_repo_info() -> str:
+        return _json_text(_result({"datarepo_path": str(datarepo_path)}))
+
+    @server.resource("smallfactory://data_model_guide", name="data_model_guide")
+    @server.resource("mcp://smallfactory/data_model_guide", name="data_model_guide_alias")
+    def resource_data_model_guide() -> str:
+        return _json_text(
+            _result(
+            {
+                "entity_prefixes": {
+                    "p_*": "part",
+                    "b_*": "build record",
+                    "l_*": "location",
+                },
+                "relationships": [
+                    "build.part_sfid -> part.sfid",
+                    "build events belong to a build record (b_*)",
+                    "inventory quantities are tracked by part and location",
+                    "BOM resolution starts from a part root and expands children",
+                    "inventory_onhand(include_zero_parts=true) returns all parts with explicit zero totals when no stock exists",
+                ],
+            }
+            )
+        )
+
+    @server.resource("smallfactory://inventory/summary", name="inventory_summary")
+    @server.resource("mcp://smallfactory/inventory_summary", name="inventory_summary_alias")
+    def resource_inventory_summary() -> str:
+        summary = _inventory_onhand_with_zero_parts(
+            datarepo_path,
+            part_sfid=None,
+            location_sfid=None,
+            include_zero_parts=True,
+        )
+        return _json_text(_result(summary))
+
+    @server.resource("smallfactory://status", name="server_status")
+    @server.resource("mcp://smallfactory/status", name="server_status_alias")
+    def resource_server_status() -> str:
+        return _json_text(
+            _result(
+                {
+                    "server_name": MCP_SERVER_NAME,
+                    "datarepo_path": str(datarepo_path),
+                    "mcp_tools_expected": [
+                        "server_status",
+                        "repo_info",
+                        "data_model_guide",
+                        "entities_search",
+                        "entity_get",
+                        "inventory_onhand",
+                        "parts_inventory_list",
+                        "bom_resolved",
+                        "build_events_list",
+                        "analytics_query",
+                    ],
+                }
+            )
+        )
+
+    @server.resource("smallfactory://parts/quantities", name="parts_quantities")
+    @server.resource("mcp://smallfactory/parts_quantities", name="parts_quantities_alias")
+    def resource_parts_quantities() -> str:
+        rows = _parts_inventory_rows(datarepo_path, location_sfid=None)
+        return _json_text(_result({"rows": rows, "count": len(rows)}))
+
+    @server.tool()
+    def server_status() -> Dict[str, Any]:
+        """Return server/runtime status and schema contract metadata.
+
+        Use for compatibility checks and to confirm active repo binding.
+        """
+        return _result(
+            {
+                "server_name": MCP_SERVER_NAME,
+                "datarepo_path": str(datarepo_path),
+                "schema_version": MCP_SCHEMA_VERSION,
+                "resource_uris": [
+                    "mcp://smallfactory",
+                    "smallfactory://status",
+                    "smallfactory://repo_info",
+                    "smallfactory://data_model_guide",
+                    "smallfactory://inventory/summary",
+                    "smallfactory://parts/quantities",
+                ],
+            }
+        )
+
     @server.tool()
     def repo_info() -> Dict[str, Any]:
         """Return repository-level connection context.
 
         Use when you need to confirm which datarepo this MCP session is using.
         """
-        return {"datarepo_path": str(datarepo_path)}
+        return _result({"datarepo_path": str(datarepo_path)})
 
     @server.tool()
     def data_model_guide() -> Dict[str, Any]:
@@ -379,7 +610,7 @@ def build_mcp_server(
 
         Use before complex multi-tool reasoning when entity relationships are unclear.
         """
-        return {
+        return _result({
             "entity_prefixes": {
                 "p_*": "part",
                 "b_*": "build record",
@@ -395,7 +626,7 @@ def build_mcp_server(
             "build_event_fields": ["build_sfid", "part_sfid", "event_id", "ts", "tags", "message", "files"],
             "analytics_subjects": ["build_events"],
             "analytics_group_by": ["tag", "part_sfid", "build_sfid", "day"],
-        }
+        })
 
     @server.tool()
     def entities_search(
@@ -403,19 +634,21 @@ def build_mcp_server(
         type_prefix: str = "",
         tags: Optional[List[str]] = None,
         limit: int = 20,
+        cursor: str = "",
     ) -> Dict[str, Any]:
         """Search entities by SFID/name with optional type and tag filters.
 
         Use as the first discovery step before calling `entity_get`, `bom_resolved`,
         `build_events_list`, or `inventory_onhand`.
         """
-        return _entities_search_impl(
+        return _result(_entities_search_impl(
             datarepo_path,
             query=query,
             type_prefix=(type_prefix or None),
             tags=tags,
             limit=limit,
-        )
+            cursor=(cursor or None),
+        ))
 
     @server.tool()
     def entity_get(sfid: str) -> Dict[str, Any]:
@@ -424,7 +657,7 @@ def build_mcp_server(
         Use for authoritative details after discovery with `entities_search`.
         For builds (`b_*`), this includes parsed events.
         """
-        return get_entity(datarepo_path, sfid)
+        return _result({"entity": get_entity(datarepo_path, sfid)})
 
     @server.tool()
     def inventory_onhand(
@@ -438,11 +671,38 @@ def build_mcp_server(
         By default (`include_zero_parts=true`), summary/location queries include all
         part entities with explicit zero quantities where applicable.
         """
-        return _inventory_onhand_with_zero_parts(
+        return _result(_inventory_onhand_with_zero_parts(
             datarepo_path,
             part_sfid=(part_sfid or None),
             location_sfid=(location_sfid or None),
             include_zero_parts=bool(include_zero_parts),
+        ))
+
+    @server.tool()
+    def parts_inventory_list(
+        location_sfid: str = "",
+        limit: int = 200,
+        cursor: str = "",
+    ) -> Dict[str, Any]:
+        """Return a paginated table of parts with explicit quantities.
+
+        Use this for "show all parts with quantities" requests to avoid iterative
+        one-entity-at-a-time planning.
+        """
+        rows = _parts_inventory_rows(
+            datarepo_path,
+            location_sfid=(location_sfid or None),
+        )
+        page = _paginate_list(rows, limit=limit, cursor=(cursor or None))
+        return _result(
+            {
+                "rows": page["items"],
+                "count": page["count"],
+                "total_matches": page["total_matches"],
+                "cursor": page["cursor"],
+                "next_cursor": page["next_cursor"],
+                "location_sfid": (location_sfid or None),
+            }
         )
 
     @server.tool()
@@ -454,7 +714,7 @@ def build_mcp_server(
         """
         depth = max(0, min(int(max_depth), 32))
         rows = resolved_bom_view(datarepo_path, root_sfid, max_depth=depth)
-        return {"root_sfid": root_sfid, "max_depth": depth, "rows": rows, "count": len(rows)}
+        return _result({"root_sfid": root_sfid, "max_depth": depth, "rows": rows, "count": len(rows)})
 
     @server.tool()
     def build_events_list(
@@ -464,15 +724,12 @@ def build_mcp_server(
         start_ts: str = "",
         end_ts: str = "",
         limit: int = 200,
+        cursor: str = "",
     ) -> Dict[str, Any]:
         """List build events with optional filters for build, part, tags, and time window.
 
         Use for event-level evidence before aggregating with `analytics_query`.
         """
-        if limit < 1:
-            limit = 1
-        if limit > 1000:
-            limit = 1000
         events = _collect_build_events(
             datarepo_path,
             build_sfid=(build_sfid or None),
@@ -481,7 +738,16 @@ def build_mcp_server(
             start_ts=(start_ts or None),
             end_ts=(end_ts or None),
         )
-        return {"events": events[:limit], "count": len(events[:limit]), "total_matches": len(events)}
+        page = _paginate_list(events, limit=limit, cursor=(cursor or None))
+        return _result(
+            {
+                "events": page["items"],
+                "count": page["count"],
+                "total_matches": page["total_matches"],
+                "cursor": page["cursor"],
+                "next_cursor": page["next_cursor"],
+            }
+        )
 
     @server.tool()
     def analytics_query(
@@ -492,6 +758,7 @@ def build_mcp_server(
         start_ts: str = "",
         end_ts: str = "",
         limit: int = 20,
+        cursor: str = "",
     ) -> Dict[str, Any]:
         """Run grouped read-only analytics over build events.
 
@@ -500,7 +767,7 @@ def build_mcp_server(
         - group_by: `tag`, `part_sfid`, `build_sfid`, `day`
         Use this for ranking/trend questions (e.g., most common repair tags).
         """
-        return _analytics_query_impl(
+        return _result(_analytics_query_impl(
             datarepo_path,
             subject=subject,
             group_by=group_by,
@@ -509,7 +776,8 @@ def build_mcp_server(
             start_ts=(start_ts or None),
             end_ts=(end_ts or None),
             limit=limit,
-        )
+            cursor=(cursor or None),
+        ))
 
     return server
 

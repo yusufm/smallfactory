@@ -107,14 +107,24 @@ Windsurf MCP config example:
 ```
 
 Default available tools:
+- `server_status`
 - `repo_info`
 - `data_model_guide`
 - `entities_search`
 - `entity_get`
 - `inventory_onhand`
+- `parts_inventory_list`
 - `bom_resolved`
 - `build_events_list`
 - `analytics_query`
+
+Compatibility resources (for resource-first MCP clients):
+- `mcp://smallfactory`
+- `smallfactory://status` (alias: `mcp://smallfactory/status`)
+- `smallfactory://repo_info` (alias: `mcp://smallfactory/repo_info`)
+- `smallfactory://data_model_guide` (alias: `mcp://smallfactory/data_model_guide`)
+- `smallfactory://inventory/summary` (alias: `mcp://smallfactory/inventory_summary`)
+- `smallfactory://parts/quantities` (alias: `mcp://smallfactory/parts_quantities`)
 
 ## validate
 
