@@ -6,7 +6,6 @@ Welcome to the smallFactory documentation.
 - [Start Here](START_HERE.md)
 - [Web UI guide](../web/README.md)
 - [CLI basics](cli/README.md)
-- [Build events](users/events.md)
 
 ## Developers
 - [PLM SPEC (Core v1)](../smallfactory/core/v1/SPECIFICATION.md)
