@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 import sys
 import os
+import errno
 import heapq
 import csv
 import re
@@ -24,6 +25,10 @@ import atexit
 from contextlib import contextmanager
 import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
 
 # Prometheus metrics
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -879,6 +884,65 @@ _GIT_LAST_PUSH: dict[str, float] = {}
 _PUSH_TIMERS: dict[str, threading.Timer] = {}
 
 
+def _get_repo_txn_lock_timeout_sec() -> float:
+    try:
+        v = float(os.environ.get("SF_REPO_TXN_LOCK_TIMEOUT_SEC", "30") or "30")
+        return max(0.0, v)
+    except Exception:
+        return 30.0
+
+
+@contextmanager
+def _repo_process_lock(datarepo_path: Path):
+    """Cross-process repo mutation lock using an advisory lockfile."""
+    if fcntl is None:  # pragma: no cover
+        yield
+        return
+
+    lock_path = Path(datarepo_path) / ".smallfactory.repo.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    timeout_sec = _get_repo_txn_lock_timeout_sec()
+
+    fh = None
+    try:
+        fh = open(lock_path, "a+", encoding="utf-8")
+        start = time.time()
+        while True:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as e:
+                lock_busy_errnos = {errno.EAGAIN, errno.EACCES, getattr(errno, "EWOULDBLOCK", errno.EAGAIN)}
+                if e.errno not in lock_busy_errnos:
+                    raise
+                if (time.time() - start) >= timeout_sec:
+                    raise RuntimeError(
+                        f"Timed out waiting for repo lock after {timeout_sec:.1f}s"
+                    )
+                time.sleep(0.05)
+
+        try:
+            fh.seek(0)
+            fh.truncate()
+            fh.write(f"pid={os.getpid()} acquired_at={time.time():.6f}\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        except Exception:
+            pass
+
+        yield
+    finally:
+        if fh is not None:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+
 def _push_worker(datarepo_path: Path) -> None:
     t0 = time.time()
     _dgit('async push: start')
@@ -1143,41 +1207,42 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn):
     need_async_push = False
     schedule_delayed = False
     with _REPO_TXN_LOCK:
-        ok, err = _safe_git_pull(datarepo_path)
-        if not ok:
-            raise RuntimeError(f"Pre-mutation git pull failed: {err}")
-        # Extract per-request identity from proxy headers (if present)
-        name, email = _extract_identity_from_headers(request)
-        def _do_mutate():
-            return mutate_fn()
-        if name and email:
-            with _with_git_identity(name, email):
-                result = _do_mutate()
-        else:
-            result = _do_mutate()
-        # Conditional push
-        if _autopush_enabled():
-            ttl = _get_push_ttl_sec()
-            if ttl and ttl > 0:
-                # Defer push to batch within TTL window (always async)
-                schedule_delayed = True
+        with _repo_process_lock(datarepo_path):
+            ok, err = _safe_git_pull(datarepo_path)
+            if not ok:
+                raise RuntimeError(f"Pre-mutation git pull failed: {err}")
+            # Extract per-request identity from proxy headers (if present)
+            name, email = _extract_identity_from_headers(request)
+            def _do_mutate():
+                return mutate_fn()
+            if name and email:
+                with _with_git_identity(name, email):
+                    result = _do_mutate()
             else:
-                if _autopush_async_enabled():
-                    need_async_push = True
+                result = _do_mutate()
+            # Conditional push
+            if _autopush_enabled():
+                ttl = _get_push_ttl_sec()
+                if ttl and ttl > 0:
+                    # Defer push to batch within TTL window (always async)
+                    schedule_delayed = True
                 else:
-                    try:
-                        t0 = time.time()
-                        with _PUSH_LOCK:
-                            okp = git_push(datarepo_path)
-                        _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
-                        if okp:
-                            _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
-                    except Exception as e:
+                    if _autopush_async_enabled():
+                        need_async_push = True
+                    else:
                         try:
-                            _dgit(f'sync push: failed ({e})')
-                        except Exception:
-                            pass
-                        raise RuntimeError(f"Post-mutation git push failed: {e}")
+                            t0 = time.time()
+                            with _PUSH_LOCK:
+                                okp = git_push(datarepo_path)
+                            _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
+                            if okp:
+                                _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
+                        except Exception as e:
+                            try:
+                                _dgit(f'sync push: failed ({e})')
+                            except Exception:
+                                pass
+                            raise RuntimeError(f"Post-mutation git push failed: {e}")
     # If async push is enabled, run it after releasing the txn lock
     if need_async_push:
         _spawn_async_push(datarepo_path)

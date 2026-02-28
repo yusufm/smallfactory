@@ -96,6 +96,23 @@ class TestWriteDatarepoConfig:
         # Should not duplicate the union merge line
         assert content.count("journal.ndjson merge=union") == 1
 
+    def test_creates_gitignore_with_repo_lock_patterns(self, tmp_path: Path):
+        init_git_repo(tmp_path)
+        write_datarepo_config(tmp_path)
+        gi = tmp_path / ".gitignore"
+        assert gi.exists()
+        content = gi.read_text()
+        assert ".smallfactory.repo.lock" in content
+        assert ".smallfactory.repo.lock.*" in content
+
+    def test_gitignore_idempotent_for_repo_lock_patterns(self, tmp_path: Path):
+        init_git_repo(tmp_path)
+        write_datarepo_config(tmp_path)
+        write_datarepo_config(tmp_path)
+        content = (tmp_path / ".gitignore").read_text()
+        assert content.count(".smallfactory.repo.lock\n") == 1
+        assert content.count(".smallfactory.repo.lock.*\n") == 1
+
 
 # ---------------------------------------------------------------------------
 # scaffold_default_location
@@ -196,6 +213,22 @@ class TestInitialCommit:
         write_datarepo_config(tmp_path)
         # Should not raise even though there's no remote
         initial_commit_and_optional_push(tmp_path, has_remote=False)
+
+    def test_initial_commit_tracks_gitignore(self, tmp_path: Path):
+        init_git_repo(tmp_path)
+        write_datarepo_config(tmp_path)
+        initial_commit_and_optional_push(tmp_path, has_remote=False)
+        r = subprocess.run(
+            ["git", "ls-tree", "--name-only", "HEAD"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        files = (r.stdout or "").splitlines()
+        assert DATAREPO_CONFIG_FILENAME in files
+        assert ".gitattributes" in files
+        assert ".gitignore" in files
 
 
 # ---------------------------------------------------------------------------

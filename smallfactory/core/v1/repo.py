@@ -118,6 +118,31 @@ def write_datarepo_config(repo_path: Path) -> Path:
     except Exception:
         # Non-fatal; validator will still recommend adding this
         pass
+    # Ensure .gitignore excludes transient repo lock artifacts (idempotent)
+    gi = repo_path / ".gitignore"
+    lock_patterns = [
+        ".smallfactory.repo.lock",
+        ".smallfactory.repo.lock.*",
+    ]
+    try:
+        if gi.exists():
+            content = gi.read_text()
+            with open(gi, "a") as gf:
+                wrote_header = False
+                for pat in lock_patterns:
+                    if pat not in content:
+                        if not wrote_header:
+                            gf.write("\n# smallFactory transient lock files\n")
+                            wrote_header = True
+                        gf.write(pat + "\n")
+        else:
+            with open(gi, "w") as gf:
+                gf.write("# Git ignore for smallFactory datarepo\n")
+                gf.write("# Ignore transient lock artifacts used for cross-process mutation safety\n")
+                for pat in lock_patterns:
+                    gf.write(pat + "\n")
+    except Exception:
+        pass
     return config_file
 
 
@@ -128,12 +153,15 @@ def set_default_datarepo(repo_path: Path) -> None:
 
 
 def initial_commit_and_optional_push(repo_path: Path, has_remote: bool) -> None:
-    # Only commit the repo config file and .gitattributes; avoid touching
+    # Only commit repo scaffold files; avoid touching
     # entities/ or inventory/ so the initial commit doesn't require ::sfid:: tokens.
     subprocess.run(["git", "add", DATAREPO_CONFIG_FILENAME], cwd=repo_path)
     gia = repo_path / ".gitattributes"
     if gia.exists():
         subprocess.run(["git", "add", ".gitattributes"], cwd=repo_path)
+    gi = repo_path / ".gitignore"
+    if gi.exists():
+        subprocess.run(["git", "add", ".gitignore"], cwd=repo_path)
     subprocess.run(["git", "commit", "-m", "Initial smallFactory datarepo config"], cwd=repo_path)
     remotes = subprocess.run(["git", "remote"], cwd=repo_path, capture_output=True, text=True)
     if has_remote and "origin" in remotes.stdout:

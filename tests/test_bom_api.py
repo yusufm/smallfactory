@@ -1,6 +1,8 @@
 from __future__ import annotations
 import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -234,6 +236,52 @@ def test_run_repo_txn_safe_git_pull_failure_returns_error(tmp_path: Path, monkey
 
     with pytest.raises(RuntimeError):
         mod._run_repo_txn(repo, lambda: {"ok": True})
+
+
+def test_run_repo_txn_times_out_when_repo_lock_held_by_other_process(monkeypatch: pytest.MonkeyPatch, web_mod):
+    if os.name == "nt":
+        pytest.skip("flock-based lock test is POSIX-only")
+
+    mod = web_mod
+    repo = mod.get_datarepo_path()
+    lock_file = repo / ".smallfactory.repo.lock"
+    ready_file = repo / ".smallfactory.repo.lock.ready"
+    lock_file.parent.mkdir(parents=True, exist_ok=True)
+    lock_file.touch()
+    if ready_file.exists():
+        ready_file.unlink()
+
+    monkeypatch.setenv("SF_WEB_AUTOPUSH", "0")
+    monkeypatch.setenv("SF_REPO_TXN_LOCK_TIMEOUT_SEC", "0.2")
+    monkeypatch.setattr(mod, "_safe_git_pull", lambda p: (True, None))
+
+    holder = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import fcntl, pathlib, time, sys; "
+                "p = pathlib.Path(sys.argv[1]); r = pathlib.Path(sys.argv[2]); "
+                "fh = p.open('a+'); "
+                "fcntl.flock(fh.fileno(), fcntl.LOCK_EX); "
+                "r.write_text('ready', encoding='utf-8'); "
+                "time.sleep(2.0)"
+            ),
+            str(lock_file),
+            str(ready_file),
+        ]
+    )
+    try:
+        for _ in range(40):
+            if ready_file.exists():
+                break
+            time.sleep(0.05)
+        assert ready_file.exists()
+        with pytest.raises(RuntimeError, match="Timed out waiting for repo lock"):
+            mod._run_repo_txn(repo, lambda: {"ok": True})
+    finally:
+        holder.terminate()
+        holder.wait(timeout=5)
 
 
 def test_bom_preview_passes_extra_fields_and_apply_persists_attrs(web_mod):
