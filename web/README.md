@@ -13,6 +13,7 @@ A modern, clean web interface for the smallFactory Git-native PLM system.
 - **Entities (PLM)**:
   - Create, list, and view canonical entities (SFIDs)
   - Inline editing on the entity view page (separate Edit page is deprecated)
+  - Build events: timeline-style notes/tests/files for `b_*` entities
   - Revisions: bump and release; released pointer at `entities/<sfid>/refs/released`
   - BOM: add, remove, set lines, and manage alternates; `rev: released` resolves via pointer
   - Files working area: manage under `entities/<sfid>/files/` (list, mkdir, upload, move, delete)
@@ -101,6 +102,7 @@ from smallfactory.core.v1.inventory import inventory_onhand_readonly, inventory_
 from smallfactory.core.v1.entities import (
     get_entity, create_entity, update_entity_fields,
     get_revisions, bump_revision, release_revision,
+    append_build_event, update_build_event, update_build_event_tags, add_build_event_file_link,
     bom_list, bom_add_line, bom_remove_line, bom_set_line, bom_alt_add, bom_alt_remove,
 )
 from smallfactory.core.v1.files import list_files, mkdir, rmdir, upload_file, delete_file, move_file, move_dir
@@ -333,9 +335,15 @@ Note: The legacy POST route `/inventory/<item_id>/adjust` has been removed in fa
   - `/api/entities` — Entities API (GET)
   - `/api/entities/<sfid>` — Entity (GET)
   - `/api/entities/<sfid>/update` — Update entity fields (POST)
+  - `/api/entities/<sfid>/events` — List build events (GET; `b_*` only)
+  - `/api/entities/<sfid>/events/append` — Append build event (POST; `b_*` only)
+  - `/api/entities/<sfid>/events/<event_id>/update` — Update build event (POST; `b_*` only)
+  - `/api/entities/<sfid>/events/<event_id>/tags` — Replace build event tags (POST; `b_*` only)
+  - `/api/entities/<sfid>/events/<event_id>/files/link` — Link existing `files/` path to event (POST; `b_*` only)
   - `/api/entities/<sfid>/revisions` — Get revisions and released pointer (GET)
   - `/api/entities/<sfid>/revisions/bump` — Cut and release a revision (POST; optional `rev` in body, otherwise next numeric)
   - `/api/entities/<sfid>/revisions/<rev>/release` — Release a specific revision (POST)
+  - `/api/entities/<sfid>/revisions/<rev>/download` — Download released revision tarball (GET)
   - `/api/entities/<sfid>/bom` — BOM list (GET)
   - `/api/entities/<sfid>/bom/deep` — Resolved BOM tree (GET)
   - `/api/entities/<sfid>/bom/add` — Add BOM line (POST)
@@ -349,6 +357,7 @@ Note: The legacy POST route `/inventory/<item_id>/adjust` has been removed in fa
   - `/api/entities/<sfid>/files/upload` — Upload file (POST)
   - `/api/entities/<sfid>/files/delete` — Delete file (POST)
   - `/api/entities/<sfid>/files/move` — Move file/folder (POST)
+  - `/api/entities/<sfid>/files/download` — Download file (GET)
   - `/api/entities/specs/<sfid>` — Entity specs (GET)
   - `/api/vision/ask` — Vision ask (POST)
   - `/api/vision/extract/part` — Extract part fields (POST)

@@ -93,6 +93,7 @@ https://discord.gg/g3QSuVmvBt
 
 ### Build & release
 - **Revisions** — One‑click, numbered revisions with clear release tracking.
+- **Build events** — Capture timeline events on builds (`b_*`) with notes, tags, and attachments.
 - **Stickers** — Generate QR stickers for parts and locations; print in batches with chosen fields.
 - **Camera capture** — Snap a photo of an invoice or label to auto‑extract parts data.
 - **Vision‑assisted intake** — Extract parts from invoices and batch‑create with review.
@@ -142,6 +143,7 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 - [The smallFactory Story](docs/meta/the-smallfactory-story.md)
 - [Start Here](docs/START_HERE.md)
 - [Users docs](docs/users/README.md)
+- [Build events guide](docs/users/events.md)
 - [Developers docs](docs/developers/README.md)
 - [Web UI docs](web/README.md)
 - [CLI docs](docs/cli/README.md)
