@@ -97,11 +97,11 @@ def _append_line(p: Path, line: str) -> None:
 def _exclusive_journal_lock(journal_path: Path) -> Iterator[None]:
     """Cross-platform advisory lock over the journal file."""
     journal_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(journal_path, "a+b") as lock_fh:
+    lock_path = journal_path.with_name(f"{journal_path.name}.lock")
+    with open(lock_path, "a+b") as lock_fh:
         if os.name == "nt":
             import msvcrt
 
-            # msvcrt.locking requires a byte range; ensure at least one byte exists.
             lock_fh.seek(0, os.SEEK_END)
             if lock_fh.tell() == 0:
                 lock_fh.write(b"\0")
