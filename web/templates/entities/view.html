@@ -1645,7 +1645,7 @@ function bjFilesCell(ev){
       const path = String(p || '').trim();
       if(!path) return '';
       const href = `/api/entities/${encodeURIComponent(SFID)}/files/download?path=${encodeURIComponent(path)}`;
-      return `<a class="inline-flex items-center justify-center w-7 h-7 mr-1 mb-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100" href="${href}" title="${_escapeHtml(path)}" aria-label="Attachment" download><i class="fas fa-paperclip text-xs"></i></a>`;
+      return `<a class="inline-flex items-center justify-center w-7 h-7 mr-1 mb-1 text-gray-400 hover:text-blue-700" href="${href}" title="${_escapeHtml(path)}" aria-label="Download" download><i class="fas fa-download text-xs"></i></a>`;
     }).join('');
   }
   if(!links){
