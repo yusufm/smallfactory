@@ -80,20 +80,18 @@ Notes:
 ## web
 
 Start the Flask-based web UI. By default this also starts the read-only MCP
-server in the same runtime (separate port) using the same resolved datarepo.
+server in the same runtime on the same port under `/mcp`, using the same resolved datarepo.
 
 ```bash
 python3 sf.py web --port 8080 --host 0.0.0.0 --debug
 ```
 
-- Flags: `--port`, `--host`, `--debug` (auto-reload)
+- Flags: `--port`, `--host`, `--debug` (auto-reload when MCP integration is disabled)
 - MCP is enabled by default:
   - Web UI: `http://<host>:<port>`
-  - MCP (streamable HTTP): `http://<mcp_host>:<mcp_port>/mcp`
+  - MCP (streamable HTTP): `http://<host>:<port>/mcp`
 - MCP env controls:
   - `SF_WEB_ENABLE_MCP` (default `1`)
-  - `SF_MCP_HOST` (default web host)
-  - `SF_MCP_PORT` (default `web_port + 1`)
   - `SF_MCP_PATH` (default `/mcp`)
 
 Windsurf MCP config example:
@@ -102,7 +100,7 @@ Windsurf MCP config example:
 {
   "mcpServers": {
     "smallfactory": {
-      "serverUrl": "http://127.0.0.1:8081/mcp"
+      "serverUrl": "http://127.0.0.1:8080/mcp"
     }
   }
 }

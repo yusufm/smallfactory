@@ -5,7 +5,6 @@ import pathlib
 import json
 import yaml
 import datetime
-import threading
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
@@ -1456,62 +1455,86 @@ def main():
             project_root = pathlib.Path(__file__).parent.parent.parent
             sys.path.insert(0, str(project_root))
 
-            from web.app import app
+            from web.app import app as flask_app
             datarepo_path = _repo_path()
             # Keep web and MCP in the same repo context.
             os.environ["SF_DATAREPO"] = str(datarepo_path)
 
             mcp_enabled = str(os.getenv("SF_WEB_ENABLE_MCP", "1")).strip().lower() not in ("0", "false", "no", "off")
-            mcp_host = os.getenv("SF_MCP_HOST", args.host)
-            try:
-                mcp_port = int(os.getenv("SF_MCP_PORT", str(int(args.port) + 1)))
-            except Exception:
-                mcp_port = int(args.port) + 1
             mcp_path = os.getenv("SF_MCP_PATH", "/mcp")
+            if not mcp_path.startswith("/"):
+                mcp_path = "/" + mcp_path
+            if len(mcp_path) > 1:
+                mcp_path = mcp_path.rstrip("/")
 
-            # In debug-reload mode, avoid starting duplicate MCP threads from the reloader parent.
-            should_start_mcp = (not args.debug) or (os.environ.get("WERKZEUG_RUN_MAIN") == "true")
-            if mcp_enabled and should_start_mcp:
-                try:
-                    from smallfactory.mcp_server import run_mcp_http_server
-
-                    t = threading.Thread(
-                        target=run_mcp_http_server,
-                        kwargs={
-                            "repo": str(datarepo_path),
-                            "host": mcp_host,
-                            "port": mcp_port,
-                            "mount_path": mcp_path,
-                        },
-                        daemon=True,
-                    )
-                    t.start()
-                except Exception as e:
-                    print(f"[smallFactory] Warning: MCP server failed to start: {e}")
-
-            print("🏭 Starting smallFactory Web UI...")
-            print(f"📍 Access the interface at: http://localhost:{args.port}")
             if mcp_enabled:
-                print(f"🤖 MCP endpoint: http://{mcp_host}:{mcp_port}{mcp_path}")
-            print("🔧 Git-native PLM for 1-4 person teams")
-            print("=" * 50)
+                try:
+                    from starlette.applications import Starlette
+                    from starlette.routing import Mount
+                    from starlette.middleware.wsgi import WSGIMiddleware
+                    import uvicorn
+                    from smallfactory.mcp_server import build_mcp_server
+                except Exception as e:
+                    print(f"❌ Error: integrated MCP requires ASGI deps (uvicorn/starlette): {e}")
+                    print("   Install web dependencies: pip install -r web/requirements.txt")
+                    sys.exit(1)
 
-            try:
-                app.run(
-                    debug=args.debug,
+                # Build MCP ASGI app and mount under the Flask-served site on one port.
+                mcp_server = build_mcp_server(
+                    datarepo_path=datarepo_path,
                     host=args.host,
                     port=args.port,
-                    use_reloader=args.debug
+                    streamable_http_path="/",
                 )
-            except KeyboardInterrupt:
-                print("\n👋 Shutting down smallFactory Web UI...")
-            except Exception as e:
-                if "Address already in use" in str(e):
-                    print(f"❌ Error: Port {args.port} is already in use.")
-                    print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
-                else:
-                    print(f"❌ Error starting web server: {e}")
-                sys.exit(1)
+                mcp_asgi = mcp_server.streamable_http_app()
+                asgi_app = Starlette(
+                    routes=[
+                        Mount(mcp_path, app=mcp_asgi),
+                        Mount("/", app=WSGIMiddleware(flask_app)),
+                    ]
+                )
+
+                print("🏭 Starting smallFactory Web UI + MCP...")
+                print(f"📍 Web UI: http://localhost:{args.port}")
+                print(f"🤖 MCP endpoint: http://localhost:{args.port}{mcp_path}")
+                print("🔧 Git-native PLM for 1-4 person teams")
+                print("=" * 50)
+                if args.debug:
+                    print("[smallFactory] Note: --debug does not enable auto-reload in integrated ASGI mode.")
+
+                try:
+                    uvicorn.run(asgi_app, host=args.host, port=args.port, log_level="info")
+                except KeyboardInterrupt:
+                    print("\n👋 Shutting down smallFactory Web UI...")
+                except Exception as e:
+                    if "Address already in use" in str(e):
+                        print(f"❌ Error: Port {args.port} is already in use.")
+                        print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
+                    else:
+                        print(f"❌ Error starting web server: {e}")
+                    sys.exit(1)
+            else:
+                print("🏭 Starting smallFactory Web UI...")
+                print(f"📍 Access the interface at: http://localhost:{args.port}")
+                print("🔧 Git-native PLM for 1-4 person teams")
+                print("=" * 50)
+
+                try:
+                    flask_app.run(
+                        debug=args.debug,
+                        host=args.host,
+                        port=args.port,
+                        use_reloader=args.debug
+                    )
+                except KeyboardInterrupt:
+                    print("\n👋 Shutting down smallFactory Web UI...")
+                except Exception as e:
+                    if "Address already in use" in str(e):
+                        print(f"❌ Error: Port {args.port} is already in use.")
+                        print(f"   Try using a different port: python sf.py web --port {args.port + 1}")
+                    else:
+                        print(f"❌ Error starting web server: {e}")
+                    sys.exit(1)
                 
         except ImportError as e:
             # Be specific: only claim Flask is missing if that's the failing module
