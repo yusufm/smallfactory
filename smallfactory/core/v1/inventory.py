@@ -94,11 +94,18 @@ def _append_line(p: Path, line: str) -> None:
 
 
 @contextmanager
-def _exclusive_journal_lock(journal_path: Path) -> Iterator[None]:
-    """Cross-platform advisory lock over the journal file."""
+def _exclusive_journal_lock(
+    journal_path: Path,
+    *,
+    timeout_seconds: float = 10.0,
+    poll_interval_seconds: float = 0.05,
+) -> Iterator[None]:
+    """Cross-platform advisory lock over the journal file with bounded wait."""
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = journal_path.with_name(f"{journal_path.name}.lock")
     with open(lock_path, "a+b") as lock_fh:
+        deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+
         if os.name == "nt":
             import msvcrt
 
@@ -106,8 +113,15 @@ def _exclusive_journal_lock(journal_path: Path) -> Iterator[None]:
             if lock_fh.tell() == 0:
                 lock_fh.write(b"\0")
                 lock_fh.flush()
-            lock_fh.seek(0)
-            msvcrt.locking(lock_fh.fileno(), msvcrt.LK_LOCK, 1)
+            while True:
+                try:
+                    lock_fh.seek(0)
+                    msvcrt.locking(lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Timed out acquiring inventory journal lock: {lock_path}")
+                    time.sleep(max(0.0, float(poll_interval_seconds)))
             try:
                 yield
             finally:
@@ -116,7 +130,14 @@ def _exclusive_journal_lock(journal_path: Path) -> Iterator[None]:
         else:
             import fcntl
 
-            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+            while True:
+                try:
+                    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Timed out acquiring inventory journal lock: {lock_path}")
+                    time.sleep(max(0.0, float(poll_interval_seconds)))
             try:
                 yield
             finally:

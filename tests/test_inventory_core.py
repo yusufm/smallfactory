@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import os
 from pathlib import Path
 
 import pytest
@@ -115,6 +116,32 @@ def test_inventory_post_serializes_concurrent_negative_checks(repo: Path, monkey
     assert "below zero" in errors[0]
     onhand = inventory_onhand(repo, part="p_inv")
     assert int(onhand.get("total", -1)) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock behavior test")
+def test_exclusive_journal_lock_times_out_when_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    lock_target = tmp_path / "journal.ndjson"
+
+    import fcntl
+
+    def _always_block(*args, **kwargs):
+        raise BlockingIOError("busy")
+
+    ticks = iter([0.0, 0.02, 0.05, 0.12])
+
+    def _fake_monotonic():
+        try:
+            return next(ticks)
+        except StopIteration:
+            return 999.0
+
+    monkeypatch.setattr(fcntl, "flock", _always_block)
+    monkeypatch.setattr(inventory_mod.time, "monotonic", _fake_monotonic)
+    monkeypatch.setattr(inventory_mod.time, "sleep", lambda *_: None)
+
+    with pytest.raises(TimeoutError, match="Timed out acquiring inventory journal lock"):
+        with inventory_mod._exclusive_journal_lock(lock_target, timeout_seconds=0.1, poll_interval_seconds=0.01):
+            pass
 
 
 def test_readonly_onhand_computes_without_materializing_caches(repo: Path):
