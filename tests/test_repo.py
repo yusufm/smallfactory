@@ -104,6 +104,7 @@ class TestWriteDatarepoConfig:
         content = gi.read_text()
         assert ".smallfactory.repo.lock" in content
         assert ".smallfactory.repo.lock.*" in content
+        assert "inventory/**/*.lock" in content
 
     def test_gitignore_idempotent_for_repo_lock_patterns(self, tmp_path: Path):
         init_git_repo(tmp_path)
@@ -112,6 +113,7 @@ class TestWriteDatarepoConfig:
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".smallfactory.repo.lock\n") == 1
         assert content.count(".smallfactory.repo.lock.*\n") == 1
+        assert content.count("inventory/**/*.lock\n") == 1
 
 
 # ---------------------------------------------------------------------------

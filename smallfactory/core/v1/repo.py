@@ -123,6 +123,7 @@ def write_datarepo_config(repo_path: Path) -> Path:
     lock_patterns = [
         ".smallfactory.repo.lock",
         ".smallfactory.repo.lock.*",
+        "inventory/**/*.lock",
     ]
     try:
         if gi.exists():

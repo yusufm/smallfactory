@@ -102,7 +102,8 @@ def _exclusive_journal_lock(
 ) -> Iterator[None]:
     """Cross-platform advisory lock over the journal file with bounded wait."""
     journal_path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = journal_path.with_name(f"{journal_path.name}.lock")
+    # Use repo-scoped lock naming so datarepo .gitignore patterns can ignore it.
+    lock_path = journal_path.with_name(f".smallfactory.repo.lock.{journal_path.name}")
     with open(lock_path, "a+b") as lock_fh:
         deadline = time.monotonic() + max(0.0, float(timeout_seconds))
 
