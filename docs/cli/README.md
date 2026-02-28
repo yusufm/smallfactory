@@ -113,7 +113,7 @@ Default available tools:
 - `entities_search`
 - `entity_get`
 - `inventory_onhand`
-- `parts_inventory_list`
+- `parts_inventory_list` (bulk part table; supports `query`, `status_bucket`, `qty_gte/qty_lte`, `sort_by`, `sort_dir`, cursor pagination)
 - `bom_resolved`
 - `build_events_list`
 - `analytics_query`

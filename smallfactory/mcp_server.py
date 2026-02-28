@@ -260,6 +260,15 @@ def _parts_inventory_rows(datarepo_path: Path, *, location_sfid: Optional[str] =
     return rows
 
 
+def _stock_status_bucket(qty: int) -> str:
+    q = int(qty)
+    if q <= 1:
+        return "critical"
+    if q <= 5:
+        return "low"
+    return "ok"
+
+
 def _collect_build_events(
     datarepo_path: Path,
     *,
@@ -681,6 +690,12 @@ def build_mcp_server(
     @server.tool()
     def parts_inventory_list(
         location_sfid: str = "",
+        query: str = "",
+        status_bucket: str = "",
+        qty_gte: Optional[int] = None,
+        qty_lte: Optional[int] = None,
+        sort_by: str = "qty",
+        sort_dir: str = "asc",
         limit: int = 200,
         cursor: str = "",
     ) -> Dict[str, Any]:
@@ -693,6 +708,41 @@ def build_mcp_server(
             datarepo_path,
             location_sfid=(location_sfid or None),
         )
+        q = str(query or "").strip().lower()
+        if q:
+            rows = [
+                r
+                for r in rows
+                if q in str(r.get("sfid", "")).lower() or q in str(r.get("name", "")).lower()
+            ]
+        if qty_gte is not None:
+            rows = [r for r in rows if int(r.get("qty", 0) or 0) >= int(qty_gte)]
+        if qty_lte is not None:
+            rows = [r for r in rows if int(r.get("qty", 0) or 0) <= int(qty_lte)]
+
+        sb = str(status_bucket or "").strip().lower()
+        if sb:
+            if sb not in {"critical", "low", "ok"}:
+                raise ValueError("status_bucket must be one of: critical, low, ok")
+            rows = [r for r in rows if _stock_status_bucket(int(r.get("qty", 0) or 0)) == sb]
+
+        sby = str(sort_by or "").strip().lower()
+        if sby not in {"qty", "sfid", "name"}:
+            raise ValueError("sort_by must be one of: qty, sfid, name")
+        sdir = str(sort_dir or "").strip().lower()
+        if sdir not in {"asc", "desc"}:
+            raise ValueError("sort_dir must be one of: asc, desc")
+        rev = sdir == "desc"
+        if sby == "qty":
+            rows = sorted(rows, key=lambda r: (int(r.get("qty", 0) or 0), str(r.get("sfid", ""))), reverse=rev)
+        elif sby == "name":
+            rows = sorted(rows, key=lambda r: (str(r.get("name") or ""), str(r.get("sfid", ""))), reverse=rev)
+        else:
+            rows = sorted(rows, key=lambda r: str(r.get("sfid", "")), reverse=rev)
+
+        # Include status bucket in each row to simplify "run out soon" tables.
+        rows = [{**r, "status_bucket": _stock_status_bucket(int(r.get("qty", 0) or 0))} for r in rows]
+
         page = _paginate_list(rows, limit=limit, cursor=(cursor or None))
         return _result(
             {
@@ -702,6 +752,12 @@ def build_mcp_server(
                 "cursor": page["cursor"],
                 "next_cursor": page["next_cursor"],
                 "location_sfid": (location_sfid or None),
+                "query": (query or None),
+                "status_bucket": (sb or None),
+                "qty_gte": qty_gte,
+                "qty_lte": qty_lte,
+                "sort_by": sby,
+                "sort_dir": sdir,
             }
         )
 

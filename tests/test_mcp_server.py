@@ -14,6 +14,7 @@ from smallfactory.mcp_server import (
     _inventory_onhand_with_zero_parts,
     _paginate_list,
     _parts_inventory_rows,
+    _stock_status_bucket,
     _result,
 )
 
@@ -155,3 +156,11 @@ def test_result_envelope_adds_schema_version():
     out = _result({"a": 1})
     assert out["a"] == 1
     assert out["schema_version"] == "1.1.0"
+
+
+def test_stock_status_bucket_thresholds():
+    assert _stock_status_bucket(0) == "critical"
+    assert _stock_status_bucket(1) == "critical"
+    assert _stock_status_bucket(2) == "low"
+    assert _stock_status_bucket(5) == "low"
+    assert _stock_status_bucket(6) == "ok"
