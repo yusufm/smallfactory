@@ -6,7 +6,13 @@ import pytest
 
 from conftest import init_git_repo
 from smallfactory.core.v1.entities import append_build_event, create_entity
-from smallfactory.mcp_server import _analytics_query_impl, _collect_build_events, _entities_search_impl
+from smallfactory.core.v1.inventory import inventory_post
+from smallfactory.mcp_server import (
+    _analytics_query_impl,
+    _collect_build_events,
+    _entities_search_impl,
+    _inventory_onhand_with_zero_parts,
+)
 
 
 @pytest.fixture()
@@ -59,3 +65,40 @@ def test_entities_search_filters_type_and_tags(repo: Path):
     out = _entities_search_impl(repo, query="alpha", type_prefix="p", tags=["repair"])
     assert out["count"] == 1
     assert out["results"][0]["sfid"] == "p_alpha"
+
+
+def test_inventory_summary_includes_zero_parts(repo: Path):
+    create_entity(repo, "l_inbox", {"name": "Inbox"})
+    create_entity(repo, "p_stocked", {"name": "Stocked", "uom": "ea"})
+    create_entity(repo, "p_zero", {"name": "Zero", "uom": "ea"})
+    inventory_post(repo, "p_stocked", 5, l_sfid="l_inbox")
+
+    out = _inventory_onhand_with_zero_parts(
+        repo,
+        part_sfid=None,
+        location_sfid=None,
+        include_zero_parts=True,
+    )
+    rows = out.get("parts") or []
+    by_id = {r["sfid"]: r for r in rows}
+    assert by_id["p_stocked"]["total"] == 5
+    assert by_id["p_zero"]["total"] == 0
+    assert out["parts_count"] == 2
+
+
+def test_inventory_location_includes_zero_parts(repo: Path):
+    create_entity(repo, "l_a1", {"name": "A1"})
+    create_entity(repo, "p_a", {"name": "Part A"})
+    create_entity(repo, "p_b", {"name": "Part B"})
+    inventory_post(repo, "p_a", 3, l_sfid="l_a1")
+
+    out = _inventory_onhand_with_zero_parts(
+        repo,
+        part_sfid=None,
+        location_sfid="l_a1",
+        include_zero_parts=True,
+    )
+    parts = out.get("parts") or {}
+    assert parts["p_a"] == 3
+    assert parts["p_b"] == 0
+    assert out["parts_count"] == 2

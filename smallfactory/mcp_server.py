@@ -92,6 +92,76 @@ def _iter_build_entities(datarepo_path: Path) -> Iterable[dict]:
             yield ent
 
 
+def _part_entities_by_sfid(datarepo_path: Path) -> Dict[str, dict]:
+    out: Dict[str, dict] = {}
+    for ent in list_entities(datarepo_path):
+        if not isinstance(ent, dict):
+            continue
+        sfid = str(ent.get("sfid", "")).strip()
+        if sfid.startswith("p_"):
+            out[sfid] = ent
+    return out
+
+
+def _inventory_onhand_with_zero_parts(
+    datarepo_path: Path,
+    *,
+    part_sfid: Optional[str],
+    location_sfid: Optional[str],
+    include_zero_parts: bool,
+) -> Dict[str, Any]:
+    base = inventory_onhand_readonly(
+        datarepo_path,
+        part=part_sfid,
+        location=location_sfid,
+    )
+    # If querying one part, the core API already computes from journal and returns 0 total
+    # for existing parts with no stock movements.
+    if part_sfid or not include_zero_parts:
+        return base
+
+    parts_meta = _part_entities_by_sfid(datarepo_path)
+    all_part_sfids = sorted(parts_meta.keys())
+
+    if location_sfid:
+        existing = base.get("parts")
+        existing_map = existing if isinstance(existing, dict) else {}
+        merged = {sfid: int(existing_map.get(sfid, 0) or 0) for sfid in all_part_sfids}
+        base["parts"] = merged
+        base["total"] = int(sum(merged.values()))
+        base["parts_count"] = len(merged)
+        return base
+
+    existing_rows = base.get("parts")
+    rows_by_sfid: Dict[str, Dict[str, Any]] = {}
+    if isinstance(existing_rows, list):
+        for row in existing_rows:
+            if not isinstance(row, dict):
+                continue
+            sfid = str(row.get("sfid", "")).strip()
+            if sfid:
+                rows_by_sfid[sfid] = dict(row)
+
+    merged_rows: List[Dict[str, Any]] = []
+    for sfid in all_part_sfids:
+        row = rows_by_sfid.get(sfid)
+        if row is None:
+            ent = parts_meta.get(sfid) or {}
+            row = {
+                "sfid": sfid,
+                "uom": ent.get("uom", "ea") or "ea",
+                "total": 0,
+                "by_location": {},
+                "as_of": base.get("as_of"),
+            }
+        merged_rows.append(row)
+
+    base["parts"] = merged_rows
+    base["total"] = int(sum(int((r or {}).get("total", 0) or 0) for r in merged_rows))
+    base["parts_count"] = len(merged_rows)
+    return base
+
+
 def _collect_build_events(
     datarepo_path: Path,
     *,
@@ -312,6 +382,7 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
                 "build events belong to a build record (b_*)",
                 "inventory quantities are tracked by part and location",
                 "BOM resolution starts from a part root and expands children",
+                "inventory_onhand(include_zero_parts=true) returns all parts with explicit zero totals when no stock exists",
             ],
             "build_event_fields": ["build_sfid", "part_sfid", "event_id", "ts", "tags", "message", "files"],
             "analytics_subjects": ["build_events"],
@@ -348,15 +419,22 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
         return get_entity(datarepo_path, sfid)
 
     @server.tool()
-    def inventory_onhand(part_sfid: str = "", location_sfid: str = "") -> Dict[str, Any]:
+    def inventory_onhand(
+        part_sfid: str = "",
+        location_sfid: str = "",
+        include_zero_parts: bool = True,
+    ) -> Dict[str, Any]:
         """Return current on-hand inventory, optionally filtered by part or location.
 
         Use to answer stock questions and to contextualize BOM/build analyses.
+        By default (`include_zero_parts=true`), summary/location queries include all
+        part entities with explicit zero quantities where applicable.
         """
-        return inventory_onhand_readonly(
+        return _inventory_onhand_with_zero_parts(
             datarepo_path,
-            part=(part_sfid or None),
-            location=(location_sfid or None),
+            part_sfid=(part_sfid or None),
+            location_sfid=(location_sfid or None),
+            include_zero_parts=bool(include_zero_parts),
         )
 
     @server.tool()
