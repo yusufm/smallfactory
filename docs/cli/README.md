@@ -113,6 +113,7 @@ Windsurf local MCP config example:
 
 Available tools:
 - `repo_info`
+- `data_model_guide`
 - `entities_search`
 - `entity_get`
 - `inventory_onhand`

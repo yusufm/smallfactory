@@ -11,6 +11,41 @@ from smallfactory.core.v1.entities import get_entity, list_entities, resolved_bo
 from smallfactory.core.v1.inventory import inventory_onhand_readonly
 
 
+SMALLFACTORY_MCP_INSTRUCTIONS = """
+You are connected to a read-only SmallFactory repository.
+
+Data model (canonical):
+- Entities are identified by `sfid`.
+- Prefixes:
+  - `p_*` = part
+  - `b_*` = build record
+  - `l_*` = location
+- Build records (`b_*`) usually link to a part through `part_sfid`.
+- Build event history is attached to each build and includes:
+  - `event_id`, `ts`, `tags`, `message`, optional `files`.
+- Inventory on-hand is derived from journals and reported by part and location.
+- BOM resolution starts from a root part (`p_*`) and returns resolved child lines.
+
+How concepts relate:
+- part (`p_*`) -> can have BOM children (other parts/components).
+- build (`b_*`) -> records production/assembly activity for a part via `part_sfid`.
+- build events -> operational history across one build or all builds of a part.
+- locations (`l_*`) -> where inventory quantities are tracked.
+
+Query strategy:
+1) Use `entities_search` to identify candidate SFIDs.
+2) Use `entity_get` for authoritative metadata on one entity.
+3) Use `build_events_list` for event-level detail.
+4) Use `analytics_query` for grouped counts/trends.
+5) Use `inventory_onhand` and `bom_resolved` for stock and structure context.
+
+Tooling contract:
+- Do not invent fields not returned by tools.
+- Prefer citing SFIDs and returned counts exactly.
+- If filters produce no data, report that directly and suggest adjacent queries.
+""".strip()
+
+
 def _resolve_datarepo_path(explicit_repo: Optional[str] = None) -> Path:
     if explicit_repo:
         return Path(explicit_repo).expanduser().resolve()
@@ -249,15 +284,39 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
     datarepo_path = _resolve_datarepo_path(repo)
     server = FastMCP(
         "smallfactory",
-        instructions=(
-            "Read-only tools over a smallFactory datarepo. "
-            "Use structured tools to answer user questions with verifiable repository data."
-        ),
+        instructions=SMALLFACTORY_MCP_INSTRUCTIONS,
     )
 
     @server.tool()
     def repo_info() -> Dict[str, Any]:
+        """Return repository-level connection context.
+
+        Use when you need to confirm which datarepo this MCP session is using.
+        """
         return {"datarepo_path": str(datarepo_path)}
+
+    @server.tool()
+    def data_model_guide() -> Dict[str, Any]:
+        """Return a compact ontology for SmallFactory concepts and relationships.
+
+        Use before complex multi-tool reasoning when entity relationships are unclear.
+        """
+        return {
+            "entity_prefixes": {
+                "p_*": "part",
+                "b_*": "build record",
+                "l_*": "location",
+            },
+            "relationships": [
+                "build.part_sfid -> part.sfid",
+                "build events belong to a build record (b_*)",
+                "inventory quantities are tracked by part and location",
+                "BOM resolution starts from a part root and expands children",
+            ],
+            "build_event_fields": ["build_sfid", "part_sfid", "event_id", "ts", "tags", "message", "files"],
+            "analytics_subjects": ["build_events"],
+            "analytics_group_by": ["tag", "part_sfid", "build_sfid", "day"],
+        }
 
     @server.tool()
     def entities_search(
@@ -266,6 +325,11 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
         tags: Optional[List[str]] = None,
         limit: int = 20,
     ) -> Dict[str, Any]:
+        """Search entities by SFID/name with optional type and tag filters.
+
+        Use as the first discovery step before calling `entity_get`, `bom_resolved`,
+        `build_events_list`, or `inventory_onhand`.
+        """
         return _entities_search_impl(
             datarepo_path,
             query=query,
@@ -276,10 +340,19 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
 
     @server.tool()
     def entity_get(sfid: str) -> Dict[str, Any]:
+        """Get one entity by SFID with canonical metadata.
+
+        Use for authoritative details after discovery with `entities_search`.
+        For builds (`b_*`), this includes parsed events.
+        """
         return get_entity(datarepo_path, sfid)
 
     @server.tool()
     def inventory_onhand(part_sfid: str = "", location_sfid: str = "") -> Dict[str, Any]:
+        """Return current on-hand inventory, optionally filtered by part or location.
+
+        Use to answer stock questions and to contextualize BOM/build analyses.
+        """
         return inventory_onhand_readonly(
             datarepo_path,
             part=(part_sfid or None),
@@ -288,6 +361,11 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
 
     @server.tool()
     def bom_resolved(root_sfid: str, max_depth: int = 12) -> Dict[str, Any]:
+        """Resolve a part BOM tree from a root SFID.
+
+        Use for structure and dependency questions (components, alternates, depth).
+        `root_sfid` should be a part (`p_*`).
+        """
         depth = max(0, min(int(max_depth), 32))
         rows = resolved_bom_view(datarepo_path, root_sfid, max_depth=depth)
         return {"root_sfid": root_sfid, "max_depth": depth, "rows": rows, "count": len(rows)}
@@ -301,6 +379,10 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
         end_ts: str = "",
         limit: int = 200,
     ) -> Dict[str, Any]:
+        """List build events with optional filters for build, part, tags, and time window.
+
+        Use for event-level evidence before aggregating with `analytics_query`.
+        """
         if limit < 1:
             limit = 1
         if limit > 1000:
@@ -325,6 +407,13 @@ def run_mcp_server(*, repo: Optional[str] = None, transport: str = "stdio") -> N
         end_ts: str = "",
         limit: int = 20,
     ) -> Dict[str, Any]:
+        """Run grouped read-only analytics over build events.
+
+        Supported:
+        - subject: `build_events`
+        - group_by: `tag`, `part_sfid`, `build_sfid`, `day`
+        Use this for ranking/trend questions (e.g., most common repair tags).
+        """
         return _analytics_query_impl(
             datarepo_path,
             subject=subject,
