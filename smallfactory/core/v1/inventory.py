@@ -227,7 +227,7 @@ def inventory_post(
     datarepo_path: Path,
     part: str,
     qty_delta: int,
-    location: Optional[str] = None,
+    l_sfid: Optional[str] = None,
     reason: Optional[str] = None,
 ) -> Dict:
     """Append an inventory journal entry per SPEC.
@@ -239,13 +239,13 @@ def inventory_post(
     validate_sfid(part)
     if not _entity_exists(datarepo_path, part):
         raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
-    if location is None or not str(location).strip():
-        location = _default_location(datarepo_path)
-    if not location:
+    if l_sfid is None or not str(l_sfid).strip():
+        l_sfid = _default_location(datarepo_path)
+    if not l_sfid:
         raise ValueError("location is required (or set sfdatarepo.yml: inventory.default_location)")
-    _validate_location_sfid(location)
-    if not _entity_exists(datarepo_path, location):
-        raise FileNotFoundError(f"Location sfid '{location}' does not exist under entities/")
+    _validate_location_sfid(l_sfid)
+    if not _entity_exists(datarepo_path, l_sfid):
+        raise FileNotFoundError(f"Location sfid '{l_sfid}' does not exist under entities/")
     try:
         delta = int(qty_delta)
     except Exception:
@@ -262,7 +262,7 @@ def inventory_post(
     except Exception:
         cur_total = 0
     try:
-        cur_loc = int(by_loc.get(location, 0))
+        cur_loc = int(by_loc.get(l_sfid, 0))
     except Exception:
         cur_loc = 0
     new_total = cur_total + delta
@@ -270,12 +270,12 @@ def inventory_post(
     if new_total < 0:
         raise ValueError("qty_delta would cause total on-hand to go below zero")
     if new_loc < 0:
-        raise ValueError(f"qty_delta would cause on-hand at {location} to go below zero")
+        raise ValueError(f"qty_delta would cause on-hand at {l_sfid} to go below zero")
 
     # Append NDJSON line
     entry = {
         "txn": _new_ulid(),
-        "location": location,
+        "location": l_sfid,
         "qty_delta": delta,
     }
     if reason is not None:
@@ -285,19 +285,19 @@ def inventory_post(
 
     # Update caches
     part_cache = _write_part_cache(datarepo_path, part)
-    loc_cache = _write_location_cache(datarepo_path, location)
+    loc_cache = _write_location_cache(datarepo_path, l_sfid)
 
     # Commit journal and caches together
-    paths = [journal, _part_onhand_file(datarepo_path, part), _location_cache_file(datarepo_path, location)]
+    paths = [journal, _part_onhand_file(datarepo_path, part), _location_cache_file(datarepo_path, l_sfid)]
     msg = (
-        f"[smallFactory] Inventory post for {part} at {location} qty_delta {delta}\n"
-        f"::sfid::{part}\n::sfid::{location}\n::sf-delta::{delta}"
+        f"[smallFactory] Inventory post for {part} at {l_sfid} qty_delta {delta}\n"
+        f"::sfid::{part}\n::sfid::{l_sfid}\n::sf-delta::{delta}"
     )
     git_commit_paths(datarepo_path, paths, msg)
 
     return {
         "part": part,
-        "location": location,
+        "location": l_sfid,
         "qty_delta": delta,
         "txn": entry["txn"],
         "onhand": part_cache,
@@ -454,6 +454,8 @@ def inventory_onhand_readonly(
             "sfid": part_sfid,
             "uom": cache.get("uom", "ea") or "ea",
             "total": total_i,
+            "by_location": cache.get("by_location", {}) or {},
+            "as_of": cache.get("as_of") or _now_iso(),
         })
         grand_total += total_i
     return {"parts": parts_list, "total": grand_total}

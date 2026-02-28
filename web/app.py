@@ -1296,6 +1296,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
         ents = []
     parts = [e for e in ents if str(e.get('sfid', '')).startswith('p_')]
     builds = [e for e in ents if str(e.get('sfid', '')).startswith('b_')]
+    ents_by_sfid = {e.get('sfid'): e for e in ents if e.get('sfid')}
 
     # Inventory metrics
     inv_map = {p.get('sfid'): int(p.get('total', 0) or 0) for p in inv_parts if p.get('sfid')}
@@ -1320,12 +1321,8 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
     inv_top = []
     for item in top_stock:
         sfid = item.get('sfid')
-        name = sfid
-        try:
-            ent = get_entity(datarepo_path, sfid)
-            name = ent.get('name', sfid)
-        except Exception:
-            pass
+        ent = ents_by_sfid.get(sfid) or {}
+        name = ent.get('name', sfid)
         inv_top.append({
             'sfid': sfid,
             'name': name,
@@ -1357,10 +1354,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
                 rev_drafts += 1
             created_at = _parse_iso_ts(m.get('created_at'), m.get('generated_at'))
             # Capture for recent list
-            try:
-                name = p.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
-            except Exception:
-                name = sfid
+            name = p.get('name') or (ents_by_sfid.get(sfid) or {}).get('name', sfid)
             recent_revs.append({
                 'sfid': sfid,
                 'name': name,
@@ -1391,10 +1385,7 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
         except Exception:
             units_built += 1
         # name (best-effort)
-        try:
-            name = b.get('name') or get_entity(datarepo_path, sfid).get('name', sfid)
-        except Exception:
-            name = sfid
+        name = b.get('name') or (ents_by_sfid.get(sfid) or {}).get('name', sfid)
         opened_at = _parse_iso_ts(b.get('opened_at'), b.get('created_at'), b.get('datetime'))
         closed_at = _parse_iso_ts(b.get('closed_at'))
         sort_ts = _parse_iso_ts(closed_at, opened_at)
@@ -1664,7 +1655,7 @@ def inventory_list():
         # Inventory summary (existing parts with journals/caches)
         summary = inventory_onhand_readonly(datarepo_path)
         summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
-        inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
+        summary_by_sfid = {p.get('sfid'): p for p in summary_parts if p.get('sfid')}
 
         # All canonical part entities
         entities = list_entities(datarepo_path) or []
@@ -1680,22 +1671,11 @@ def inventory_list():
             description = ent.get('description', '')
             category = ent.get('category', '')
 
-            if sfid in inv_totals:
-                # Populate full cache details (by-location, uom, as_of) for parts that have inventory
-                try:
-                    cache = inventory_onhand_readonly(datarepo_path, part=sfid)
-                except Exception:
-                    cache = {}
-                uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
-                total = int(cache.get('total', 0) or 0)
-                by_location = cache.get('by_location', {}) or {}
-                as_of = cache.get('as_of')
-            else:
-                # Zero-quantity default for parts without any inventory activity
-                uom = ent.get('uom', 'ea') or 'ea'
-                total = 0
-                by_location = {}
-                as_of = None
+            summary_part = summary_by_sfid.get(sfid) or {}
+            uom = summary_part.get('uom', ent.get('uom', 'ea') or 'ea')
+            total = int(summary_part.get('total', 0) or 0)
+            by_location = summary_part.get('by_location', {}) or {}
+            as_of = summary_part.get('as_of')
 
             items.append({
                 'sfid': sfid,
@@ -1783,7 +1763,7 @@ def inventory_adjust():
 
     if request.method == 'GET':
         pre_sfid = (request.args.get('sfid') or '').strip()
-        pre_l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
+        pre_l_sfid = (request.args.get('l_sfid') or '').strip()
         pre_qty = (request.args.get('quantity') or '').strip()
         if pre_sfid:
             form_data['sfid'] = pre_sfid
@@ -1816,8 +1796,7 @@ def inventory_adjust():
         form_data = {k: v for k, v in request.form.items() if str(v).strip()}
         try:
             sfid = (request.form.get('sfid') or '').strip()
-            # Canonical field name is l_sfid; support legacy 'location' as fallback
-            location = (request.form.get('l_sfid') or '').strip() or (request.form.get('location') or '').strip() or None
+            l_sfid = (request.form.get('l_sfid') or '').strip() or None
             qty_raw = (request.form.get('quantity') or '').strip()
             if not sfid:
                 raise ValueError('Missing required field: sfid')
@@ -1836,7 +1815,7 @@ def inventory_adjust():
             # Compute current quantity at target location (resolving default if needed)
             cache = inventory_onhand_readonly(datarepo_path, part=sfid)
             by_loc = cache.get('by_location', {}) or {}
-            loc = location or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+            loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
             if not loc:
                 raise ValueError('location is required (or set sfdatarepo.yml: inventory.default_location)')
             try:
@@ -1851,7 +1830,7 @@ def inventory_adjust():
                 # fall through to re-render form with info
             else:
                 def _mutate():
-                    return inventory_post(datarepo_path, sfid, delta, loc, reason=reason)
+                    return inventory_post(datarepo_path, sfid, delta, l_sfid=loc, reason=reason)
                 _ = _run_repo_txn(
                     datarepo_path,
                     _mutate,
@@ -1865,7 +1844,7 @@ def inventory_adjust():
         # Compute current qty for redisplay if possible
         try:
             sfid = form_data.get('sfid')
-            l_sfid = form_data.get('l_sfid') or form_data.get('location')
+            l_sfid = form_data.get('l_sfid')
             if sfid:
                 datarepo_path = get_datarepo_path()
                 cache = inventory_onhand_readonly(datarepo_path, part=sfid)
@@ -1913,42 +1892,7 @@ def entities_view(sfid):
             pass
 
         # Enrich BOM for display (if present and valid)
-        bom_rows = []
-        bom = entity.get('bom')
-        if isinstance(bom, list):
-            for line in bom:
-                if not isinstance(line, dict):
-                    continue
-                use = str(line.get('use', '')).strip()
-                if not use:
-                    continue
-                qty = line.get('qty', 1) or 1
-                rev = line.get('rev', 'released') or 'released'
-                # Resolve child name best-effort
-                child_name = use
-                try:
-                    child = get_entity(datarepo_path, use)
-                    child_name = child.get('name', use)
-                except Exception:
-                    pass
-                alternates = []
-                if isinstance(line.get('alternates'), list):
-                    for alt in line['alternates']:
-                        if isinstance(alt, dict) and alt.get('use'):
-                            alternates.append(str(alt.get('use')))
-                alternates_group = line.get('alternates_group')
-                try:
-                    qty_disp = int(qty)
-                except Exception:
-                    qty_disp = qty
-                bom_rows.append({
-                    'use': use,
-                    'name': child_name,
-                    'qty': qty_disp,
-                    'rev': rev,
-                    'alternates': alternates,
-                    'alternates_group': alternates_group,
-                })
+        bom_rows = _enrich_bom_rows(datarepo_path, entity.get('bom'), coerce_qty_int=True)
 
         # Inventory on-hand for this entity (if part)
         inv_cache = {}
@@ -2192,10 +2136,10 @@ def entities_add():
             if not endpoint:
                 return None
             qs = parse_qs(parsed.query, keep_blank_values=False)
-            if update_key in ('sfid', 'l_sfid', 'location'):
+            if update_key in ('sfid', 'l_sfid'):
                 qs[update_key] = [new_sfid]
             if endpoint == 'inventory_adjust':
-                allowed = {'sfid', 'l_sfid', 'location'}
+                allowed = {'sfid', 'l_sfid'}
             else:
                 allowed = {'sfid', 'next', 'update_param'}
             params = {k: vals[-1] for k, vals in qs.items() if k in allowed and vals}
@@ -2216,7 +2160,7 @@ def entities_add():
         if next_arg and _is_safe_next(next_arg):
             next_url = next_arg
         up = request.args.get('update_param', '').strip()
-        if up in ('sfid', 'l_sfid', 'location'):
+        if up in ('sfid', 'l_sfid'):
             update_param = up
 
     if request.method == 'POST':
@@ -2308,7 +2252,7 @@ def api_inventory_list():
         # Return all canonical part entities, enriched with on-hand totals.
         summary = inventory_onhand_readonly(datarepo_path)
         summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
-        inv_totals = {p.get('sfid'): int(p.get('total', 0) or 0) for p in summary_parts if p.get('sfid')}
+        summary_by_sfid = {p.get('sfid'): p for p in summary_parts if p.get('sfid')}
 
         entities = list_entities(datarepo_path) or []
         part_entities = [e for e in entities if str(e.get('sfid', '')).startswith('p_')]
@@ -2318,20 +2262,11 @@ def api_inventory_list():
             if not sfid:
                 continue
 
-            if sfid in inv_totals:
-                try:
-                    cache = inventory_onhand_readonly(datarepo_path, part=sfid)
-                except Exception:
-                    cache = {}
-                uom = cache.get('uom', ent.get('uom', 'ea') or 'ea')
-                total = int(cache.get('total', 0) or 0)
-                by_location = cache.get('by_location', {}) or {}
-                as_of = cache.get('as_of')
-            else:
-                uom = ent.get('uom', 'ea') or 'ea'
-                total = 0
-                by_location = {}
-                as_of = None
+            summary_part = summary_by_sfid.get(sfid) or {}
+            uom = summary_part.get('uom', ent.get('uom', 'ea') or 'ea')
+            total = int(summary_part.get('total', 0) or 0)
+            by_location = summary_part.get('by_location', {}) or {}
+            as_of = summary_part.get('as_of')
 
             items.append({
                 'sfid': sfid,
@@ -2374,7 +2309,7 @@ def api_inventory_adjust():
 
     Request JSON body:
       - sfid: part id (required)
-      - l_sfid or location: location id/name (optional; defaults to repo inventory.default_location)
+      - l_sfid: location id/name (optional; defaults to repo inventory.default_location)
       - quantity: absolute non-negative integer (preferred)
         or
       - delta: signed integer
@@ -2384,14 +2319,14 @@ def api_inventory_adjust():
     try:
         payload = request.get_json(silent=True) or {}
         sfid = str(payload.get('sfid', '')).strip()
-        location = (str(payload.get('l_sfid', '')).strip() or str(payload.get('location', '')).strip() or None)
+        l_sfid = (str(payload.get('l_sfid', '')).strip() or None)
         if not sfid:
             return jsonify({'success': False, 'error': 'Missing required field: sfid'}), 400
 
         datarepo_path = get_datarepo_path()
 
         # Resolve target location (respect default if not provided)
-        loc = location or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
+        loc = l_sfid or (load_datarepo_config(datarepo_path).get('inventory', {}) or {}).get('default_location')
         if not loc:
             return jsonify({'success': False, 'error': 'location is required (or set sfdatarepo.yml: inventory.default_location)'}), 400
 
@@ -2442,7 +2377,7 @@ def api_inventory_adjust():
             reason = None
 
         def _mutate():
-            return inventory_post(datarepo_path, sfid, delta, loc, reason=reason)
+            return inventory_post(datarepo_path, sfid, delta, l_sfid=loc, reason=reason)
 
         _ = _run_repo_txn(
             datarepo_path,
@@ -2470,13 +2405,13 @@ def api_inventory_onhand():
 
     Query params:
       - sfid (required)
-      - l_sfid or location (optional)
+      - l_sfid (optional)
     """
     try:
         sfid = (request.args.get('sfid') or '').strip()
         if not sfid:
             return jsonify({'success': False, 'error': 'Missing required parameter: sfid'}), 400
-        l_sfid = (request.args.get('l_sfid') or '').strip() or (request.args.get('location') or '').strip()
+        l_sfid = (request.args.get('l_sfid') or '').strip()
         datarepo_path = get_datarepo_path()
         cache = inventory_onhand_readonly(datarepo_path, part=sfid)
         by_loc = cache.get('by_location', {}) or {}
@@ -2796,7 +2731,7 @@ def api_revisions_download(sfid, rev):
 # BOM API endpoints (AJAX)
 # -----------------------
 
-def _enrich_bom_rows(datarepo_path, bom):
+def _enrich_bom_rows(datarepo_path, bom, coerce_qty_int=False):
     rows = []
     if isinstance(bom, list):
         for line in bom:
@@ -2819,10 +2754,16 @@ def _enrich_bom_rows(datarepo_path, bom):
                 for alt in line['alternates']:
                     if isinstance(alt, dict) and alt.get('use'):
                         alternates.append(str(alt.get('use')))
+            qty_out = qty
+            if coerce_qty_int:
+                try:
+                    qty_out = int(qty)
+                except Exception:
+                    qty_out = qty
             rows.append({
                 'use': use,
                 'name': child_name,
-                'qty': qty,
+                'qty': qty_out,
                 'rev': rev,
                 'alternates': alternates,
                 'alternates_group': line.get('alternates_group'),

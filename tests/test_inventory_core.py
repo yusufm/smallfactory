@@ -38,7 +38,7 @@ def repo(tmp_path: Path) -> Path:
 def test_inventory_post_writes_journal_and_caches(repo: Path):
     (repo / "sfdatarepo.yml").write_text("inventory:\n  default_location: l_main\n", encoding="utf-8")
 
-    posted = inventory_post(repo, "p_inv", 5, location=None, reason="initial load")
+    posted = inventory_post(repo, "p_inv", 5, l_sfid=None, reason="initial load")
     assert posted["part"] == "p_inv"
     assert posted["location"] == "l_main"
     assert posted["qty_delta"] == 5
@@ -63,14 +63,14 @@ def test_inventory_post_writes_journal_and_caches(repo: Path):
 
 
 def test_inventory_post_blocks_location_negative_even_if_global_total_positive(repo: Path):
-    inventory_post(repo, "p_inv", 2, location="l_main")
-    inventory_post(repo, "p_inv", 5, location="l_overflow")
+    inventory_post(repo, "p_inv", 2, l_sfid="l_main")
+    inventory_post(repo, "p_inv", 5, l_sfid="l_overflow")
 
     with pytest.raises(ValueError, match="on-hand at l_main"):
-        inventory_post(repo, "p_inv", -3, location="l_main")
+        inventory_post(repo, "p_inv", -3, l_sfid="l_main")
 
     with pytest.raises(ValueError, match="total on-hand"):
-        inventory_post(repo, "p_inv", -8, location="l_overflow")
+        inventory_post(repo, "p_inv", -8, l_sfid="l_overflow")
 
     journal = repo / "inventory" / "p_inv" / "journal.ndjson"
     lines = [ln for ln in journal.read_text(encoding="utf-8").splitlines() if ln.strip()]

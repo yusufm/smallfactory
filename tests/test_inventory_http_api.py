@@ -111,6 +111,7 @@ def test_api_inventory_list_and_view(web_mod):
     assert "p_empty" in by_id
     assert by_id["p_inv"].get("total") == 3
     assert by_id["p_inv"].get("by_location", {}).get("l_main") == 3
+    assert isinstance(by_id["p_inv"].get("as_of"), str) and by_id["p_inv"].get("as_of")
     assert by_id["p_empty"].get("total") == 0
     assert by_id["p_empty"].get("by_location") == {}
 
