@@ -86,3 +86,44 @@ def test_api_inventory_adjust_delta_zero_is_noop_and_onhand_requires_sfid(web_mo
     assert body.get("new_qty") == 0
     assert body.get("total") == 0
     assert after == before
+
+
+def test_api_inventory_list_and_view(web_mod):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+
+    create_entity(repo, "p_inv", {"name": "Part", "uom": "ea"})
+    create_entity(repo, "p_empty", {"name": "Empty Part", "uom": "ea"})
+    create_entity(repo, "l_main", {"name": "Main"})
+
+    client = app.test_client()
+    adjust = client.post("/api/inventory/adjust", json={"sfid": "p_inv", "l_sfid": "l_main", "delta": 3})
+    assert adjust.status_code == 200
+
+    listing = client.get("/api/inventory")
+    assert listing.status_code == 200
+    body = listing.get_json() or {}
+    assert body.get("success") is True
+    items = body.get("items") or []
+    by_id = {i.get("sfid"): i for i in items}
+    assert "p_inv" in by_id
+    assert "p_empty" in by_id
+    assert by_id["p_inv"].get("total") == 3
+    assert by_id["p_inv"].get("by_location", {}).get("l_main") == 3
+    assert by_id["p_empty"].get("total") == 0
+    assert by_id["p_empty"].get("by_location") == {}
+
+    view = client.get("/api/inventory/p_inv")
+    assert view.status_code == 200
+    view_body = view.get_json() or {}
+    assert view_body.get("success") is True
+    item = view_body.get("item") or {}
+    assert item.get("sfid") == "p_inv"
+    assert item.get("total") == 3
+    assert item.get("by_location", {}).get("l_main") == 3
+
+    missing = client.get("/api/inventory/p_missing")
+    assert missing.status_code == 404
+    missing_body = missing.get_json() or {}
+    assert missing_body.get("success") is False
