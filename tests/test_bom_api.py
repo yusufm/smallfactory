@@ -244,8 +244,8 @@ def test_run_repo_txn_times_out_when_repo_lock_held_by_other_process(monkeypatch
 
     mod = web_mod
     repo = mod.get_datarepo_path()
-    lock_file = repo / ".smallfactory.repo.lock"
-    ready_file = repo / ".smallfactory.repo.lock.ready"
+    lock_file = repo / ".git" / ".smallfactory.repo.lock"
+    ready_file = repo / ".git" / ".smallfactory.repo.lock.ready"
     lock_file.parent.mkdir(parents=True, exist_ok=True)
     lock_file.touch()
     if ready_file.exists():
