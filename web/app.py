@@ -9,6 +9,7 @@ from pathlib import Path
 import json
 import sys
 import os
+import errno
 import heapq
 import csv
 import re
@@ -26,7 +27,7 @@ import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
 try:
     import fcntl
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     fcntl = None
 
 # Prometheus metrics
@@ -910,7 +911,10 @@ def _repo_process_lock(datarepo_path: Path):
             try:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
-            except BlockingIOError:
+            except OSError as e:
+                lock_busy_errnos = {errno.EAGAIN, errno.EACCES, getattr(errno, "EWOULDBLOCK", errno.EAGAIN)}
+                if e.errno not in lock_busy_errnos:
+                    raise
                 if (time.time() - start) >= timeout_sec:
                     raise RuntimeError(
                         f"Timed out waiting for repo lock after {timeout_sec:.1f}s"
