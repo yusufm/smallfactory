@@ -274,7 +274,7 @@ class TestEntityFilesApi:
 # Build Events API (GET/append events, tags editing)
 # ---------------------------------------------------------------------------
 
-class TestBuildJournalApi:
+class TestBuildEventsApi:
 
     def test_append_and_get_events(self, client):
         create_entity(_repo(client), "b_unit_001", {"name": "Build Unit 001"})
