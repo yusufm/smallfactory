@@ -88,7 +88,14 @@ def _api_exception_response(
         app.logger.exception("API request failed: %s", exc)
     except Exception:
         pass
-    payload = {"success": False, "error": public_message}
+    error_message = public_message
+    # Surface concise validation feedback for known user-input exceptions only.
+    _SAFE_EXC_TYPES = (ValueError, KeyError, IndexError, FileNotFoundError, FileExistsError)
+    if public_message == "Request failed" and status < 500 and isinstance(exc, _SAFE_EXC_TYPES):
+        detail = str(exc).strip().split("\n", 1)[0]
+        if detail:
+            error_message = detail[:240]
+    payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
     return jsonify(payload), status

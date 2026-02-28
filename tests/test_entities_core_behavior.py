@@ -152,6 +152,19 @@ def test_build_events_do_not_read_from_entity_yaml(tmp_path: Path):
     ent = get_entity(repo, "b_widget_005")
     assert ent.get("events") == []
 
+
+def test_build_events_read_rejects_missing_id(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    create_entity(repo, "b_widget_008", {"name": "Build Widget 008"})
+    events_fp = repo / "entities" / "b_widget_008" / "events.jsonl"
+    events_fp.write_text('{"message":"missing id","tags":["note"]}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Event field 'id' is required"):
+        _ = get_entity(repo, "b_widget_008")
+
 def test_build_events_reject_non_build_entities(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)

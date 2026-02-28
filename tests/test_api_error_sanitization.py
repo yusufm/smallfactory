@@ -1,7 +1,8 @@
 """Regression tests for _api_exception_response sanitization.
 
 Verifies that:
-- Exception text is never exposed to API callers by default.
+- Expected validation exceptions (ValueError, KeyError, etc.) surface concise
+  messages in default 4xx responses.
 - Unexpected / internal exceptions (RuntimeError, OSError, PermissionError,
   generic Exception) are redacted to a generic message.
 - 5xx responses never leak exception details regardless of type.
@@ -36,7 +37,28 @@ def _call(mod, exc, status=400, public_message="Request failed", hint=None):
 
 
 # ---------------------------------------------------------------------------
-# Exception text MUST be redacted in 4xx responses
+# Safe validation exceptions SHOULD surface in default 4xx responses
+# ---------------------------------------------------------------------------
+
+class TestSafeTypesExposed:
+
+    @pytest.mark.parametrize("exc", [
+        ValueError("Invalid SFID format"),
+        KeyError("missing_field"),
+        IndexError("BOM line 99 out of range"),
+        FileNotFoundError("Entity p_ghost not found"),
+        FileExistsError("Entity p_dup already exists"),
+    ])
+    def test_validation_error_surfaces_in_400(self, _app, exc):
+        data, code = _call(_app, exc, status=400)
+        assert code == 400
+        assert data["success"] is False
+        assert data["error"] != "Request failed"
+        assert len(data["error"]) > 0
+
+
+# ---------------------------------------------------------------------------
+# Unsafe/internal exception text MUST be redacted in 4xx responses
 # ---------------------------------------------------------------------------
 
 class TestUnsafeTypesRedacted:
@@ -73,6 +95,12 @@ class TestUnsafeTypesRedacted:
         data, _ = _call(_app, exc, status=400)
         assert "/var/run" not in data["error"]
         assert data["error"] == "Request failed"
+
+    def test_safe_exception_multiline_truncated(self, _app):
+        exc = ValueError("first line\nsecond line with /secret/path")
+        data, _ = _call(_app, exc, status=400)
+        assert data["error"] == "first line"
+        assert "second line" not in data["error"]
 
 
 # ---------------------------------------------------------------------------

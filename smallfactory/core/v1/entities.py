@@ -1093,10 +1093,18 @@ def _build_event_id(existing: List[dict], *, prefix: str = "evt") -> str:
         i += 1
 
 
-def _normalize_event_id(event_id, *, existing: List[dict] | None = None, prefix: str = "evt") -> str:
+def _normalize_event_id_for_append(event_id, *, existing: List[dict] | None = None, prefix: str = "evt") -> str:
     raw = str(event_id or "").strip()
     if not raw:
         raw = _build_event_id(existing or [], prefix=prefix)
+    validate_sfid(raw)
+    return raw
+
+
+def _require_event_id(event_id) -> str:
+    raw = str(event_id or "").strip()
+    if not raw:
+        raise ValueError("Event field 'id' is required")
     validate_sfid(raw)
     return raw
 
@@ -1111,7 +1119,7 @@ def _build_events_from_entity(datarepo_path: Path, sfid: str) -> List[dict]:
         if isinstance(e, dict):
             rec = dict(e)
             _validate_event_fields(rec)
-            rec["id"] = _normalize_event_id(rec.get("id"))
+            rec["id"] = _require_event_id(rec.get("id"))
             rec["tags"] = _normalize_event_tags(rec.get("tags"))
             msg = _normalize_event_message(rec.get("message"))
             if msg is None:
@@ -1172,7 +1180,7 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
         rec["message"] = msg
     if "files" in rec:
         rec["files"] = _normalize_event_files(rec.get("files"))
-    rec["id"] = _normalize_event_id(rec.get("id"), existing=events, prefix="evt")
+    rec["id"] = _normalize_event_id_for_append(rec.get("id"), existing=events, prefix="evt")
     if not str(rec.get("ts") or "").strip():
         rec["ts"] = datetime.now(timezone.utc).isoformat()
     events.append(rec)
