@@ -5,7 +5,7 @@ Welcome to smallFactory — a Git‑native toolset to manage the things you make
 ## What you can do
 - Design: capture parts/assemblies, attach files, and build BOMs with alternates.
 - Snapshot: cut numbered revisions and track what’s released.
-- Build & operate: log build events (tests, notes, attachments), label with QR stickers, scan on mobile, and keep inventory accurate by location.
+- Build & operate: log build events (tests, notes, attachments, etc.), label with QR stickers, scan on mobile, and keep inventory accurate by location.
 
 ## Key concepts (quick)
 - Entities: parts, assemblies, locations, builds — each has a unique `sfid`.
