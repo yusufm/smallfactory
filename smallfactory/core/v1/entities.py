@@ -1093,6 +1093,14 @@ def _build_event_id(existing: List[dict], *, prefix: str = "evt") -> str:
         i += 1
 
 
+def _normalize_event_id(event_id, *, existing: List[dict] | None = None, prefix: str = "evt") -> str:
+    raw = str(event_id or "").strip()
+    if not raw:
+        raw = _build_event_id(existing or [], prefix=prefix)
+    validate_sfid(raw)
+    return raw
+
+
 def _build_events_from_entity(datarepo_path: Path, sfid: str) -> List[dict]:
     events_fp = _events_file(datarepo_path, sfid)
     events = _read_events_jsonl(events_fp)
@@ -1103,6 +1111,7 @@ def _build_events_from_entity(datarepo_path: Path, sfid: str) -> List[dict]:
         if isinstance(e, dict):
             rec = dict(e)
             _validate_event_fields(rec)
+            rec["id"] = _normalize_event_id(rec.get("id"))
             rec["tags"] = _normalize_event_tags(rec.get("tags"))
             msg = _normalize_event_message(rec.get("message"))
             if msg is None:
@@ -1163,8 +1172,7 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
         rec["message"] = msg
     if "files" in rec:
         rec["files"] = _normalize_event_files(rec.get("files"))
-    if not str(rec.get("id") or "").strip():
-        rec["id"] = _build_event_id(events, prefix="evt")
+    rec["id"] = _normalize_event_id(rec.get("id"), existing=events, prefix="evt")
     if not str(rec.get("ts") or "").strip():
         rec["ts"] = datetime.now(timezone.utc).isoformat()
     events.append(rec)
@@ -1246,6 +1254,7 @@ def update_build_event(
     eid = str(event_id or "").strip()
     if not eid:
         raise ValueError("event_id is required")
+    validate_sfid(eid)
     fp = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
     data = _read_yaml(fp)
@@ -1313,6 +1322,7 @@ def update_build_event_tags(
     eid = str(event_id or "").strip()
     if not eid:
         raise ValueError("event_id is required")
+    validate_sfid(eid)
     fp = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
     data = _read_yaml(fp)
@@ -1361,6 +1371,7 @@ def add_build_event_file_link(
     eid = str(event_id or "").strip()
     if not eid:
         raise ValueError("event_id is required")
+    validate_sfid(eid)
     p = str(path or "").strip()
     if not p:
         raise ValueError("path is required")

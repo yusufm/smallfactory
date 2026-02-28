@@ -164,7 +164,7 @@ Example `entities/b_2025_0001/events.jsonl`:
 ```
 
 Build event schema (normative):
-- `id` (string): event identifier, immutable once created.
+- `id` (string): event identifier, immutable once created, and MUST pass SFID validation.
 - `ts` (ISO datetime string): event timestamp.
 - `tags` (array of strings): optional freeform labels; values are normalized to lowercase and deduplicated.
 - `message` (string): optional event details text.

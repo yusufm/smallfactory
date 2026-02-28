@@ -310,6 +310,14 @@ class TestBuildJournalApi:
         )
         assert r1.status_code == 400
 
+    def test_append_rejects_invalid_event_id(self, client):
+        create_entity(_repo(client), "b_unit_007", {"name": "Build Unit 007"})
+        r1 = client.post(
+            "/api/entities/b_unit_007/events/append",
+            json={"event": {"id": "bad-id", "message": "x"}},
+        )
+        assert r1.status_code == 400
+
     def test_append_event_rejects_non_build_sfid(self, client):
         create_entity(_repo(client), "p_widget", {"name": "Widget"})
         resp = client.post(

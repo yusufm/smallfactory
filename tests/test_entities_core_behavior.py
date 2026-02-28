@@ -19,6 +19,7 @@ from smallfactory.core.v1.entities import (
     update_entity_field,
     update_entity_fields,
 )
+from smallfactory.core.v1.config import validate_sfid
 
 
 def test_create_part_entity_scaffolds_revision_and_refs_dirs(tmp_path: Path):
@@ -121,6 +122,7 @@ def test_build_events_append(tmp_path: Path):
     ev = out["event"]
     assert ev["tags"] == ["repair_request"]
     assert ev["id"]
+    validate_sfid(ev["id"])
     assert len(out["events"]) == 1
 
     ent = get_entity(repo, "b_widget_001")
@@ -228,3 +230,13 @@ def test_build_event_rejects_unknown_fields(tmp_path: Path):
     create_entity(repo, "b_widget_006", {"name": "Build Widget 006"})
     with pytest.raises(ValueError, match="Unsupported event field"):
         append_build_event(repo, "b_widget_006", {"message": "x", "target": "p_uut"})
+
+
+def test_build_event_rejects_invalid_id(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    create_entity(repo, "b_widget_007", {"name": "Build Widget 007"})
+    with pytest.raises(ValueError, match="sfid must match"):
+        append_build_event(repo, "b_widget_007", {"id": "bad-id", "message": "x"})
