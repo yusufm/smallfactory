@@ -120,7 +120,7 @@ Use these as copy/paste prompts in your MCP client.
 - `Call repo_info and return only datarepo_path.`
 - `Use parts_inventory_list with {"limit": 200, "sort_by": "qty", "sort_dir": "asc"} and return a table of part, qty, status_bucket.`
 - `Show parts likely to run out soon using parts_inventory_list with {"status_bucket":"critical","limit":200}.`
-- `Create a DigiKey order for parts that are low and required to build 5 units of p_xyz. Use bom_resolved for p_xyz, then compare required qty vs on-hand with parts_inventory_list, and return only a purchase table (part_sfid, manufacturer_part_number/name if available, qty_to_order).`
+- `Create a DigiKey order for low-stock items needed to build 5 units of p_xyz.`
 - `For part p_abc, list recent repair-related events from build_events_list with {"part_sfid":"p_abc","tags":["repair"],"limit":100}.`
 - `What are the most common repair tags in the last 30 days? Use analytics_query grouped by tag.`
 - `Resolve BOM for p_widget at max depth 3 using bom_resolved and summarize leaf parts.`

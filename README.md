@@ -134,8 +134,13 @@ Use a camera or upload to extract parts from invoices and batch-create entities.
 ### AI / MCP
 - **Integrated MCP endpoint** — Run once with `sf.py web`; MCP is served at `/mcp` on the same port.
 - **BYO AI client** — Connect Windsurf, Cursor, Claude Desktop, Codex, and other MCP-compatible clients.
+- **Ask free-form questions** — Ask natural-language questions about your parts, builds, inventory, and repair history.
 - **Read-only analytics tools** — Query entities, inventory, BOM, build events, and aggregated repair trends.
 - **Resource compatibility** — Includes MCP resources for clients/modes that prefer resource reads over tool calls.
+
+Example prompts:
+- `Which repairs are most common across all builds for part p_xyz?`
+- `Create a DigiKey order for low-stock items needed to build 5 units of p_xyz.`
 
 Quick start:
 
