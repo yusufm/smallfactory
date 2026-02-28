@@ -1916,14 +1916,14 @@ def entities_view(sfid):
 
 @app.route('/entities/<sfid>/bom-tree')
 def entities_bom_tree(sfid):
-    """Dedicated page to display the deep BOM tree for a product entity.
+    """Dedicated page to display the deep BOM tree for a part entity.
 
     Server-side renders the hierarchical tree and provides a CSV download link.
     """
     try:
         datarepo_path = get_datarepo_path()
         entity = get_entity(datarepo_path, sfid)
-        # Only meaningful for parts/products, but allow graceful render for others
+        # Only meaningful for parts, but allow graceful render for others
         nodes = _walk_bom_deep(datarepo_path, sfid, max_depth=None)
         return render_template('entities/bom_tree.html', entity=entity, nodes=nodes)
     except Exception as e:
@@ -1990,13 +1990,13 @@ def entities_build(sfid):
                 flash('Cannot build: failed to read revisions for this part.', 'error')
                 return redirect(url_for('entities_build', sfid=sfid))
 
-            # Create a build record entity: b_<product>_<YYYYMMDDHHMMSS>
+            # Create a build record entity: b_<part>_<YYYYMMDDHHMMSS>
             _now = datetime.now()
             ts_label = _now.strftime('%Y%m%d%H%M%S')
             build_sfid = f"b_{sfid}_{ts_label}"
             ts_iso = _now.isoformat(timespec='seconds')
             fields = {
-                'product_sfid': sfid,
+                'part_sfid': sfid,
                 'created_at': ts_iso,
                 'datetime': ts_iso,
                 'serialnumber': ts_label,
@@ -2016,7 +2016,7 @@ def entities_build(sfid):
             elif current_released:
                 rev_label = current_released
             if rev_label:
-                fields['product_rev'] = rev_label
+                fields['part_rev'] = rev_label
             if l_sfid:
                 fields['l_sfid'] = l_sfid
             if notes:
@@ -2072,8 +2072,8 @@ def entities_build_create_revision(sfid):
     """
     try:
         datarepo_path = get_datarepo_path()
-        # Prefer explicit product_sfid from form, fallback to path param
-        target = (request.form.get('product_sfid') or '').strip() or sfid
+        # Prefer explicit part_sfid from form, fallback to path param
+        target = (request.form.get('part_sfid') or '').strip() or sfid
         if not (target and target.startswith('p_')):
             flash('Revisions are only supported on part entities (p_*)', 'error')
             return redirect(url_for('entities_build', sfid=sfid))
@@ -2081,7 +2081,7 @@ def entities_build_create_revision(sfid):
         try:
             get_entity(datarepo_path, target)
         except Exception:
-            flash(f"Product '{target}' not found.", 'error')
+            flash(f"Part '{target}' not found.", 'error')
             return redirect(url_for('entities_build', sfid=sfid))
         def _mutate():
             return bump_revision(datarepo_path, target)

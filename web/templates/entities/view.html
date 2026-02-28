@@ -132,16 +132,16 @@
               <dd id="ovw-builtat-display" class="mt-1 text-sm text-gray-900">{{ entity.get('datetime') or entity.get('created_at') or '—' }}</dd>
             </div>
             <div>
-              <dt class="text-sm font-medium text-gray-600">Product</dt>
+              <dt class="text-sm font-medium text-gray-600">Part</dt>
               <dd class="mt-1 text-sm">
-                {% set ps = entity.get('product_sfid') %}
+                {% set ps = entity.get('part_sfid') %}
                 {% if ps %}
                   <a href="{{ url_for('entities_view', sfid=ps) }}" class="text-blue-600 hover:text-blue-800 font-mono">{{ ps }}</a>
                 {% else %}
                   <span class="text-gray-500">—</span>
                 {% endif %}
-                {% if entity.get('product_rev') %}
-                  <span class="ml-2 text-xs text-gray-600">(rev {{ entity.get('product_rev') }})</span>
+                {% if entity.get('part_rev') %}
+                  <span class="ml-2 text-xs text-gray-600">(rev {{ entity.get('part_rev') }})</span>
                 {% endif %}
               </dd>
             </div>
