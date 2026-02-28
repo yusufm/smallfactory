@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import subprocess
 
 import pytest
 import yaml
@@ -253,3 +254,57 @@ def test_build_event_rejects_invalid_id(tmp_path: Path):
     create_entity(repo, "b_widget_007", {"name": "Build Widget 007"})
     with pytest.raises(ValueError, match="sfid must match"):
         append_build_event(repo, "b_widget_007", {"id": "bad-id", "message": "x"})
+
+
+def test_event_mutations_do_not_rewrite_entity_yaml(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+    create_entity(repo, "b_widget_009", {"name": "Build Widget 009"})
+
+    ent_fp = repo / "entities" / "b_widget_009" / "entity.yml"
+    ent_before = ent_fp.read_text(encoding="utf-8")
+    events_fp = repo / "entities" / "b_widget_009" / "events.jsonl"
+
+    out1 = append_build_event(repo, "b_widget_009", {"message": "one", "tags": ["note"]})
+    ev_id = out1["event"]["id"]
+    assert ent_fp.read_text(encoding="utf-8") == ent_before
+    show1 = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+    assert "entities/b_widget_009/events.jsonl" in show1
+    assert "entities/b_widget_009/entity.yml" not in show1
+
+    update_build_event_tags(repo, "b_widget_009", ev_id, ["repair"])
+    assert ent_fp.read_text(encoding="utf-8") == ent_before
+    show2 = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+    assert "entities/b_widget_009/events.jsonl" in show2
+    assert "entities/b_widget_009/entity.yml" not in show2
+
+    update_build_event(
+        repo,
+        "b_widget_009",
+        ev_id,
+        {"message": "two", "tags": ["repair"], "files": ["event_attachments/two.txt"]},
+    )
+    assert ent_fp.read_text(encoding="utf-8") == ent_before
+    show3 = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+    assert "entities/b_widget_009/events.jsonl" in show3
+    assert "entities/b_widget_009/entity.yml" not in show3
+
+    add_build_event_file_link(repo, "b_widget_009", ev_id, "event_attachments/three.txt")
+    assert ent_fp.read_text(encoding="utf-8") == ent_before
+    show4 = subprocess.run(
+        ["git", "show", "--name-only", "--pretty=format:", "HEAD"],
+        cwd=repo, capture_output=True, text=True, check=True,
+    ).stdout
+    assert "entities/b_widget_009/events.jsonl" in show4
+    assert "entities/b_widget_009/entity.yml" not in show4
+    assert events_fp.exists()

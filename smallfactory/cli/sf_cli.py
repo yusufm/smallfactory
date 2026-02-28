@@ -5,7 +5,6 @@ import pathlib
 import json
 import yaml
 import datetime
-import uuid
 
 from smallfactory import __version__
 from smallfactory.core.v1.config import (
@@ -1081,7 +1080,7 @@ def main():
         if tags is not None:
             event["tags"] = tags
         try:
-            _ = ent_get_entity(datarepo_path, args.sfid)
+            ent = ent_get_entity(datarepo_path, args.sfid)
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1095,7 +1094,24 @@ def main():
             ev_id = str(event.get("id") or "").strip()
             if not ev_id:
                 ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
-                ev_id = f"evt_{ts}_{uuid.uuid4().hex[:6]}"
+                base = f"evt_{ts}"
+                existing_ids = set()
+                try:
+                    existing_events = ent.get("events")
+                    if isinstance(existing_events, list):
+                        for ev in existing_events:
+                            if not isinstance(ev, dict):
+                                continue
+                            ex_id = str(ev.get("id") or "").strip()
+                            if ex_id:
+                                existing_ids.add(ex_id)
+                except Exception:
+                    pass
+                ev_id = base
+                i = 1
+                while ev_id in existing_ids:
+                    ev_id = f"{base}_{i}"
+                    i += 1
                 event["id"] = ev_id
             seen_names = set()
             for up in uploads:

@@ -1163,11 +1163,8 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
     _validate_sfid_local(sfid)
     if not _is_build_sfid(sfid):
         raise ValueError("Build events are only supported for build entities ('b_*')")
-    fp = _entity_file(datarepo_path, sfid)
+    _ = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
-    data = _read_yaml(fp)
-    if not isinstance(data, dict):
-        data = {}
     events = _build_events_from_entity(datarepo_path, sfid)
 
     rec = dict(event)
@@ -1185,21 +1182,13 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
         rec["ts"] = datetime.now(timezone.utc).isoformat()
     events.append(rec)
 
-    data_to_write = dict(data)
-    data_to_write.pop("sfid", None)
-    data_to_write.pop("events", None)
-    # Validate merged record against type-aware specs
-    _validate_against_specs(datarepo_path, sfid, data_to_write)
-    _write_yaml(fp, data_to_write)
     _write_events_jsonl(events_fp, events)
     msg = (
         f"[smallFactory] Appended build event on {sfid} ({','.join(rec['tags']) or 'untagged'})\n"
         f"::sfid::{sfid}\n::sf-op::build-event-append\n::sf-event-tags::{','.join(rec['tags'])}"
     )
-    git_commit_paths(datarepo_path, [fp, events_fp], msg)
-    data_ret = dict(data_to_write)
-    data_ret["sfid"] = sfid
-    return {"sfid": sfid, "event": rec, "events": events, "entity": data_ret}
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": rec, "events": events}
 
 
 def _normalize_event_files(files) -> List[str]:
@@ -1263,11 +1252,8 @@ def update_build_event(
     if not eid:
         raise ValueError("event_id is required")
     validate_sfid(eid)
-    fp = _entity_file(datarepo_path, sfid)
+    _ = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
-    data = _read_yaml(fp)
-    if not isinstance(data, dict):
-        data = {}
     events = _build_events_from_entity(datarepo_path, sfid)
 
     target_idx = None
@@ -1301,20 +1287,13 @@ def update_build_event(
 
     events[target_idx] = rec
 
-    data_to_write = dict(data)
-    data_to_write.pop("sfid", None)
-    data_to_write.pop("events", None)
-    _validate_against_specs(datarepo_path, sfid, data_to_write)
-    _write_yaml(fp, data_to_write)
     _write_events_jsonl(events_fp, events)
     msg = (
         f"[smallFactory] Updated build event on {sfid} ({eid})\n"
         f"::sfid::{sfid}\n::sf-op::build-event-update\n::sf-event::{eid}\n::sf-event-tags::{','.join(rec['tags'])}"
     )
-    git_commit_paths(datarepo_path, [fp, events_fp], msg)
-    data_ret = dict(data_to_write)
-    data_ret["sfid"] = sfid
-    return {"sfid": sfid, "event": rec, "events": events, "entity": data_ret}
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": rec, "events": events}
 
 
 def update_build_event_tags(
@@ -1331,11 +1310,8 @@ def update_build_event_tags(
     if not eid:
         raise ValueError("event_id is required")
     validate_sfid(eid)
-    fp = _entity_file(datarepo_path, sfid)
+    _ = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
-    data = _read_yaml(fp)
-    if not isinstance(data, dict):
-        data = {}
     events = _build_events_from_entity(datarepo_path, sfid)
 
     target_idx = None
@@ -1351,20 +1327,13 @@ def update_build_event_tags(
     norm_tags = _normalize_event_tags(tags)
     events[target_idx]["tags"] = norm_tags
 
-    data_to_write = dict(data)
-    data_to_write.pop("sfid", None)
-    data_to_write.pop("events", None)
-    _validate_against_specs(datarepo_path, sfid, data_to_write)
-    _write_yaml(fp, data_to_write)
     _write_events_jsonl(events_fp, events)
     msg = (
         f"[smallFactory] Updated build event tags on {sfid} ({eid})\n"
         f"::sfid::{sfid}\n::sf-op::build-event-tags-set\n::sf-event::{eid}\n::sf-event-tags::{','.join(norm_tags)}"
     )
-    git_commit_paths(datarepo_path, [fp, events_fp], msg)
-    data_ret = dict(data_to_write)
-    data_ret["sfid"] = sfid
-    return {"sfid": sfid, "event": events[target_idx], "events": events, "entity": data_ret}
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": events[target_idx], "events": events}
 
 def add_build_event_file_link(
     datarepo_path: Path,
@@ -1389,11 +1358,8 @@ def add_build_event_file_link(
         raise ValueError("path cannot contain '..'")
     p = p.replace("\\", "/")
 
-    fp = _entity_file(datarepo_path, sfid)
+    _ = _entity_file(datarepo_path, sfid)
     events_fp = _events_file(datarepo_path, sfid)
-    data = _read_yaml(fp)
-    if not isinstance(data, dict):
-        data = {}
     events = _build_events_from_entity(datarepo_path, sfid)
 
     target_idx = None
@@ -1411,20 +1377,13 @@ def add_build_event_file_link(
         files.append(p)
     events[target_idx]["files"] = files
 
-    data_to_write = dict(data)
-    data_to_write.pop("sfid", None)
-    data_to_write.pop("events", None)
-    _validate_against_specs(datarepo_path, sfid, data_to_write)
-    _write_yaml(fp, data_to_write)
     _write_events_jsonl(events_fp, events)
     msg = (
         f"[smallFactory] Linked file to build event on {sfid} ({eid})\n"
         f"::sfid::{sfid}\n::sf-op::build-event-file-link\n::sf-event::{eid}\n::sf-path::{p}"
     )
-    git_commit_paths(datarepo_path, [fp, events_fp], msg)
-    data_ret = dict(data_to_write)
-    data_ret["sfid"] = sfid
-    return {"sfid": sfid, "event": events[target_idx], "events": events, "entity": data_ret}
+    git_commit_paths(datarepo_path, [events_fp], msg)
+    return {"sfid": sfid, "event": events[target_idx], "events": events}
 
 
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
