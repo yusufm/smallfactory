@@ -347,6 +347,58 @@ bom:
     assert "ENT_BOM_ALT_ENTITY_MISSING" not in codes
 
 
+def test_build_requires_part_sfid_and_forbids_top_part(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "p_widget" / "entity.yml", "name: Widget\n")
+
+    # Missing part_sfid and using legacy top_part key is invalid.
+    _write(
+        repo / "entities" / "b_bad" / "entity.yml",
+        "name: Bad Build\ntop_part: p_widget\n",
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])
+    assert "ENT_BUILD_TOP_PART_FORBIDDEN" in codes
+    assert "ENT_BUILD_PART_REQUIRED" in codes
+
+
+def test_build_part_sfid_must_be_valid_part_entity(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "l_loc" / "entity.yml", "name: Location\n")
+
+    _write(
+        repo / "entities" / "b_invalid_1" / "entity.yml",
+        "name: Build Bad 1\npart_sfid: bad-id\n",
+    )
+    _write(
+        repo / "entities" / "b_invalid_2" / "entity.yml",
+        "name: Build Bad 2\npart_sfid: l_loc\n",
+    )
+    _write(
+        repo / "entities" / "b_invalid_3" / "entity.yml",
+        "name: Build Bad 3\npart_sfid: p_missing\n",
+    )
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])
+    assert "ENT_BUILD_PART_SFID_INVALID" in codes
+    assert "ENT_BUILD_PART_NOT_PART" in codes
+    assert "ENT_BUILD_PART_ENTITY_MISSING" in codes
+
+
+def test_build_with_valid_part_sfid_has_no_build_field_errors(tmp_path: Path):
+    repo = tmp_path / "repo"; repo.mkdir()
+    _write(repo / "entities" / "p_widget" / "entity.yml", "name: Widget\n")
+    _write(repo / "entities" / "b_ok" / "entity.yml", "name: Build OK\npart_sfid: p_widget\n")
+
+    res = validate_repo(repo, include_git=False)
+    codes = _codes(res["issues"])
+    assert "ENT_BUILD_TOP_PART_FORBIDDEN" not in codes
+    assert "ENT_BUILD_PART_REQUIRED" not in codes
+    assert "ENT_BUILD_PART_SFID_INVALID" not in codes
+    assert "ENT_BUILD_PART_NOT_PART" not in codes
+    assert "ENT_BUILD_PART_ENTITY_MISSING" not in codes
+
+
 def test_gitattributes_union_merge_config_ok(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     # inventory root must exist for inventory scan

@@ -219,6 +219,49 @@ def _scan_entities(repo: Path, issues: List[Dict]) -> None:
                 "path": _rel(entity_yml, repo),
                 "message": "Legacy key 'children' is not allowed; use 'bom'"
             })
+        is_build = sfid.startswith("b_")
+        if is_build:
+            part_sfid = data.get("part_sfid")
+            part_sfid_raw = str(part_sfid).strip() if part_sfid is not None else ""
+            if "top_part" in data:
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_BUILD_TOP_PART_FORBIDDEN",
+                    "path": _rel(entity_yml, repo),
+                    "message": "Build entities must use 'part_sfid'; legacy field 'top_part' is not allowed"
+                })
+            if not part_sfid_raw:
+                issues.append({
+                    "severity": "error",
+                    "code": "ENT_BUILD_PART_REQUIRED",
+                    "path": _rel(entity_yml, repo),
+                    "message": "Build entities must include non-empty 'part_sfid'"
+                })
+            else:
+                try:
+                    validate_sfid(part_sfid_raw)
+                except Exception:
+                    issues.append({
+                        "severity": "error",
+                        "code": "ENT_BUILD_PART_SFID_INVALID",
+                        "path": _rel(entity_yml, repo),
+                        "message": "Build field 'part_sfid' must be a valid SFID"
+                    })
+                else:
+                    if not part_sfid_raw.startswith("p_"):
+                        issues.append({
+                            "severity": "error",
+                            "code": "ENT_BUILD_PART_NOT_PART",
+                            "path": _rel(entity_yml, repo),
+                            "message": "Build field 'part_sfid' must reference a part SFID (prefix 'p_')"
+                        })
+                    elif not (repo / "entities" / part_sfid_raw / "entity.yml").exists():
+                        issues.append({
+                            "severity": "error",
+                            "code": "ENT_BUILD_PART_ENTITY_MISSING",
+                            "path": _rel(entity_yml, repo),
+                            "message": f"Build field 'part_sfid' references missing entity '{part_sfid_raw}'"
+                        })
         is_part = sfid.startswith("p_")
         if not is_part and "bom" in data:
             issues.append({

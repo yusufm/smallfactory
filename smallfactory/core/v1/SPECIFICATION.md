@@ -142,25 +142,26 @@ Top‑level directories (recap):
 
 ### Build entities (`b_*`)
 
-Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given top part (optionally parameterized by config).
+Builds are first-class entities represented under `entities/b_*/`. A Build captures a specific batch or run that produces finished units for a given part.
 
 Example `entities/b_2025_0001/entity.yml`:
 ```yaml
-top_part: p_toaster_assembly       # required top-level part being built
-config:                            # optional config passed to resolver (used by `when` rules)
-  voltage: 120
-qty_planned: 100                   # optional
-qty_completed: 20                  # optional; tooling may derive/update
-site: l_line1                      # optional production line/location
-workorder: workorder-000123        # optional external WO reference
-status: open                       # open|in_progress|completed|canceled
+part_sfid: p_toaster_assembly      # required; top-level part being built
+part_rev: 2                        # optional; concrete part revision used by this build record
+l_sfid: l_line1                    # optional location where build was created/performed
+status: open                       # optional: open|in_progress|completed|canceled
 opened_at: 2025-08-10T19:40:00Z    # optional timestamps
 closed_at: 2025-08-11T02:12:00Z
+serialnumber: 20250810194000       # optional per-build serial/label
+datetime: 2025-08-10T19:40:00Z      # optional build datetime
+created_at: 2025-08-10T19:40:00Z    # optional record creation timestamp
 notes: "First pilot run on new fixture"
 ```
 
 Notes:
  - Use `::sfid::<b_...>` in commit messages when a Build is created or updated.
+ - Build entities MUST use `part_sfid`. The legacy `top_part` field is not supported.
+ - Current v1 build UI behavior is record creation and traceability only (no backflush/consumption mutation in build flow).
 
 Build events are stored separately from `entity.yml` in `entities/<b_sfid>/events.jsonl` (JSON Lines; one event object per line).
 
@@ -458,11 +459,11 @@ total: 184
 ---
 
 ## Resolver behavior (deterministic)
-**Input:** a top part SFID (and optional config/rev selector), plus repo state/commit.  
+**Input:** a part SFID root (and optional config/rev selector), plus repo state/commit.  
 **Output:** a fully resolved BOM with exact part SFIDs and revision labels.
 
 Algorithm (conceptual):
-1. Depth-first walk from `entities/<top_part>/entity.yml`.
+1. Depth-first walk from `entities/<part_sfid>/entity.yml`.
    - Use provided `rev` selector or default to `released`.
    - Apply provided `config` to evaluate `when` rules.
    - If the current part has `policy: phantom`, treat it as pass-through: do not include the phantom part itself in the flattened result and do not consider on-hand for it; traverse into its `bom` and accumulate child quantities into the parent.
@@ -486,7 +487,7 @@ Algorithm (conceptual):
 ```
 sf entities revision bump <sfid> [--rev <label>] [--notes "..."]
 sf entities revision release <sfid> <revision> [--released-at <ISO8601>]
-sf resolve <top_part> [--rev <selector|label>] [--config <kv|yaml>]
+sf resolve <part_sfid> [--rev <selector|label>] [--config <kv|yaml>]
 sf build units mint <b_sfid> --qty <n>
 sf inventory post --part <sfid> --qty-delta <n> [--location <sfid>] [--reason <text>]
 sf inventory onhand [--part <sfid>] [--location <sfid>]
@@ -494,7 +495,7 @@ sf inventory rebuild
 sf lint   # validate schema + referential integrity + allowed fields by kind
  
 # Build lifecycle (minimal):
-sf build create <b_sfid> --top-part <p_sfid> [--rev <selector|label>] [--config <kv|yaml>] [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
+sf build create <b_sfid> --part-sfid <p_sfid> [--rev <selector|label>] [--config <kv|yaml>] [--qty-planned <n>] [--site <l_sfid>] [--workorder <id>]
 sf build update <b_sfid> [--status <open|in_progress|completed|canceled>] [--qty-completed <n>]
 ```
 
