@@ -12,6 +12,11 @@ from smallfactory.core.v1.config import (
     CONFIG_FILENAME,
 )
 from smallfactory.core.v1 import repo as repo_ops
+from smallfactory.core.v1.repo_upgrade import (
+    get_repo_upgrade_status,
+    run_repo_upgrade,
+)
+from smallfactory.core.v1.versioning import assert_repo_version_matches_tool
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -118,6 +123,24 @@ def main():
     init_parser.add_argument("path", nargs="?", default=None, help="Target directory for new datarepo (optional)")
     init_parser.add_argument("--github-url", dest="github_url", default=None, help="GitHub repository URL to clone (optional)")
     init_parser.add_argument("--name", dest="name", default=None, help="Name for the new local datarepo when not cloning (optional)")
+
+    # repo group (compatibility + upgrade/migration operations)
+    repo_parser = subparsers.add_parser("repo", help="Repository compatibility and upgrade operations")
+    repo_sub = repo_parser.add_subparsers(dest="repo_cmd", required=False, parser_class=SFArgumentParser)
+    repo_sub.add_parser("status", help="Show repository compatibility and migration status")
+    repo_upgrade = repo_sub.add_parser("upgrade", help="Apply pending repository format migrations")
+    repo_upgrade.add_argument("--dry-run", action="store_true", help="Show planned migrations without modifying files")
+    repo_upgrade.add_argument("--to", default=None, help="Stop at a specific migration id (default: latest)")
+    repo_upgrade.add_argument("--allow-dirty", action="store_true", help="Allow upgrade when git working tree has local changes")
+    repo_upgrade.add_argument("--no-commit", action="store_true", help="Do not create a git commit after upgrade")
+    # Internal recovery escape hatch only; intentionally hidden from normal CLI help.
+    repo_upgrade.add_argument("--unsafe-skip-validate", action="store_true", help=argparse.SUPPRESS)
+    repo_validate = repo_sub.add_parser("validate", help="Validate datarepo against PLM SPEC")
+    repo_validate.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
+    repo_validate.add_argument("--no-entities", dest="no_entities", action="store_true", help="Skip entities/ validation")
+    repo_validate.add_argument("--no-inventory", dest="no_inventory", action="store_true", help="Skip inventory/ validation")
+    repo_validate.add_argument("--no-git", dest="no_git", action="store_true", help="Skip Git commit metadata checks")
+    repo_validate.add_argument("--git-commits", dest="git_commits", type=int, default=200, help="Limit number of recent commits to scan for required ::sfid:: tokens (0 = all)")
 
     # inventory group (nested subcommands)
     inventory_parser = subparsers.add_parser("inventory", help="Inventory operations")
@@ -350,14 +373,6 @@ def main():
     web_parser.add_argument("--host", default="0.0.0.0", help="Host to bind the web server to (default: 0.0.0.0)")
     web_parser.add_argument("--debug", action="store_true", help="Run in debug mode with auto-reload")
 
-    # validate command (repo linter)
-    validate_parser = subparsers.add_parser("validate", help="Validate datarepo against PLM SPEC")
-    validate_parser.add_argument("--strict", action="store_true", help="Exit non-zero on warnings as well as errors")
-    validate_parser.add_argument("--no-entities", dest="no_entities", action="store_true", help="Skip entities/ validation")
-    validate_parser.add_argument("--no-inventory", dest="no_inventory", action="store_true", help="Skip inventory/ validation")
-    validate_parser.add_argument("--no-git", dest="no_git", action="store_true", help="Skip Git commit metadata checks")
-    validate_parser.add_argument("--git-commits", dest="git_commits", type=int, default=200, help="Limit number of recent commits to scan for required ::sfid:: tokens (0 = all)")
-
     # stickers group (generate codes for entities)
     stickers_parser = subparsers.add_parser("stickers", help="Sticker generation for entities (PDF batch by default)")
     st_sub = stickers_parser.add_subparsers(dest="st_cmd", required=False, parser_class=SFArgumentParser)
@@ -454,6 +469,8 @@ def main():
         cmd = getattr(args, "command", None)
         if cmd in ("inventory", "inv"):
             inventory_parser.print_help()
+        elif cmd == "repo":
+            repo_parser.print_help()
         elif cmd == "entities":
             entities_parser.print_help()
         elif cmd == "bom":
@@ -587,6 +604,76 @@ def main():
                 print(f" - [{sev.upper()}] {code} :: {path} :: {msg}")
         if errors > 0 or (getattr(args, "strict", False) and warnings > 0):
             sys.exit(1)
+
+    def cmd_repo_status(args):
+        datarepo_path = _repo_path()
+        try:
+            st = get_repo_upgrade_status(datarepo_path)
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(st, indent=2))
+        elif fmt == "yaml":
+            print(yaml.safe_dump(st, sort_keys=False))
+        else:
+            print(f"[smallFactory] Repo: {st.get('repo_path')}")
+            print(
+                f"[smallFactory] Version: repo={st.get('repo_version')} tool={st.get('tool_version')} "
+                f"state={st.get('version_state')}"
+            )
+            pending = st.get("pending_migrations") or []
+            unknown = st.get("unknown_applied_migrations") or []
+            if unknown:
+                print(f"[smallFactory] Unknown applied migrations: {', '.join(unknown)}")
+            if pending:
+                print(f"[smallFactory] Pending migrations ({len(pending)}): {', '.join(pending)}")
+            else:
+                print("[smallFactory] Pending migrations: none")
+
+    def cmd_repo_upgrade(args):
+        datarepo_path = _repo_path()
+        try:
+            res = run_repo_upgrade(
+                datarepo_path,
+                dry_run=bool(getattr(args, "dry_run", False)),
+                target=getattr(args, "to", None),
+                allow_dirty=bool(getattr(args, "allow_dirty", False)),
+                create_commit=not bool(getattr(args, "no_commit", False)),
+                run_validation=not bool(getattr(args, "unsafe_skip_validate", False)),
+            )
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+
+        fmt = _fmt()
+        if fmt == "json":
+            print(json.dumps(res, indent=2))
+            return
+        if fmt == "yaml":
+            print(yaml.safe_dump(res, sort_keys=False))
+            return
+
+        if res.get("dry_run"):
+            plan = res.get("would_apply") or []
+            if plan:
+                print(f"[smallFactory] Dry run: would apply {len(plan)} migration(s): {', '.join(plan)}")
+            else:
+                print("[smallFactory] Dry run: no pending migrations.")
+            return
+
+        plan = res.get("planned_migrations") or []
+        if plan:
+            print(f"[smallFactory] Applied migrations: {', '.join(plan)}")
+        else:
+            print("[smallFactory] No migrations were applied.")
+        commit = (res.get("commit") or {}).get("commit")
+        if commit:
+            print(f"[smallFactory] Upgrade commit: {commit}")
+        val = res.get("validation")
+        if isinstance(val, dict):
+            print(f"[smallFactory] Validation: errors={val.get('errors', 0)} warnings={val.get('warnings', 0)}")
 
     def _parse_size(sz: str, dpi: int):
         if not sz:
@@ -1562,6 +1649,8 @@ def main():
             sub = f"events:{getattr(args, 'events_cmd', None)}"
         else:
             sub = ent_sc
+    elif cmd == "repo":
+        sub = getattr(args, "repo_cmd", None)
     elif cmd == "bom":
         sub = getattr(args, "bom_cmd", None)
     elif cmd == "stickers":
@@ -1569,10 +1658,20 @@ def main():
     else:
         sub = None
 
+    # Strict repo version gate for all non-init/non-repo commands.
+    if cmd not in (None, "init", "repo"):
+        try:
+            assert_repo_version_matches_tool(_repo_path())
+        except Exception as e:
+            print(f"[smallFactory] Error: {e}")
+            sys.exit(1)
+
     DISPATCH = {
         ("init", None): cmd_init,
         ("web", None): cmd_web,
-        ("validate", None): cmd_validate,
+        ("repo", "status"): cmd_repo_status,
+        ("repo", "upgrade"): cmd_repo_upgrade,
+        ("repo", "validate"): cmd_validate,
         ("inventory", "post"): cmd_inventory_post,
         ("inventory", "onhand"): cmd_inventory_onhand,
         ("inventory", "rebuild"): cmd_inventory_rebuild,
@@ -1615,6 +1714,8 @@ def main():
     else:
         if cmd == "inventory":
             inventory_parser.print_help()
+        elif cmd == "repo":
+            repo_parser.print_help()
         elif cmd == "entities":
             entities_parser.print_help()
         else:

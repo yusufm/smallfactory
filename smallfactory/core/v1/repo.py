@@ -75,6 +75,7 @@ def set_remote(repo_path: Path, remote_url: str) -> None:
 def write_datarepo_config(repo_path: Path) -> Path:
     datarepo_config = {
         "smallfactory_version": SF_TOOL_VERSION,
+        "applied_migrations": [],
         "inventory": {
             "fields": INVENTORY_DEFAULT_FIELD_SPECS,
         },
@@ -123,6 +124,7 @@ def write_datarepo_config(repo_path: Path) -> Path:
     lock_patterns = [
         ".smallfactory.repo.lock",
         ".smallfactory.repo.lock.*",
+        "**/.smallfactory.repo.lock.*",
         "inventory/**/*.lock",
     ]
     try:

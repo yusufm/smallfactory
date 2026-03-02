@@ -10,6 +10,8 @@ from contextlib import contextmanager
 
 from .gitutils import git_commit_paths
 from .config import validate_sfid, load_datarepo_config
+from .locks import assert_no_upgrade_in_progress
+from .versioning import assert_repo_version_matches_tool
 
 
 def ensure_inventory_dir(datarepo_path: Path) -> Path:
@@ -289,6 +291,8 @@ def inventory_post(
     - Updates per-part onhand cache and per-location reverse cache.
     - Commit message must include ::sfid::<PART> and ::sfid::<LOCATION> tokens.
     """
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     validate_sfid(part)
     if not _entity_exists(datarepo_path, part):
         raise FileNotFoundError(f"Part sfid '{part}' does not exist under entities/")
@@ -368,6 +372,8 @@ def inventory_onhand(
     - Else if location is provided: return per-location reverse cache (compute from part caches).
     - Else: return summary over all parts (from caches; compute missing from journals).
     """
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     inv_dir = ensure_inventory_dir(datarepo_path)
     if part:
         validate_sfid(part)
@@ -516,6 +522,8 @@ def inventory_onhand_readonly(
 
 def inventory_rebuild(datarepo_path: Path) -> Dict:
     """Rebuild all onhand caches from journals (per-part and per-location)."""
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     inv_dir = ensure_inventory_dir(datarepo_path)
     # Rebuild per-part
     rebuilt_parts: List[str] = []

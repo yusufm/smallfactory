@@ -700,7 +700,7 @@ def _scan_git_commits(repo: Path, issues: List[Dict], *, commit_limit: int = 200
     """Scan recent commits for required commit metadata tokens when mutating PLM data.
 
     Rule: Any commit that changes files under entities/ or inventory/ must include
-    at least one '::sfid::<SFID>' token in its commit message.
+    either a '::sfid::<SFID>' token or '::sf-op::repo-upgrade' in its commit message.
     """
     def _git(args: List[str]) -> str:
         return subprocess.check_output(["git", "-C", str(repo)] + args, text=True)
@@ -736,12 +736,14 @@ def _scan_git_commits(repo: Path, issues: List[Dict], *, commit_limit: int = 200
             touched_plm = any(f.startswith("entities/") or f.startswith("inventory/") for f in files)
             if not touched_plm:
                 continue
-            if "::sfid::" not in msg:
+            has_sfid_token = "::sfid::" in msg
+            is_repo_upgrade_commit = "::sf-op::repo-upgrade" in msg
+            if not (has_sfid_token or is_repo_upgrade_commit):
                 issues.append({
                     "severity": "error",
                     "code": "GIT_TOKEN_REQUIRED",
                     "path": f"commit {h[:12]}",
-                    "message": "Commits touching entities/ or inventory/ must include at least one '::sfid::<SFID>' token"
+                    "message": "Commits touching entities/ or inventory/ must include '::sfid::<SFID>' or '::sf-op::repo-upgrade'"
                 })
     except Exception:
         issues.append({
