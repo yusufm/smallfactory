@@ -207,3 +207,22 @@ def test_inventory_rebuild_recreates_all_caches_from_journals(repo: Path):
     loc_cache = yaml.safe_load((repo / "inventory" / "_location" / "l_main" / "onhand.generated.yml").read_text()) or {}
     assert loc_cache["parts"] == {"p_inv": 4, "p_other": 2}
     assert loc_cache["total"] == 6
+
+
+def test_inventory_mutations_blocked_during_upgrade(repo: Path):
+    marker = repo / ".git" / ".smallfactory.upgrade.in_progress"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text("in-progress\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="upgrade in progress"):
+        inventory_post(repo, "p_inv", 1, l_sfid="l_main")
+
+    with pytest.raises(RuntimeError, match="upgrade in progress"):
+        inventory_onhand(repo, part="p_inv")
+
+
+def test_inventory_ops_blocked_when_repo_version_is_older(repo: Path):
+    (repo / "sfdatarepo.yml").write_text("smallfactory_version: 1.0\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="older than tool version"):
+        inventory_onhand(repo, part="p_inv")

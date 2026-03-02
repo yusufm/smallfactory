@@ -9,7 +9,6 @@ from pathlib import Path
 import json
 import sys
 import os
-import errno
 import heapq
 import csv
 import re
@@ -25,10 +24,6 @@ import atexit
 from contextlib import contextmanager
 import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
-try:
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None
 
 # Prometheus metrics
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
@@ -69,6 +64,11 @@ from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
     check_dependencies as stickers_check_deps,
 )
+from smallfactory.core.v1.locks import (
+    assert_no_upgrade_in_progress as core_assert_no_upgrade_in_progress,
+    repo_process_lock as core_repo_process_lock,
+)
+from smallfactory.core.v1.versioning import assert_repo_version_matches_tool
 from smallfactory.core.v1.vision import (
     ask_image as vlm_ask_image,
     extract_invoice_part as vlm_extract_invoice_part,
@@ -894,54 +894,14 @@ def _get_repo_txn_lock_timeout_sec() -> float:
 
 @contextmanager
 def _repo_process_lock(datarepo_path: Path):
-    """Cross-process repo mutation lock using an advisory lockfile."""
-    if fcntl is None:  # pragma: no cover
-        yield
-        return
-
-    # Keep lock artifacts inside .git so they never dirty the working tree.
-    lock_path = Path(datarepo_path) / ".git" / ".smallfactory.repo.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    """Cross-process repo mutation lock using shared core lock helper."""
     timeout_sec = _get_repo_txn_lock_timeout_sec()
-
-    fh = None
-    try:
-        fh = open(lock_path, "a+", encoding="utf-8")
-        start = time.time()
-        while True:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError as e:
-                lock_busy_errnos = {errno.EAGAIN, errno.EACCES, getattr(errno, "EWOULDBLOCK", errno.EAGAIN)}
-                if e.errno not in lock_busy_errnos:
-                    raise
-                if (time.time() - start) >= timeout_sec:
-                    raise RuntimeError(
-                        f"Timed out waiting for repo lock after {timeout_sec:.1f}s"
-                    )
-                time.sleep(0.05)
-
-        try:
-            fh.seek(0)
-            fh.truncate()
-            fh.write(f"pid={os.getpid()} acquired_at={time.time():.6f}\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        except Exception:
-            pass
-
+    with core_repo_process_lock(
+        datarepo_path,
+        timeout_seconds=timeout_sec,
+        poll_interval_seconds=0.05,
+    ):
         yield
-    finally:
-        if fh is not None:
-            try:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-            except Exception:
-                pass
-            try:
-                fh.close()
-            except Exception:
-                pass
 
 
 def _push_worker(datarepo_path: Path) -> None:
@@ -1209,6 +1169,8 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn):
     schedule_delayed = False
     with _REPO_TXN_LOCK:
         with _repo_process_lock(datarepo_path):
+            assert_repo_version_matches_tool(datarepo_path)
+            core_assert_no_upgrade_in_progress(datarepo_path)
             ok, err = _safe_git_pull(datarepo_path)
             if not ok:
                 raise RuntimeError(f"Pre-mutation git pull failed: {err}")

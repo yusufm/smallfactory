@@ -260,6 +260,19 @@ def test_git_commit_token_present_allows_plm_commit(tmp_path: Path):
     assert "GIT_TOKEN_REQUIRED" not in codes
 
 
+def test_repo_upgrade_token_allows_plm_commit(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    _write(repo / "entities" / "p_up" / "entity.yml", "name: Up\n")
+    _git_commit_all(repo, "[smallFactory] Repo format upgrade ::sf-op::repo-upgrade")
+
+    res = validate_repo(repo, include_git=True)
+    codes = _codes(res["issues"])
+    assert "GIT_TOKEN_REQUIRED" not in codes
+
+
 def test_entity_yml_invalid_yaml(tmp_path: Path):
     repo = tmp_path / "repo"; repo.mkdir()
     # Invalid YAML (just a colon)

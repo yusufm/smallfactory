@@ -15,6 +15,8 @@ import subprocess
 
 from .gitutils import git_commit_paths
 from .config import SFID_REGEX, get_entity_field_specs_for_sfid, validate_sfid
+from .locks import assert_no_upgrade_in_progress
+from .versioning import assert_repo_version_matches_tool
 
 
 # -------------------------------
@@ -91,6 +93,11 @@ def _write_events_jsonl(p: Path, events: List[dict]) -> None:
             f.write("\n")
 
 
+def _assert_mutations_allowed(datarepo_path: Path) -> None:
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
+
+
 # -------------------------------
 # Validation helpers (type-aware via sfdatarepo.yml)
 # -------------------------------
@@ -160,6 +167,7 @@ def get_entity(datarepo_path: Path, sfid: str) -> dict:
 
 
 def create_entity(datarepo_path: Path, sfid: str, fields: Optional[Dict] = None) -> dict:
+    _assert_mutations_allowed(datarepo_path)
     if not sfid:
         raise ValueError("sfid is required")
     # Keep central validator as source of truth, and perform explicit local guarding
@@ -382,6 +390,7 @@ def cut_revision(
     - Does NOT flip refs/released.
     Returns: {sfid, rev, revisions} for UI compatibility.
     """
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
@@ -731,6 +740,7 @@ def bump_revision(
     - If rev is omitted, the next numeric label is computed from filesystem state.
     This no longer flips the released pointer; it creates a draft snapshot per SPEC.
     """
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
@@ -756,6 +766,7 @@ def release_revision(
     - Updates meta.yml; writes refs/released with the label.
     Returns: {sfid, rev, revisions}
     """
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     if not _is_part_sfid(sfid):
         raise ValueError("Revisions are only supported on part entities ('p_*')")
@@ -842,6 +853,7 @@ def bom_add_line(
 
     Returns a dict with keys: sfid, index, bom (updated list).
     """
+    _assert_mutations_allowed(datarepo_path)
     ent = _ensure_part(datarepo_path, parent_sfid)
     _validate_sfid_local(use)
     if check_exists:
@@ -898,6 +910,7 @@ def bom_remove_line(
     """Remove a BOM line by index or first/All matching use. Returns updated bom.
     Exactly one of index or use must be provided.
     """
+    _assert_mutations_allowed(datarepo_path)
     ent = _ensure_part(datarepo_path, parent_sfid)
     bom = _bom_list_from_entity(ent)
     if (index is None) == (use is None):
@@ -949,6 +962,7 @@ def bom_set_line(
     check_exists: bool = True,
 ) -> dict:
     """Update fields on a BOM line by index. Returns updated line and bom."""
+    _assert_mutations_allowed(datarepo_path)
     ent = _ensure_part(datarepo_path, parent_sfid)
     bom = _bom_list_from_entity(ent)
     if index < 0 or index >= len(bom):
@@ -1008,6 +1022,7 @@ def bom_alt_add(
     check_exists: bool = True,
 ) -> dict:
     """Append an alternate to a BOM line's alternates list."""
+    _assert_mutations_allowed(datarepo_path)
     ent = _ensure_part(datarepo_path, parent_sfid)
     bom = _bom_list_from_entity(ent)
     if index < 0 or index >= len(bom):
@@ -1044,6 +1059,7 @@ def bom_alt_remove(
     alt_use: Optional[str] = None,
 ) -> dict:
     """Remove an alternate by index or by alt_use from a BOM line."""
+    _assert_mutations_allowed(datarepo_path)
     ent = _ensure_part(datarepo_path, parent_sfid)
     bom = _bom_list_from_entity(ent)
     if index < 0 or index >= len(bom):
@@ -1178,6 +1194,7 @@ def append_build_event(datarepo_path: Path, sfid: str, event: Dict) -> dict:
     Returns:
       { sfid, event, events }
     """
+    _assert_mutations_allowed(datarepo_path)
     if not isinstance(event, dict) or not event:
         raise ValueError("event must be a non-empty object")
     _validate_sfid_local(sfid)
@@ -1263,6 +1280,7 @@ def update_build_event(
     event: Dict,
 ) -> dict:
     """Update a build event (except immutable id)."""
+    _assert_mutations_allowed(datarepo_path)
     if not isinstance(event, dict):
         raise ValueError("event must be an object")
     _validate_sfid_local(sfid)
@@ -1323,6 +1341,7 @@ def update_build_event_tags(
     tags,
 ) -> dict:
     """Update only the 'tags' field for a specific build event."""
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     if not _is_build_sfid(sfid):
         raise ValueError("Build events are only supported for build entities ('b_*')")
@@ -1362,6 +1381,7 @@ def add_build_event_file_link(
     path: str,
 ) -> dict:
     """Attach a files/ relative path to a build event's `files` list."""
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     if not _is_build_sfid(sfid):
         raise ValueError("Build events are only supported for build entities ('b_*')")
@@ -1407,6 +1427,7 @@ def add_build_event_file_link(
 
 
 def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> dict:
+    _assert_mutations_allowed(datarepo_path)
     if not field or field == "sfid":
         raise ValueError("Invalid or immutable field: 'sfid'")
     _validate_sfid_local(sfid)
@@ -1431,6 +1452,7 @@ def update_entity_field(datarepo_path: Path, sfid: str, field: str, value) -> di
 
 
 def update_entity_fields(datarepo_path: Path, sfid: str, updates: Dict) -> dict:
+    _assert_mutations_allowed(datarepo_path)
     if not isinstance(updates, dict) or not updates:
         raise ValueError("updates must be a non-empty dict")
     if "sfid" in updates:
@@ -1478,6 +1500,7 @@ def retire_entity(
     - Sets fields: retired: true, retired_at: ISO-8601 UTC, retired_reason: <reason?>
     - Does not touch inventory; references remain valid historically.
     """
+    _assert_mutations_allowed(datarepo_path)
     _validate_sfid_local(sfid)
     fp = _entity_file(datarepo_path, sfid)
     data = _read_yaml(fp)

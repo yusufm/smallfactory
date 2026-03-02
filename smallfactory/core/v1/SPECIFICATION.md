@@ -132,7 +132,10 @@ Top‑level directories (recap):
 ### Versioning and Compatibility
 
 - Core API is versioned under `core/v1`. CLI/Web MUST target the same major version.
-- Any breaking change requires a new `core/vX/` and corresponding UI updates.
+- Compatibility is governed by a single shared version string (`smallfactory_version`) across core/CLI/Web/MCP and the datarepo.
+- Datarepos MUST record `smallfactory_version` and `applied_migrations` in `sfdatarepo.yml`.
+- Within a major line, breaking repo-format changes are permitted only when an automated migration is provided.
+- Major version bumps are reserved for cases where safe/automated migration is not feasible (or intentionally unsupported).
 
 ### Forbidden Patterns (non-exhaustive)
 
@@ -584,13 +587,59 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 
 ## Versioning Policy (SemVer)
 
-- We use Semantic Versioning: MAJOR.MINOR.PATCH.
-  - MAJOR: incompatible changes to the spec or API.
-  - MINOR: backward-compatible additions.
+- We use Semantic Versioning for tool releases: MAJOR.MINOR.PATCH.
+  - MAJOR: reserved for intentionally incompatible changes with no supported automated upgrade path.
+  - MINOR: feature additions (including repo-format changes) that remain upgradeable within the same major.
   - PATCH: backward-compatible fixes and internal improvements.
+- Compatibility checks use `smallfactory_version` (tool and repo versions must match).
 - Stability gates: DRAFT → RC → PROD.
-  - While DRAFT, breaking changes are permitted.
-  - Once PROD, breaking changes require a major version bump.
+  - While DRAFT, breaking changes are permitted only with migration coverage.
+  - Once PROD, migration-first policy still applies; major bump is exceptional.
+
+---
+
+## Repository Upgrade System (normative)
+
+Repo metadata (`sfdatarepo.yml`) MUST include:
+
+- `smallfactory_version`: current repository compatibility version.
+- `applied_migrations`: ordered list of migration IDs that have been applied.
+- `last_upgraded_by` (recommended): tool version, timestamp, migration ids.
+
+Why ordered `applied_migrations` is required:
+
+- It provides an auditable, deterministic upgrade path.
+- It prevents tools from re-applying migrations out of order.
+- It enables detection of unknown/future migrations (`repo newer than tool` safety).
+- It makes migration behavior independent of Git tags/releases.
+
+Migration requirements:
+
+- Migrations MUST be forward-only and idempotent.
+- Migrations MUST have stable IDs and deterministic execution order.
+- If a repo-format-affecting change is merged, a migration entry MUST be added in the same PR.
+- `sf repo upgrade` MUST support dry-run and MUST validate repo integrity after apply.
+- Post-upgrade validation MUST run by default and MUST block successful completion on validation errors.
+- Any validation bypass MUST be treated as an internal recovery-only escape hatch (not normal user flow).
+
+Compatibility matrix (normative):
+
+| Case | Rule | Read Ops | Write Ops | Required Action |
+|---|---|---|---|---|
+| `repo_version == tool_version` | Fully compatible | Allow | Allow | None |
+| `repo_version < tool_version` | Repo behind tool | Block (except repo status/upgrade) | Block | Run `sf repo upgrade` |
+| `repo_version > tool_version` | Repo newer than tool | Block (or diagnostics-only) | Block | Upgrade tool first |
+| Unknown migration id in repo | Tool cannot reason about repo history | Block (or diagnostics-only) | Block | Upgrade tool first |
+| Different major | Hard incompatibility by default | Block | Block | Use matching major/tool |
+
+Known v1 legacy migrations (minimum baseline):
+
+- `20250811_entity_file_layout` — migrate legacy `entities/<sfid>.yml` to `entities/<sfid>/entity.yml`.
+- `20250811_design_to_files` — rename legacy entity working area `design/` to `files/`.
+- `20250814_children_to_bom` — rename legacy key `children` to `bom`.
+- `20260227_build_events_jsonl` — move build events from `entity.yml` to `events.jsonl`.
+- `20260228_build_part_fields` — rename build fields `top_part/product_*` to `part_*`.
+- `20260301_gitignore_lock_patterns` — ensure lock-file ignore patterns in `.gitignore` and clean stale transient lock files.
 
 ---
 
@@ -599,7 +648,11 @@ Terminology note: `sfid` refers to the smallFactory identifier for an entity (e.
 - Assess every change against this specification.
 - If a change modifies or conflicts with this spec:
   - Update this file in the same PR and bump version appropriately.
+  - Add or update migration entries when repo format/semantics change.
   - Provide migration notes where feasible.
+- If migration catalog/order changes in a PR:
+  - The PR MUST include updates to this specification and migration-focused tests.
+  - CI MUST run a fixture-based proof path: `sf repo upgrade --dry-run`, apply upgrade, then `sf repo validate`.
 - PRs should state: "Specification compliant? Yes/No" and link to this file.
 
 ---
@@ -654,7 +707,7 @@ Allowed top-level keys in `entities/<sfid>/entity.yml` by inferred kind (from pr
 
 - Parts (`p_*`): `uom`, `policy`, `attrs`, `bom`.
 - Locations (`l_*`): `attrs` (free-form descriptive metadata).
-- Builds (`b_*`): `top_part`, `config`, `qty_planned`, `qty_completed`, `site`, `workorder`, `status`, `opened_at`, `closed_at`, `notes`, `units`.
+- Builds (`b_*`): `part_sfid`, `part_rev`, `l_sfid`, `status`, `opened_at`, `closed_at`, `serialnumber`, `datetime`, `created_at`, `notes`, `attrs`.
 
 Notes:
 

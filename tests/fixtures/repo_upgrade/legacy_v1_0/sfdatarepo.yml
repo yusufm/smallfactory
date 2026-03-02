@@ -1,0 +1,6 @@
+smallfactory_version: "1.0"
+inventory:
+  fields:
+    quantity:
+      required: true
+      regex: "^[0-9]+$"

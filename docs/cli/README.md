@@ -42,8 +42,9 @@ Environment variables:
 ## Command Overview
 
 - **init** — Initialize a new datarepo or clone an existing one
+- **repo** — Repository compatibility and upgrade operations
+  - status, upgrade, validate
 - **web** — Start the web UI server
-- **validate** — Validate datarepo against PLM SPEC
 - **inventory** — Inventory journal and reports
   - post, onhand, rebuild
 - **entities** — Canonical metadata operations
@@ -76,6 +77,28 @@ Notes:
 
 - Creates or clones the repo, writes `sfdatarepo.yml`, sets it as default in user config, and makes an initial commit.
 - Ensures default inventory location `l_inbox` exists and is configured in `sfdatarepo.yml`.
+
+## repo
+
+Inspect compatibility/migration state and apply repository upgrades.
+
+```bash
+# Show compat + pending migration status
+python3 sf.py repo status
+
+# Preview migration plan only
+python3 sf.py repo upgrade --dry-run
+
+# Apply all pending migrations and commit changes
+python3 sf.py repo upgrade
+
+# Validate datarepo against PLM SPEC
+python3 sf.py repo validate
+```
+
+Notes:
+
+- `repo upgrade` always runs post-upgrade validation (normal workflow).
 
 ## web
 
@@ -126,16 +149,16 @@ Compatibility resources (for resource-first MCP clients):
 - `smallfactory://inventory/summary` (alias: `mcp://smallfactory/inventory_summary`)
 - `smallfactory://parts/quantities` (alias: `mcp://smallfactory/parts_quantities`)
 
-## validate
+## repo validate
 
 Validate the datarepo against the PLM SPEC.
 
 ```bash
-python3 sf.py validate
-python3 sf.py validate --strict  # non-zero exit on warnings too
-python3 sf.py validate --no-git  # skip commit metadata checks
-python3 sf.py validate --no-entities --no-inventory  # only run git checks
-python3 sf.py validate --git-commits 50  # scan only the last 50 commits
+python3 sf.py repo validate
+python3 sf.py repo validate --strict  # non-zero exit on warnings too
+python3 sf.py repo validate --no-git  # skip commit metadata checks
+python3 sf.py repo validate --no-entities --no-inventory  # only run git checks
+python3 sf.py repo validate --git-commits 50  # scan only the last 50 commits
 ```
 
 Outputs human/json/yaml based on `-F/--format`. With `--strict`, warnings trigger non-zero exit.

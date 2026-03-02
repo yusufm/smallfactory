@@ -7,7 +7,11 @@ from typing import Any, Dict, Iterable, List, Optional
 import os
 import json
 
-from smallfactory.core.v1.config import get_datarepo_path
+from smallfactory.core.v1.config import (
+    SF_TOOL_VERSION,
+    get_datarepo_path,
+    load_datarepo_config,
+)
 from smallfactory.core.v1.entities import get_entity, list_entities, resolved_bom_view
 from smallfactory.core.v1.inventory import inventory_onhand_readonly
 
@@ -81,6 +85,15 @@ def _result(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
     out.setdefault("schema_version", MCP_SCHEMA_VERSION)
     return out
+
+
+def _repo_version(datarepo_path: Path) -> str:
+    try:
+        cfg = load_datarepo_config(datarepo_path)
+    except Exception:
+        cfg = {}
+    raw = str((cfg or {}).get("smallfactory_version") or (cfg or {}).get("compat_version") or SF_TOOL_VERSION).strip()
+    return raw or SF_TOOL_VERSION
 
 
 def _normalize_tags(tags: Optional[Iterable[str]]) -> List[str]:
@@ -556,11 +569,14 @@ def build_mcp_server(
     @server.resource("smallfactory://status", name="server_status")
     @server.resource("mcp://smallfactory/status", name="server_status_alias")
     def resource_server_status() -> str:
+        repo_version = _repo_version(datarepo_path)
         return _json_text(
             _result(
                 {
                     "server_name": MCP_SERVER_NAME,
                     "datarepo_path": str(datarepo_path),
+                    "tool_version": SF_TOOL_VERSION,
+                    "repo_version": repo_version,
                     "mcp_tools_expected": [
                         "server_status",
                         "repo_info",
@@ -589,11 +605,14 @@ def build_mcp_server(
 
         Use for compatibility checks and to confirm active repo binding.
         """
+        repo_version = _repo_version(datarepo_path)
         return _result(
             {
                 "server_name": MCP_SERVER_NAME,
                 "datarepo_path": str(datarepo_path),
                 "schema_version": MCP_SCHEMA_VERSION,
+                "tool_version": SF_TOOL_VERSION,
+                "repo_version": repo_version,
                 "resource_uris": [
                     "mcp://smallfactory",
                     "smallfactory://status",

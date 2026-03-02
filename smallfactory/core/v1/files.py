@@ -13,6 +13,8 @@ import subprocess
 
 from .config import validate_sfid
 from .gitutils import git_commit_paths
+from .locks import assert_no_upgrade_in_progress
+from .versioning import assert_repo_version_matches_tool
 
 
 # -------------------------------
@@ -136,6 +138,8 @@ def mkdir(
     path: str,
 ) -> Dict:
     """Create a folder in the files area and place a .gitkeep so git tracks it."""
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if root == target:
@@ -163,6 +167,8 @@ def rmdir(
     path: str,
 ) -> Dict:
     """Delete an empty folder. Empty means only optional .gitkeep present."""
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_dir():
@@ -203,6 +209,8 @@ def upload_file(
     overwrite: bool = False,
 ) -> Dict:
     """Upload (write) a file to the files area at path. Creates parents as needed."""
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     dest = _resolve_within(root, path)
     if dest.exists() and dest.is_dir():
@@ -227,6 +235,8 @@ def delete_file(
     *,
     path: str,
 ) -> Dict:
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     target = _resolve_within(root, path)
     if not target.exists() or not target.is_file():
@@ -248,6 +258,8 @@ def move_file(
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)
@@ -283,6 +295,8 @@ def move_dir(
     dst: str,
     overwrite: bool = False,
 ) -> Dict:
+    assert_repo_version_matches_tool(datarepo_path)
+    assert_no_upgrade_in_progress(datarepo_path)
     root = _files_root(datarepo_path, sfid)
     src_p = _resolve_within(root, src)
     dst_p = _resolve_within(root, dst)

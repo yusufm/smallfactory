@@ -1,5 +1,6 @@
 import subprocess
 from pathlib import Path
+from .locks import assert_no_upgrade_in_progress
 
 
 class GitError(RuntimeError):
@@ -30,6 +31,7 @@ def git_commit_paths(repo_path: Path, paths: list[Path], message: str, delete: b
     """
     if not paths:
         return
+    assert_no_upgrade_in_progress(repo_path)
     try:
         # Some unit tests use plain directories without git initialization.
         # In that mode, file mutations should still work and commit becomes a no-op.

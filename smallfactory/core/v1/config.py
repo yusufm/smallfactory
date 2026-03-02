@@ -3,7 +3,7 @@ import yaml
 import re
 import os
 
-SF_TOOL_VERSION = "1.0"
+SF_TOOL_VERSION = "1.1"
 CONFIG_FILENAME = ".smallfactory.yml"
 DATAREPO_CONFIG_FILENAME = "sfdatarepo.yml"
 
