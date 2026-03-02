@@ -7,6 +7,7 @@ from typing import Callable, Dict, List, Optional
 import json
 import ntpath
 import os
+import re
 import shutil
 import subprocess
 
@@ -78,13 +79,13 @@ def _parse_semver_like(raw: str) -> tuple[int, int, int]:
     s = str(raw or "").strip()
     if not s:
         return (0, 0, 0)
-    parts = s.split(".")
+    # Ignore semver pre-release/build metadata for compatibility comparison.
+    core = s.split("-", 1)[0].split("+", 1)[0]
+    parts = core.split(".")
     nums: List[int] = []
     for p in parts[:3]:
-        try:
-            nums.append(int(p))
-        except Exception:
-            nums.append(0)
+        m = re.search(r"\d+", p or "")
+        nums.append(int(m.group(0)) if m else 0)
     while len(nums) < 3:
         nums.append(0)
     return (nums[0], nums[1], nums[2])
