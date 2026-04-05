@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List
 import time
 import atexit
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import tarfile
 from jinja2 import ChoiceLoader, FileSystemLoader
 
@@ -64,11 +64,7 @@ from smallfactory.core.v1.stickers import (
     generate_sticker_for_entity,
     check_dependencies as stickers_check_deps,
 )
-from smallfactory.core.v1.locks import (
-    assert_no_upgrade_in_progress as core_assert_no_upgrade_in_progress,
-    repo_process_lock as core_repo_process_lock,
-)
-from smallfactory.core.v1.versioning import assert_repo_version_matches_tool
+from smallfactory.core.v1.transactions import run_repo_mutation
 from smallfactory.core.v1.vision import (
     ask_image as vlm_ask_image,
     extract_invoice_part as vlm_extract_invoice_part,
@@ -94,12 +90,25 @@ def _api_exception_response(
     except Exception:
         pass
     error_message = public_message
+    def _operational_runtime_message(err: Exception) -> str | None:
+        text = str(err or "").strip()
+        low = text.lower()
+        if "repository upgrade in progress" in low:
+            return "Repository upgrade in progress; retry after upgrade completes."
+        if "timed out waiting for repo lock" in low:
+            return "Another SmallFactory operation is in progress; retry shortly."
+        return None
+
     # Surface concise validation feedback for known user-input exceptions only.
     _SAFE_EXC_TYPES = (ValueError, KeyError, IndexError, FileNotFoundError, FileExistsError)
-    if public_message == "Request failed" and status < 500 and isinstance(exc, _SAFE_EXC_TYPES):
-        detail = str(exc).strip().split("\n", 1)[0]
-        if detail:
-            error_message = detail[:240]
+    if public_message == "Request failed" and status < 500:
+        operational_message = _operational_runtime_message(exc)
+        if operational_message:
+            error_message = operational_message
+        elif isinstance(exc, _SAFE_EXC_TYPES):
+            detail = str(exc).strip().split("\n", 1)[0]
+            if detail:
+                error_message = detail[:240]
     payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
@@ -892,18 +901,6 @@ def _get_repo_txn_lock_timeout_sec() -> float:
         return 30.0
 
 
-@contextmanager
-def _repo_process_lock(datarepo_path: Path):
-    """Cross-process repo mutation lock using shared core lock helper."""
-    timeout_sec = _get_repo_txn_lock_timeout_sec()
-    with core_repo_process_lock(
-        datarepo_path,
-        timeout_seconds=timeout_sec,
-        poll_interval_seconds=0.05,
-    ):
-        yield
-
-
 def _push_worker(datarepo_path: Path) -> None:
     t0 = time.time()
     _dgit('async push: start')
@@ -1167,51 +1164,59 @@ def _run_repo_txn(datarepo_path: Path, mutate_fn):
         return mutate_fn()
     need_async_push = False
     schedule_delayed = False
-    with _REPO_TXN_LOCK:
-        with _repo_process_lock(datarepo_path):
-            assert_repo_version_matches_tool(datarepo_path)
-            core_assert_no_upgrade_in_progress(datarepo_path)
-            ok, err = _safe_git_pull(datarepo_path)
-            if not ok:
-                raise RuntimeError(f"Pre-mutation git pull failed: {err}")
-            # Extract per-request identity from proxy headers (if present)
-            name, email = _extract_identity_from_headers(request)
-            def _do_mutate():
-                return mutate_fn()
-            if name and email:
-                with _with_git_identity(name, email):
-                    result = _do_mutate()
-            else:
-                result = _do_mutate()
-            # Conditional push
-            if _autopush_enabled():
-                ttl = _get_push_ttl_sec()
-                if ttl and ttl > 0:
-                    # Defer push to batch within TTL window (always async)
-                    schedule_delayed = True
-                else:
-                    if _autopush_async_enabled():
-                        need_async_push = True
-                    else:
-                        try:
-                            t0 = time.time()
-                            with _PUSH_LOCK:
-                                okp = git_push(datarepo_path)
-                            _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
-                            if okp:
-                                _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
-                        except Exception as e:
-                            try:
-                                _dgit(f'sync push: failed ({e})')
-                            except Exception:
-                                pass
-                            raise RuntimeError(f"Post-mutation git push failed: {e}")
-    # If async push is enabled, run it after releasing the txn lock
-    if need_async_push:
-        _spawn_async_push(datarepo_path)
-    if schedule_delayed:
-        _schedule_delayed_push(datarepo_path)
-    return result
+    name, email = _extract_identity_from_headers(request)
+
+    def _pre_mutation(_: Path) -> None:
+        ok, err = _safe_git_pull(datarepo_path)
+        if not ok:
+            raise RuntimeError(f"Pre-mutation git pull failed: {err}")
+
+    def _mutation_context(_: Path):
+        if name and email:
+            return _with_git_identity(name, email)
+        return nullcontext()
+
+    def _after_mutation_locked(_: Path, _result):
+        nonlocal need_async_push, schedule_delayed
+        if not _autopush_enabled():
+            return
+        ttl = _get_push_ttl_sec()
+        if ttl and ttl > 0:
+            schedule_delayed = True
+            return
+        if _autopush_async_enabled():
+            need_async_push = True
+            return
+        try:
+            t0 = time.time()
+            with _PUSH_LOCK:
+                okp = git_push(datarepo_path)
+            _dgit(f'sync push: done {int((time.time()-t0)*1000)}ms ok={okp}')
+            if okp:
+                _GIT_LAST_PUSH[str(datarepo_path)] = time.time()
+        except Exception as e:
+            try:
+                _dgit(f'sync push: failed ({e})')
+            except Exception:
+                pass
+            raise RuntimeError(f"Post-mutation git push failed: {e}")
+
+    def _after_mutation_unlocked(_: Path, _result) -> None:
+        if need_async_push:
+            _spawn_async_push(datarepo_path)
+        if schedule_delayed:
+            _schedule_delayed_push(datarepo_path)
+
+    return run_repo_mutation(
+        datarepo_path,
+        mutate_fn,
+        lock_timeout_seconds=_get_repo_txn_lock_timeout_sec(),
+        lock_poll_interval_seconds=0.05,
+        before_mutation=_pre_mutation,
+        mutation_context=_mutation_context,
+        after_mutation_locked=_after_mutation_locked,
+        after_mutation_unlocked=_after_mutation_unlocked,
+    )
 
 
 # -----------------------

@@ -96,6 +96,18 @@ class TestUnsafeTypesRedacted:
         assert "/var/run" not in data["error"]
         assert data["error"] == "Request failed"
 
+    def test_upgrade_in_progress_runtime_error_surfaces_actionable_message(self, _app):
+        exc = RuntimeError("Repository upgrade in progress; retry after upgrade completes.")
+        data, code = _call(_app, exc, status=400)
+        assert code == 400
+        assert data["error"] == "Repository upgrade in progress; retry after upgrade completes."
+
+    def test_repo_lock_timeout_runtime_error_surfaces_actionable_message(self, _app):
+        exc = RuntimeError("Timed out waiting for repo lock after 30.0s")
+        data, code = _call(_app, exc, status=400)
+        assert code == 400
+        assert data["error"] == "Another SmallFactory operation is in progress; retry shortly."
+
     def test_safe_exception_multiline_truncated(self, _app):
         exc = ValueError("first line\nsecond line with /secret/path")
         data, _ = _call(_app, exc, status=400)

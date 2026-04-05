@@ -23,6 +23,7 @@ from smallfactory.core.v1.inventory import (
     inventory_onhand_readonly,
     inventory_rebuild,
 )
+from smallfactory.core.v1.transactions import run_repo_mutation
 
 # Entities core API
 from smallfactory.core.v1.entities import (
@@ -489,6 +490,9 @@ def main():
     def _fmt() -> str:
         return args.format
 
+    def _run_cli_repo_mutation(datarepo_path: pathlib.Path, mutate_fn):
+        return run_repo_mutation(datarepo_path, mutate_fn)
+
     def cmd_init(args):
         # Prefer GitHub clone; prompt for URL first if not provided
         github_url = (getattr(args, "github_url", None) or "").strip() or None
@@ -821,12 +825,15 @@ def main():
     def cmd_inventory_post(args):
         datarepo_path = _repo_path()
         try:
-            res = inventory_post(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                part=args.part,
-                qty_delta=args.qty_delta,
-                l_sfid=getattr(args, "l_sfid", None),
-                reason=getattr(args, "reason", None),
+                lambda: inventory_post(
+                    datarepo_path,
+                    part=args.part,
+                    qty_delta=args.qty_delta,
+                    l_sfid=getattr(args, "l_sfid", None),
+                    reason=getattr(args, "reason", None),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -849,10 +856,13 @@ def main():
                     location=getattr(args, "l_sfid", None),
                 )
             else:
-                res = inventory_onhand(
+                res = _run_cli_repo_mutation(
                     datarepo_path,
-                    part=getattr(args, "part", None),
-                    location=getattr(args, "l_sfid", None),
+                    lambda: inventory_onhand(
+                        datarepo_path,
+                        part=getattr(args, "part", None),
+                        location=getattr(args, "l_sfid", None),
+                    ),
                 )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -869,7 +879,7 @@ def main():
     def cmd_inventory_rebuild(args):
         datarepo_path = _repo_path()
         try:
-            res = inventory_rebuild(datarepo_path)
+            res = _run_cli_repo_mutation(datarepo_path, lambda: inventory_rebuild(datarepo_path))
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -898,7 +908,10 @@ def main():
         datarepo_path = _repo_path()
         fields = _parse_pairs(getattr(args, "pairs", []))
         try:
-            ent = ent_create_entity(datarepo_path, args.sfid, fields or None)
+            ent = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_create_entity(datarepo_path, args.sfid, fields or None),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -952,7 +965,10 @@ def main():
             print("[smallFactory] Error: no key=value pairs provided")
             sys.exit(2)
         try:
-            ent = ent_update_entity_fields(datarepo_path, args.sfid, updates)
+            ent = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_update_entity_fields(datarepo_path, args.sfid, updates),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -968,7 +984,10 @@ def main():
     def cmd_entities_build_serial(args):
         datarepo_path = _repo_path()
         try:
-            ent = ent_update_entity_fields(datarepo_path, args.sfid, {"serialnumber": args.value})
+            ent = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_update_entity_fields(datarepo_path, args.sfid, {"serialnumber": args.value}),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -991,7 +1010,10 @@ def main():
             print("[smallFactory] Error: invalid ISO 8601 datetime. Examples: 2024-06-01T12:00:00Z or 2024-06-01T12:00:00+00:00")
             sys.exit(2)
         try:
-            ent = ent_update_entity_fields(datarepo_path, args.sfid, {"datetime": val})
+            ent = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_update_entity_fields(datarepo_path, args.sfid, {"datetime": val}),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1006,7 +1028,10 @@ def main():
     def cmd_entities_retire(args):
         datarepo_path = _repo_path()
         try:
-            ent = ent_retire_entity(datarepo_path, args.sfid, reason=getattr(args, "reason", None))
+            ent = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_retire_entity(datarepo_path, args.sfid, reason=getattr(args, "reason", None)),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1063,7 +1088,10 @@ def main():
     def cmd_entities_files_mkdir(args):
         datarepo_path = _repo_path()
         try:
-            res = f_mkdir(datarepo_path, args.sfid, path=args.path)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: f_mkdir(datarepo_path, args.sfid, path=args.path),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1073,7 +1101,10 @@ def main():
     def cmd_entities_files_rmdir(args):
         datarepo_path = _repo_path()
         try:
-            res = f_rmdir(datarepo_path, args.sfid, path=args.path)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: f_rmdir(datarepo_path, args.sfid, path=args.path),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1088,12 +1119,15 @@ def main():
             sys.exit(2)
         b = src.read_bytes()
         try:
-            res = f_upload_file(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.sfid,
-                path=args.dst,
-                file_bytes=b,
-                overwrite=bool(getattr(args, "overwrite", False)),
+                lambda: f_upload_file(
+                    datarepo_path,
+                    args.sfid,
+                    path=args.dst,
+                    file_bytes=b,
+                    overwrite=bool(getattr(args, "overwrite", False)),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1104,7 +1138,10 @@ def main():
     def cmd_entities_files_rm(args):
         datarepo_path = _repo_path()
         try:
-            res = f_delete_file(datarepo_path, args.sfid, path=args.path)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: f_delete_file(datarepo_path, args.sfid, path=args.path),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1114,22 +1151,23 @@ def main():
     def cmd_entities_files_mv(args):
         datarepo_path = _repo_path()
         try:
-            if bool(getattr(args, "dir", False)):
-                res = f_move_dir(
+            def _mutate():
+                if bool(getattr(args, "dir", False)):
+                    return f_move_dir(
+                        datarepo_path,
+                        args.sfid,
+                        src=args.src,
+                        dst=args.dst,
+                        overwrite=bool(getattr(args, "overwrite", False)),
+                    )
+                return f_move_file(
                     datarepo_path,
                     args.sfid,
                     src=args.src,
                     dst=args.dst,
                     overwrite=bool(getattr(args, "overwrite", False)),
                 )
-            else:
-                res = f_move_file(
-                    datarepo_path,
-                    args.sfid,
-                    src=args.src,
-                    dst=args.dst,
-                    overwrite=bool(getattr(args, "overwrite", False)),
-                )
+            res = _run_cli_repo_mutation(datarepo_path, _mutate)
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1166,82 +1204,74 @@ def main():
         tags = _parse_csv_tags(getattr(args, "tags", None))
         if tags is not None:
             event["tags"] = tags
-        try:
-            ent = ent_get_entity(datarepo_path, args.sfid)
-        except Exception as e:
-            print(f"[smallFactory] Error: {e}")
-            sys.exit(1)
         if not str(args.sfid).startswith("b_"):
             print("[smallFactory] Error: Build events are only supported for build entities ('b_*')")
             sys.exit(1)
         files = getattr(args, "files", None)
         file_links = [str(p).strip() for p in (files or []) if str(p).strip()]
         uploads = getattr(args, "uploads", None) or []
-        if uploads:
-            ev_id = str(event.get("id") or "").strip()
-            if not ev_id:
-                ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
-                base = f"evt_{ts}"
-                existing_ids = set()
-                try:
-                    existing_events = ent.get("events")
-                    if isinstance(existing_events, list):
-                        for ev in existing_events:
-                            if not isinstance(ev, dict):
-                                continue
-                            ex_id = str(ev.get("id") or "").strip()
-                            if ex_id:
-                                existing_ids.add(ex_id)
-                except Exception:
-                    pass
-                ev_id = base
-                i = 1
-                while ev_id in existing_ids:
-                    ev_id = f"{base}_{i}"
-                    i += 1
-                event["id"] = ev_id
-            seen_names = set()
-            for up in uploads:
-                src = pathlib.Path(str(up)).expanduser()
-                if not src.exists() or not src.is_file():
-                    print(f"[smallFactory] Error: upload source file not found: {src}")
-                    sys.exit(2)
-                name = src.name
-                stem = src.stem
-                suf = src.suffix
-                cand = name
-                i = 1
-                while cand in seen_names:
-                    cand = f"{stem}_{i}{suf}"
-                    i += 1
-                seen_names.add(cand)
-                dst = f"event_attachments/{ev_id}/{cand}"
-                try:
-                    up_res = f_upload_file(
-                        datarepo_path,
-                        args.sfid,
-                        path=dst,
-                        file_bytes=src.read_bytes(),
-                        overwrite=False,
-                    )
-                except Exception as e:
-                    print(f"[smallFactory] Error: {e}")
-                    sys.exit(1)
-                file_links.append(up_res.get("path") or dst)
-        if file_links:
-            dedup = []
-            seen = set()
-            for p in file_links:
-                if p in seen:
-                    continue
-                seen.add(p)
-                dedup.append(p)
-            event["files"] = dedup
-        if not event:
+        if not event and not file_links and not uploads:
             print("[smallFactory] Error: no event fields provided (use --message/--tags/--file/--upload)")
             sys.exit(2)
         try:
-            res = ent_append_build_event(datarepo_path, args.sfid, event)
+            def _mutate():
+                ent = ent_get_entity(datarepo_path, args.sfid)
+                local_event = dict(event)
+                local_file_links = list(file_links)
+                if uploads:
+                    ev_id = str(local_event.get("id") or "").strip()
+                    if not ev_id:
+                        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+                        base = f"evt_{ts}"
+                        existing_ids = set()
+                        existing_events = ent.get("events")
+                        if isinstance(existing_events, list):
+                            for ev in existing_events:
+                                if not isinstance(ev, dict):
+                                    continue
+                                ex_id = str(ev.get("id") or "").strip()
+                                if ex_id:
+                                    existing_ids.add(ex_id)
+                        ev_id = base
+                        i = 1
+                        while ev_id in existing_ids:
+                            ev_id = f"{base}_{i}"
+                            i += 1
+                        local_event["id"] = ev_id
+                    seen_names = set()
+                    for up in uploads:
+                        src = pathlib.Path(str(up)).expanduser()
+                        if not src.exists() or not src.is_file():
+                            raise FileNotFoundError(f"upload source file not found: {src}")
+                        name = src.name
+                        stem = src.stem
+                        suf = src.suffix
+                        cand = name
+                        i = 1
+                        while cand in seen_names:
+                            cand = f"{stem}_{i}{suf}"
+                            i += 1
+                        seen_names.add(cand)
+                        dst = f"event_attachments/{ev_id}/{cand}"
+                        up_res = f_upload_file(
+                            datarepo_path,
+                            args.sfid,
+                            path=dst,
+                            file_bytes=src.read_bytes(),
+                            overwrite=False,
+                        )
+                        local_file_links.append(up_res.get("path") or dst)
+                if local_file_links:
+                    dedup = []
+                    seen = set()
+                    for p in local_file_links:
+                        if p in seen:
+                            continue
+                        seen.add(p)
+                        dedup.append(p)
+                    local_event["files"] = dedup
+                return ent_append_build_event(datarepo_path, args.sfid, local_event)
+            res = _run_cli_repo_mutation(datarepo_path, _mutate)
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1259,7 +1289,10 @@ def main():
             print("[smallFactory] Error: no updates provided (use --message and/or --tags)")
             sys.exit(2)
         try:
-            res = ent_update_build_event(datarepo_path, args.sfid, args.event_id, event)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_update_build_event(datarepo_path, args.sfid, args.event_id, event),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1271,7 +1304,10 @@ def main():
         if tags is None:
             tags = []
         try:
-            res = ent_update_build_event_tags(datarepo_path, args.sfid, args.event_id, tags)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_update_build_event_tags(datarepo_path, args.sfid, args.event_id, tags),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1280,7 +1316,10 @@ def main():
     def cmd_entities_events_link_file(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_add_build_event_file_link(datarepo_path, args.sfid, args.event_id, args.path)
+            res = _run_cli_repo_mutation(
+                datarepo_path,
+                lambda: ent_add_build_event_file_link(datarepo_path, args.sfid, args.event_id, args.path),
+            )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1291,23 +1330,24 @@ def main():
     def cmd_entities_rev_bump(args):
         datarepo_path = _repo_path()
         try:
-            # Cut next snapshot (draft), then immediately release it
-            res_bump = ent_bump_revision(
-                datarepo_path,
-                args.sfid,
-                rev=getattr(args, "rev", None),
-                notes=getattr(args, "notes", None),
-            )
-            new_rev = res_bump.get("new_rev")
-            if not new_rev:
-                raise RuntimeError("failed to determine new revision label")
-            res = ent_release_revision(
-                datarepo_path,
-                args.sfid,
-                new_rev,
-                released_at=getattr(args, "released_at", None),
-                notes=getattr(args, "notes", None),
-            )
+            def _mutate():
+                res_bump = ent_bump_revision(
+                    datarepo_path,
+                    args.sfid,
+                    rev=getattr(args, "rev", None),
+                    notes=getattr(args, "notes", None),
+                )
+                new_rev = res_bump.get("new_rev")
+                if not new_rev:
+                    raise RuntimeError("failed to determine new revision label")
+                return ent_release_revision(
+                    datarepo_path,
+                    args.sfid,
+                    new_rev,
+                    released_at=getattr(args, "released_at", None),
+                    notes=getattr(args, "notes", None),
+                )
+            res = _run_cli_repo_mutation(datarepo_path, _mutate)
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
             sys.exit(1)
@@ -1322,11 +1362,14 @@ def main():
     def cmd_entities_rev_new(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_cut_revision(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.sfid,
-                args.rev,
-                notes=getattr(args, "notes", None),
+                lambda: ent_cut_revision(
+                    datarepo_path,
+                    args.sfid,
+                    args.rev,
+                    notes=getattr(args, "notes", None),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1342,12 +1385,15 @@ def main():
     def cmd_entities_rev_release(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_release_revision(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.sfid,
-                args.rev,
-                released_at=getattr(args, "released_at", None),
-                notes=getattr(args, "notes", None),
+                lambda: ent_release_revision(
+                    datarepo_path,
+                    args.sfid,
+                    args.rev,
+                    released_at=getattr(args, "released_at", None),
+                    notes=getattr(args, "notes", None),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1420,16 +1466,19 @@ def main():
         if args.alts:
             alts = [{"use": a} for a in args.alts]
         try:
-            res = ent_bom_add_line(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.parent,
-                use=args.use,
-                qty=args.qty,
-                rev=args.rev,
-                alternates=alts,
-                alternates_group=getattr(args, "alternates_group", None),
-                index=args.index,
-                check_exists=getattr(args, "check_exists", True),
+                lambda: ent_bom_add_line(
+                    datarepo_path,
+                    args.parent,
+                    use=args.use,
+                    qty=args.qty,
+                    rev=args.rev,
+                    alternates=alts,
+                    alternates_group=getattr(args, "alternates_group", None),
+                    index=args.index,
+                    check_exists=getattr(args, "check_exists", True),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1445,12 +1494,15 @@ def main():
     def cmd_bom_rm(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_bom_remove_line(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.parent,
-                index=getattr(args, "index", None),
-                use=getattr(args, "use", None),
-                remove_all=getattr(args, "remove_all", False),
+                lambda: ent_bom_remove_line(
+                    datarepo_path,
+                    args.parent,
+                    index=getattr(args, "index", None),
+                    use=getattr(args, "use", None),
+                    remove_all=getattr(args, "remove_all", False),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1475,12 +1527,15 @@ def main():
             print("[smallFactory] Error: no fields to update (--use/--qty/--rev/--alternates-group)")
             sys.exit(2)
         try:
-            res = ent_bom_set_line(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.parent,
-                index=args.index,
-                updates=updates,
-                check_exists=getattr(args, "check_exists", True),
+                lambda: ent_bom_set_line(
+                    datarepo_path,
+                    args.parent,
+                    index=args.index,
+                    updates=updates,
+                    check_exists=getattr(args, "check_exists", True),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1497,12 +1552,15 @@ def main():
     def cmd_bom_alt_add(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_bom_alt_add(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.parent,
-                index=args.index,
-                alt_use=args.alt_use,
-                check_exists=getattr(args, "check_exists", True),
+                lambda: ent_bom_alt_add(
+                    datarepo_path,
+                    args.parent,
+                    index=args.index,
+                    alt_use=args.alt_use,
+                    check_exists=getattr(args, "check_exists", True),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1518,12 +1576,15 @@ def main():
     def cmd_bom_alt_rm(args):
         datarepo_path = _repo_path()
         try:
-            res = ent_bom_alt_remove(
+            res = _run_cli_repo_mutation(
                 datarepo_path,
-                args.parent,
-                index=args.index,
-                alt_index=getattr(args, "alt_index", None),
-                alt_use=getattr(args, "alt_use", None),
+                lambda: ent_bom_alt_remove(
+                    datarepo_path,
+                    args.parent,
+                    index=args.index,
+                    alt_index=getattr(args, "alt_index", None),
+                    alt_use=getattr(args, "alt_use", None),
+                ),
             )
         except Exception as e:
             print(f"[smallFactory] Error: {e}")
@@ -1677,7 +1738,9 @@ def main():
         ("inventory", "rebuild"): cmd_inventory_rebuild,
         ("entities", "add"): cmd_entities_add,
         ("entities", "ls"): cmd_entities_list,
+        ("entities", "list"): cmd_entities_list,
         ("entities", "show"): cmd_entities_show,
+        ("entities", "view"): cmd_entities_show,
         ("entities", "set"): cmd_entities_set,
         ("entities", "retire"): cmd_entities_retire,
         ("entities", "revision:bump"): cmd_entities_rev_bump,

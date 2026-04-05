@@ -76,6 +76,45 @@ http://127.0.0.1:8080
 # Commit messages include machine-readable tokens like ::sfid::<SFID>.
 ```
 
+## Docker
+
+smallFactory now supports a single-image Docker workflow for both the web app
+and ad hoc CLI usage against the same persisted data repo.
+
+Quick start with Compose:
+
+```sh
+docker compose up --build
+# Web UI: http://127.0.0.1:8080
+# MCP:    http://127.0.0.1:8080/mcp
+```
+
+Run CLI commands without attaching to the running container:
+
+```sh
+docker compose run --rm smallfactory inventory onhand --readonly
+docker compose run --rm smallfactory entities ls
+./scripts/sf-docker.sh inventory onhand --readonly
+```
+
+Plain Docker works too:
+
+```sh
+docker run --rm -it -p 8080:8080 -v smallfactory-data:/data smallfactory:local
+docker run --rm -it -v smallfactory-data:/data smallfactory:local repo validate
+```
+
+Container defaults:
+
+- Data root: `/data`
+- Data repo: `/data/datarepo`
+- Config: `/data/.smallfactory.yml`
+
+If `/data/datarepo` is empty, the container will clone `SF_REPO_GIT_URL` on
+first start, or initialize a fresh smallFactory repo if no Git URL is provided.
+
+See the full guide: [Docker guide](docs/users/docker.md)
+
 ## Community
 
 Join the smallFactory Discord:
