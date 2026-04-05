@@ -81,10 +81,11 @@ http://127.0.0.1:8080
 smallFactory now supports a single-image Docker workflow for both the web app
 and ad hoc CLI usage against the same persisted data repo.
 
-Quick start with Compose:
+Quick start with the official image:
 
 ```sh
-docker compose up --build
+docker pull ghcr.io/yusufm/smallfactory:latest
+docker run --rm -it -p 8080:8080 -v smallfactory-data:/data ghcr.io/yusufm/smallfactory:latest
 # Web UI: http://127.0.0.1:8080
 # MCP:    http://127.0.0.1:8080/mcp
 ```
@@ -92,16 +93,18 @@ docker compose up --build
 Run CLI commands without attaching to the running container:
 
 ```sh
-docker compose run --rm smallfactory inventory onhand --readonly
-docker compose run --rm smallfactory entities ls
-./scripts/sf-docker.sh inventory onhand --readonly
+docker run --rm -it -v smallfactory-data:/data ghcr.io/yusufm/smallfactory:latest inventory onhand --readonly
+docker run --rm -it -v smallfactory-data:/data ghcr.io/yusufm/smallfactory:latest entities ls
 ```
 
-Plain Docker works too:
+For reproducible deployments, prefer an explicit release tag instead of `latest`.
+
+If you are working from a local checkout and want to build from source instead:
 
 ```sh
-docker run --rm -it -p 8080:8080 -v smallfactory-data:/data smallfactory:local
-docker run --rm -it -v smallfactory-data:/data smallfactory:local repo validate
+docker compose up --build
+docker compose run --rm smallfactory inventory onhand --readonly
+./scripts/sf-docker.sh inventory onhand --readonly
 ```
 
 Container defaults:

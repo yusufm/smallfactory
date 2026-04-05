@@ -24,12 +24,16 @@ mounted data repository.
 - Advisory file locks are used for repo and journal mutations. Prefer a local
   Docker volume or a local-disk bind mount over a network filesystem.
 
-## Quick Start With Docker Compose
+## Quick Start With The Official Image
 
-Build and start the web UI:
+Pull and start the latest stable image:
 
 ```bash
-docker compose up --build
+docker pull ghcr.io/yusufm/smallfactory:latest
+docker run --rm -it \
+  -p 8080:8080 \
+  -v smallfactory-data:/data \
+  ghcr.io/yusufm/smallfactory:latest
 ```
 
 Then open:
@@ -37,31 +41,52 @@ Then open:
 - Web UI: `http://127.0.0.1:8080`
 - MCP: `http://127.0.0.1:8080/mcp`
 
+For reproducible production or team setups, prefer a pinned release tag instead
+of `latest`, for example `ghcr.io/yusufm/smallfactory:v1.1.0`.
+
+## Quick Start From Source
+
+If you are working from a local checkout and want to build the image yourself:
+
+```bash
+docker compose up --build
+```
+
 The included [compose.yaml](../../compose.yaml) stores data in the named volume
-`smallfactory-data`.
+`smallfactory-data` and is best suited for local development, source testing,
+and contributors.
 
 ## Easy CLI Usage Without Entering The Running Container
 
 Run ad hoc CLI commands against the same persisted volume:
 
 ```bash
-docker compose run --rm smallfactory inventory onhand --readonly
-docker compose run --rm smallfactory entities ls
-docker compose run --rm smallfactory repo validate
+docker run --rm -it \
+  -v smallfactory-data:/data \
+  ghcr.io/yusufm/smallfactory:latest \
+  inventory onhand --readonly
+docker run --rm -it \
+  -v smallfactory-data:/data \
+  ghcr.io/yusufm/smallfactory:latest \
+  entities ls
+docker run --rm -it \
+  -v smallfactory-data:/data \
+  ghcr.io/yusufm/smallfactory:latest \
+  repo validate
 ```
 
-There is also a thin wrapper in this repo:
+From a source checkout, there is also a thin wrapper in this repo:
 
 ```bash
 ./scripts/sf-docker.sh inventory onhand --readonly
 ./scripts/sf-docker.sh entities ls
 ```
 
-You can do the same with plain Docker:
+And from a source checkout you can use Compose directly:
 
 ```bash
-docker run --rm -it -p 8080:8080 -v smallfactory-data:/data smallfactory:local
-docker run --rm -it -v smallfactory-data:/data smallfactory:local inventory onhand --readonly
+docker compose run --rm smallfactory inventory onhand --readonly
+docker compose run --rm smallfactory entities ls
 ```
 
 The image accepts direct smallFactory commands, so you do not need
@@ -87,7 +112,7 @@ Example:
 docker run --rm -it \
   -v smallfactory-data:/data \
   -v "$PWD:/work" \
-  smallfactory:local \
+  ghcr.io/yusufm/smallfactory:latest \
   entities files add p_widget /work/test-output/log.txt logs/test-output.txt
 ```
 
@@ -113,7 +138,7 @@ docker run --rm -it \
   -p 8080:8080 \
   -e SF_REPO_GIT_URL=https://github.com/you/your-datarepo.git \
   -v smallfactory-data:/data \
-  smallfactory:local
+  ghcr.io/yusufm/smallfactory:latest
 ```
 
 If your repo should live at a different path, mount its parent and set
@@ -131,7 +156,7 @@ docker run --rm -it \
   --user "$(id -u):$(id -g)" \
   -p 8080:8080 \
   -v "$PWD/docker-data:/data" \
-  smallfactory:local
+  ghcr.io/yusufm/smallfactory:latest
 ```
 
 ## MCP In Docker
@@ -156,7 +181,7 @@ docker run --rm -it \
   -e SF_VISION_PROVIDER=ollama \
   -e SF_OLLAMA_BASE_URL=http://host.docker.internal:11434 \
   -v smallfactory-data:/data \
-  smallfactory:local
+  ghcr.io/yusufm/smallfactory:latest
 ```
 
 On Linux, you may also need:
