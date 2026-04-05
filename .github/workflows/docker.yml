@@ -1,6 +1,9 @@
 name: Build and Publish Docker image
 
 on:
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       push_image:
@@ -23,6 +26,8 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    env:
+      SHOULD_PUSH: ${{ github.event_name == 'release' || inputs.push_image == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,7 +36,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: inputs.push_image == 'true'
+        if: env.SHOULD_PUSH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -47,7 +52,8 @@ jobs:
             type=sha
             type=ref,event=tag
             type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && github.event.release.prerelease == false }}
             ${{ format('type=raw,value={0}', inputs.tags) }}
 
       - name: Compute version metadata
@@ -65,7 +71,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ inputs.push_image == 'true' }}
+          push: ${{ env.SHOULD_PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
