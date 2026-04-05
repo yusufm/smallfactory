@@ -39,6 +39,10 @@ RUN pip install --upgrade pip && \
 # Copy the rest of the source
 COPY . .
 
+# Convenience launcher so the image can be used for ad hoc CLI commands too.
+RUN printf '%s\n' '#!/bin/sh' 'exec python3 /app/sf.py "$@"' > /usr/local/bin/sf && \
+    chmod +x /usr/local/bin/sf
+
 # Bake version metadata file for runtime (if args provided)
 RUN set -e; \
     V_SHORT="${SF_APP_VERSION_SHORT}"; \
@@ -69,3 +73,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://127.0.0.1:${PORT}/ || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["web"]

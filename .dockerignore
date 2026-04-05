@@ -26,6 +26,7 @@ debug/
 build/
 dist/
 *.egg-info/
+datarepos/
 
 # Node/npm cache if any
 node_modules/
