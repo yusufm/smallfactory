@@ -32,6 +32,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     mod.app.jinja_loader = FileSystemLoader(str(template_root))
 
     with mod.app.test_client() as client:
+        client._repo = repo
         yield client
 
 
@@ -60,3 +61,63 @@ def test_canonical_web_pages_render_successfully(client, path: str, follow_redir
 
     assert resp.status_code == 200
     assert resp.content_type.startswith("text/html")
+
+
+def test_build_entity_view_renders_status_field(client):
+    create_entity(
+        client._repo,
+        "b_test_002",
+        {
+            "name": "Build In Progress",
+            "part_sfid": "p_widget",
+            "status": "in_progress",
+            "opened_at": "2026-04-05T12:00:00Z",
+        },
+    )
+
+    resp = client.get("/entities/b_test_002")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Build In Progress" in body
+    assert "in_progress" in body
+
+
+def test_dashboard_recent_builds_uses_build_statuses(client):
+    create_entity(
+        client._repo,
+        "b_test_003",
+        {
+            "name": "Build Complete",
+            "part_sfid": "p_widget",
+            "status": "completed",
+            "opened_at": "2026-04-05T12:00:00Z",
+        },
+    )
+
+    resp = client.get("/")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Build Complete" in body
+    assert "completed" in body
+
+
+def test_builds_list_shows_build_status_not_entity_state(client):
+    create_entity(
+        client._repo,
+        "b_test_004",
+        {
+            "name": "Build Open",
+            "part_sfid": "p_widget",
+            "status": "open",
+        },
+    )
+
+    resp = client.get("/entities?type=b")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "Build Open" in body
+    assert "open" in body
+    assert "Active" not in body

@@ -153,6 +153,17 @@ class TestEntityUpdate:
         assert ent["category"] == "IC"
         assert ent["manufacturer"] == "TI"
 
+    def test_update_build_status(self, client):
+        create_entity(_repo(client), "b_upd_001", {"name": "Build Upd", "part_sfid": "p_missing"})
+        resp = client.post(
+            "/api/entities/b_upd_001/update",
+            json={"updates": {"status": "in_progress"}},
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["entity"]["status"] == "in_progress"
+
 
 # ---------------------------------------------------------------------------
 # Entity retirement (POST /entities/<sfid>/retire — form-based, redirects)

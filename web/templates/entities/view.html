@@ -123,6 +123,21 @@
               <dd id="ovw-name-display" class="mt-1 text-sm text-gray-900">{{ entity.get('name', entity.sfid) }}</dd>
             </div>
             {% if entity.sfid and entity.sfid[:2] == 'b_' %}
+            {% set build_status = (entity.get('status') or '').lower() %}
+            <div>
+              <dt class="text-sm font-medium text-gray-600">Status</dt>
+              <dd class="mt-1">
+                <span
+                  id="ovw-status-display"
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium
+                    {{ 'bg-green-100 text-green-800' if build_status == 'completed' else
+                       'bg-blue-100 text-blue-800' if build_status == 'in_progress' else
+                       'bg-red-100 text-red-800' if build_status == 'canceled' else
+                       'bg-amber-100 text-amber-800' if build_status == 'open' else
+                       'bg-gray-100 text-gray-700' }}"
+                >{{ build_status or '—' }}</span>
+              </dd>
+            </div>
             <div>
               <dt class="text-sm font-medium text-gray-600">Serial Number</dt>
               <dd id="ovw-serialnumber-display" class="mt-1 text-sm font-mono text-gray-900">{{ entity.get('serialnumber') or '—' }}</dd>
@@ -253,6 +268,17 @@
                 <input id="ovw-name" type="text" value="{{ entity.get('name', '') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
               </div>
               {% if entity.sfid and entity.sfid[:2] == 'b_' %}
+              <div>
+                <label class="block text-xs font-medium text-gray-700">Status</label>
+                {% set bsel = (entity.get('status') or '')|lower %}
+                <select id="ovw-status" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2">
+                  <option value="" {% if not bsel %}selected{% endif %}>(unspecified)</option>
+                  <option value="open" {% if bsel == 'open' %}selected{% endif %}>open</option>
+                  <option value="in_progress" {% if bsel == 'in_progress' %}selected{% endif %}>in_progress</option>
+                  <option value="completed" {% if bsel == 'completed' %}selected{% endif %}>completed</option>
+                  <option value="canceled" {% if bsel == 'canceled' %}selected{% endif %}>canceled</option>
+                </select>
+              </div>
               <div>
                 <label class="block text-xs font-medium text-gray-700">Serial Number</label>
                 <input id="ovw-serialnumber" type="text" value="{{ entity.get('serialnumber','') }}" class="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 font-mono">
@@ -615,6 +641,7 @@ function getOverviewCurrentState(){
   const policy = document.getElementById('ovw-policy')?.value || '';
   const uom = document.getElementById('ovw-uom')?.value || '';
   const tags = document.getElementById('ovw-tags')?.value || '';
+  const status = document.getElementById('ovw-status')?.value || '';
   const serialnumber = document.getElementById('ovw-serialnumber')?.value || '';
   const datetime = document.getElementById('ovw-builtat')?.value || '';
   const list = document.getElementById('ovw-attrs-editor-list');
@@ -628,8 +655,29 @@ function getOverviewCurrentState(){
       if(k){ attrs[k] = v; }
     }
   });
-  return { name, description, notes, category, policy, uom, tags, attrs, serialnumber, datetime };
+  return { name, description, notes, category, policy, uom, tags, attrs, status, serialnumber, datetime };
 }
+
+function ovwSetBuildStatusBadge(el, raw){
+  if(!el) return;
+  const status = String(raw || '').trim().toLowerCase();
+  el.textContent = status || '—';
+  el.classList.remove(
+    'bg-green-100','text-green-800',
+    'bg-blue-100','text-blue-800',
+    'bg-red-100','text-red-800',
+    'bg-amber-100','text-amber-800',
+    'bg-gray-100','text-gray-700','inline-flex','items-center',
+    'px-2.5','py-0.5','rounded-full','text-sm','font-medium'
+  );
+  el.classList.add('inline-flex','items-center','px-2.5','py-0.5','rounded-full','text-sm','font-medium');
+  if(status === 'completed') el.classList.add('bg-green-100','text-green-800');
+  else if(status === 'in_progress') el.classList.add('bg-blue-100','text-blue-800');
+  else if(status === 'canceled') el.classList.add('bg-red-100','text-red-800');
+  else if(status === 'open') el.classList.add('bg-amber-100','text-amber-800');
+  else el.classList.add('bg-gray-100','text-gray-700');
+}
+
 function toggleOverviewMode(){
   const disp = document.getElementById('overview-display');
   const ed = document.getElementById('overview-editor');
@@ -699,8 +747,10 @@ async function saveOverview(){
   const policy = document.getElementById('ovw-policy').value;
   const uom = document.getElementById('ovw-uom').value;
   const tags = document.getElementById('ovw-tags').value;
+  const statusEl = document.getElementById('ovw-status');
   const serialnumberEl = document.getElementById('ovw-serialnumber');
   const builtAtEl = document.getElementById('ovw-builtat');
+  const status = statusEl ? (statusEl.value || '').trim() : undefined;
   const serialnumber = serialnumberEl ? serialnumberEl.value : undefined;
   const datetime = builtAtEl ? builtAtEl.value : undefined;
   const err = document.getElementById('ovw-error');
@@ -719,6 +769,7 @@ async function saveOverview(){
       }
     });
     const updates = { name, description, notes, category, policy, uom, tags, attrs };
+    if(status !== undefined) updates.status = status || null;
     if(serialnumber !== undefined) updates.serialnumber = serialnumber;
     if(datetime !== undefined) updates.datetime = datetime;
     const res = await fetch(`/api/entities/${encodeURIComponent(SFID)}/update`, {
@@ -735,6 +786,11 @@ async function saveOverview(){
     setText('ovw-notes-display', notes||'');
     setText('ovw-category-display', category||'');
     // Build fields
+    if(status !== undefined){
+      const statusBadge = document.getElementById('ovw-status-display');
+      if(statusBadge) ovwSetBuildStatusBadge(statusBadge, status);
+      else needReload = true;
+    }
     if(serialnumber !== undefined) setText('ovw-serialnumber-display', serialnumber || '—');
     if(datetime !== undefined) setText('ovw-builtat-display', datetime || '—');
     // Policy badge
