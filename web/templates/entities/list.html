@@ -49,7 +49,7 @@
         <thead class="bg-gray-50">
           <tr>
             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name / SFID</th>
-            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{% if filter_type == 'b' %}Status{% else %}State{% endif %}</th>
             <th class="px-6 py-3"></th>
           </tr>
         </thead>
@@ -65,7 +65,15 @@
               </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm">
-              {% if e.get('retired') %}
+              {% if filter_type == 'b' %}
+                {% set build_status = (e.get('status') or 'unknown')|lower %}
+                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                  {{ 'bg-green-100 text-green-800' if build_status == 'completed' else
+                     'bg-blue-100 text-blue-800' if build_status == 'in_progress' else
+                     'bg-red-100 text-red-800' if build_status == 'canceled' else
+                     'bg-amber-100 text-amber-800' if build_status == 'open' else
+                     'bg-gray-100 text-gray-800' }}">{{ build_status }}</span>
+              {% elif e.get('retired') %}
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Retired</span>
               {% else %}
                 <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Active</span>
