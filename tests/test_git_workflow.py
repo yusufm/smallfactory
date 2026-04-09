@@ -10,7 +10,7 @@ import types
 import pytest
 
 from conftest import init_git_repo
-from smallfactory.core.v1.gitutils import git_commit_paths
+from smallfactory.core.v1.gitutils import git_commit_paths, git_identity_env
 
 
 def _git_has_commit(root: Path) -> bool:
@@ -61,6 +61,34 @@ def test_git_commit_paths_noop_when_nothing_to_commit(tmp_path: Path):
     git_commit_paths(repo, [entities_dir], "[test] second commit")
     second = _git_last_commit_message(repo)
     assert second == first
+
+
+def test_git_commit_paths_uses_scoped_identity_without_mutating_process_env(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True)
+    init_git_repo(repo)
+
+    entities_dir = repo / "entities" / "p_widget"
+    entities_dir.mkdir(parents=True)
+    f = entities_dir / "entity.yml"
+    f.write_text("name: Widget\n")
+
+    prior_author = os.environ.get("GIT_AUTHOR_NAME")
+    prior_email = os.environ.get("GIT_AUTHOR_EMAIL")
+
+    with git_identity_env("Jane Doe", "jane.doe@example.com"):
+        assert os.environ.get("GIT_AUTHOR_NAME") == prior_author
+        assert os.environ.get("GIT_AUTHOR_EMAIL") == prior_email
+        git_commit_paths(repo, [entities_dir], "[test] scoped identity")
+
+    author = subprocess.run(
+        ["git", "log", "-n", "1", "--pretty=%an <%ae>"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert author == "Jane Doe <jane.doe@example.com>"
 
 
 @pytest.mark.skipif(not importlib.util.find_spec("flask"), reason="Flask not installed; web txn tests skipped")

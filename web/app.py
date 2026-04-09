@@ -70,6 +70,7 @@ from smallfactory.core.v1.vision import (
     extract_invoice_part as vlm_extract_invoice_part,
 )
 from smallfactory.core.v1.gitutils import git_push
+from smallfactory.core.v1.gitutils import git_identity_env
 from smallfactory.core.v1.validate import validate_repo
 
 app = Flask(__name__)
@@ -632,21 +633,9 @@ def _extract_identity_from_headers(req) -> tuple[str | None, str | None]:
 
 @contextmanager
 def _with_git_identity(name: str, email: str):
-    """Temporarily set GIT_AUTHOR_* and GIT_COMMITTER_* for subprocess git commands."""
-    keys = ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']
-    prev = {k: os.environ.get(k) for k in keys}
-    try:
-        os.environ['GIT_AUTHOR_NAME'] = name
-        os.environ['GIT_COMMITTER_NAME'] = name
-        os.environ['GIT_AUTHOR_EMAIL'] = email
-        os.environ['GIT_COMMITTER_EMAIL'] = email
+    """Scope git identity to gitutils subprocesses without mutating process-global env."""
+    with git_identity_env(name, email):
         yield
-    finally:
-        for k, v in prev.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
 
 
 _GIT_REMOTE_CACHE: dict[str, tuple[float, bool]] = {}
@@ -3962,6 +3951,7 @@ def stickers_batch():
             error='ReportLab is not installed. Install web deps: pip install -r web/requirements.txt',
             size_text=size_text,
             dpi_text=dpi_text,
+            text_size_text=text_size_text,
             fields_text=fields_raw,
             sfids_text=sfids_text,
         )
@@ -4011,6 +4001,7 @@ def stickers_batch():
             error=f'Failed to build PDF: {e}',
             size_text=size_text,
             dpi_text=dpi_text,
+            text_size_text=text_size_text,
             fields_text=fields_raw,
             sfids_text=sfids_text,
         )
