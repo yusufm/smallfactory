@@ -1530,6 +1530,10 @@ def compute_build_readiness(datarepo_path: Path, sfid: str, *, build_qty: int = 
     try:
         nodes = ent_resolved_bom_view(datarepo_path, sfid, max_depth=None, level_offset=1)
     except Exception as exc:
+        try:
+            app.logger.exception("Failed to compute build stock check for %s: %s", sfid, exc)
+        except Exception:
+            pass
         return {
             'sfid': sfid,
             'build_qty': build_qty,
@@ -1538,7 +1542,7 @@ def compute_build_readiness(datarepo_path: Path, sfid: str, *, build_qty: int = 
             'shortage_count': 0,
             'missing_revision_count': 1,
             'rows': [],
-            'error': str(exc),
+            'error': 'Unable to compute build stock check.',
         }
 
     def _node_required_each(node: dict) -> int:

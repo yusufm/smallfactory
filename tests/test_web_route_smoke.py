@@ -34,6 +34,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     with mod.app.test_client() as client:
         client._repo = repo
+        client._web_mod = mod
         yield client
 
 
@@ -159,6 +160,22 @@ def test_build_readiness_counts_stocked_alternate(client):
     assert readiness["can_build_qty"] >= 1
     assert readiness["shortage_count"] == 0
     assert readiness["rows"][0]["covered_by_alternate"] is True
+
+
+def test_build_readiness_api_hides_internal_exception_details(client, monkeypatch):
+    def fail(*args, **kwargs):
+        raise RuntimeError("internal stack detail /tmp/secret")
+
+    monkeypatch.setattr(client._web_mod, "ent_resolved_bom_view", fail)
+
+    resp = client.get("/api/entities/p_widget/build-readiness")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    readiness = resp.get_json()["readiness"]
+    assert readiness["error"] == "Unable to compute build stock check."
+    assert "internal stack detail" not in body
+    assert "/tmp/secret" not in body
 
 
 def test_revision_manifest_endpoint_returns_artifact_summary(client):
