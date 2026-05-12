@@ -120,7 +120,81 @@
         </div>
       </div>
 
-      <!-- No preview/backflush in simplified flow -->
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-900"><i class="fas fa-clipboard-check mr-2 text-blue-600"></i>Build Stock Check</h2>
+          {% if readiness and readiness.error %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800">Needs attention</span>
+          {% elif readiness and readiness.shortage_count == 0 and readiness.missing_revision_count == 0 %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Ready</span>
+          {% elif readiness and readiness.missing_revision_count > 0 %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Missing revisions</span>
+          {% else %}
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Shortages</span>
+          {% endif %}
+        </div>
+        <div class="px-6 py-5">
+          <p class="mb-4 text-sm text-gray-600">Checks whether there is enough stock to build one finished unit of this part, counting inventory across all locations. This does not create a build record or change inventory.</p>
+
+          {% if readiness and readiness.error %}
+          <div class="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded text-sm">{{ readiness.error }}</div>
+          {% elif readiness %}
+          <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-5">
+            <div class="rounded-lg bg-gray-50 p-4">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Finished units possible</div>
+              <div class="mt-1 text-2xl font-bold text-gray-900">{{ readiness.can_build_qty }}</div>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-4">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Finished unit checked</div>
+              <div class="mt-1 text-2xl font-bold text-gray-900">{{ readiness.build_qty }}</div>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-4">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Short items</div>
+              <div class="mt-1 text-2xl font-bold {{ 'text-rose-700' if readiness.shortage_count else 'text-green-700' }}">{{ readiness.shortage_count }}</div>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-4">
+              <div class="text-xs uppercase tracking-wide text-gray-500">Alternates</div>
+              <div class="mt-1 text-2xl font-bold text-gray-900">{{ readiness.alternates_count }}</div>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Part</th>
+                  <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Need each</th>
+                  <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Need total</th>
+                  <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">On hand</th>
+                  <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Short</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                {% for row in readiness.rows %}
+                <tr class="{{ 'bg-rose-50' if row.shortage else 'odd:bg-gray-50' }}">
+                  <td class="px-3 py-2">
+                    <a class="font-mono text-blue-700 hover:underline" href="{{ url_for('entities_view', sfid=row.sfid) }}">{{ row.sfid }}</a>
+                    <div class="text-xs text-gray-500">{{ row.name }}</div>
+                    {% if row.covered_by_alternate %}
+                    <div class="text-xs text-green-700">Using stocked alternate {{ row.stock_sfid }}</div>
+                    {% elif row.alternates %}
+                    <div class="text-xs text-gray-500">{{ row.alternates|length }} alternate{{ '' if row.alternates|length == 1 else 's' }} available</div>
+                    {% endif %}
+                  </td>
+                  <td class="px-3 py-2 text-right font-mono">{{ row.required_each }}</td>
+                  <td class="px-3 py-2 text-right font-mono">{{ row.required_total }}</td>
+                  <td class="px-3 py-2 text-right font-mono">{{ row.onhand }}</td>
+                  <td class="px-3 py-2 text-right font-mono {{ 'text-rose-700 font-semibold' if row.shortage else 'text-green-700' }}">{{ row.shortage }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="px-3 py-5 text-center text-gray-500">No BOM lines to check.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
 
     <div class="lg:col-span-1">
