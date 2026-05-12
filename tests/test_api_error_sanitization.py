@@ -1,8 +1,8 @@
 """Regression tests for _api_exception_response sanitization.
 
 Verifies that:
-- Expected validation exceptions (ValueError, KeyError, etc.) surface concise
-  messages in default 4xx responses.
+- Expected validation exceptions (ValueError, KeyError, etc.) surface fixed
+  public messages in default 4xx responses without reflecting exception text.
 - Unexpected / internal exceptions (RuntimeError, OSError, PermissionError,
   generic Exception) are redacted to a generic message.
 - 5xx responses never leak exception details regardless of type.
@@ -37,24 +37,30 @@ def _call(mod, exc, status=400, public_message="Request failed", hint=None):
 
 
 # ---------------------------------------------------------------------------
-# Safe validation exceptions SHOULD surface in default 4xx responses
+# Safe validation exceptions SHOULD surface fixed public messages
 # ---------------------------------------------------------------------------
 
 class TestSafeTypesExposed:
 
-    @pytest.mark.parametrize("exc", [
-        ValueError("Invalid SFID format"),
-        KeyError("missing_field"),
-        IndexError("BOM line 99 out of range"),
-        FileNotFoundError("Entity p_ghost not found"),
-        FileExistsError("Entity p_dup already exists"),
+    @pytest.mark.parametrize(("exc", "expected"), [
+        (ValueError("Invalid SFID format /var/secrets/token"), "Invalid request"),
+        (KeyError("missing_field /var/secrets/token"), "Invalid request"),
+        (IndexError("BOM line 99 out of range /var/secrets/token"), "Invalid request"),
+        (
+            FileNotFoundError("Entity p_ghost not found /var/secrets/token"),
+            "Requested resource was not found",
+        ),
+        (
+            FileExistsError("Entity p_dup already exists /var/secrets/token"),
+            "Requested resource already exists",
+        ),
     ])
-    def test_validation_error_surfaces_in_400(self, _app, exc):
+    def test_validation_error_surfaces_in_400(self, _app, exc, expected):
         data, code = _call(_app, exc, status=400)
         assert code == 400
         assert data["success"] is False
-        assert data["error"] != "Request failed"
-        assert len(data["error"]) > 0
+        assert data["error"] == expected
+        assert "/var/secrets" not in data["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -108,10 +114,11 @@ class TestUnsafeTypesRedacted:
         assert code == 400
         assert data["error"] == "Another SmallFactory operation is in progress; retry shortly."
 
-    def test_safe_exception_multiline_truncated(self, _app):
+    def test_safe_exception_multiline_redacted(self, _app):
         exc = ValueError("first line\nsecond line with /secret/path")
         data, _ = _call(_app, exc, status=400)
-        assert data["error"] == "first line"
+        assert data["error"] == "Invalid request"
+        assert "first line" not in data["error"]
         assert "second line" not in data["error"]
 
 

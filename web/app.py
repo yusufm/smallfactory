@@ -101,16 +101,21 @@ def _api_exception_response(
             return "Another SmallFactory operation is in progress; retry shortly."
         return None
 
-    # Surface concise validation feedback for known user-input exceptions only.
-    _SAFE_EXC_TYPES = (ValueError, KeyError, IndexError, FileNotFoundError, FileExistsError)
+    def _default_public_message(err: Exception) -> str:
+        if isinstance(err, FileNotFoundError):
+            return "Requested resource was not found"
+        if isinstance(err, FileExistsError):
+            return "Requested resource already exists"
+        if isinstance(err, (ValueError, KeyError, IndexError)):
+            return "Invalid request"
+        return public_message
+
     if public_message == "Request failed" and status < 500:
         operational_message = _operational_runtime_message(exc)
         if operational_message:
             error_message = operational_message
-        elif isinstance(exc, _SAFE_EXC_TYPES):
-            detail = str(exc).strip().split("\n", 1)[0]
-            if detail:
-                error_message = detail[:240]
+        else:
+            error_message = _default_public_message(exc)
     payload = {"success": False, "error": error_message}
     if hint:
         payload["hint"] = hint
