@@ -47,11 +47,25 @@ ensure_config_file() {
     return
   fi
 
-  if grep -q '^default_datarepo:' "$config_file"; then
-    sed -i "s#^default_datarepo:.*#default_datarepo: ${SF_REPO_PATH//#/\\#}#" "$config_file"
-  else
-    printf "default_datarepo: %s\n" "$SF_REPO_PATH" >> "$config_file"
-  fi
+  local tmp_file
+  tmp_file="${config_file}.$$"
+  awk -v repo="$SF_REPO_PATH" '
+    BEGIN { updated = 0 }
+    /^default_datarepo:/ {
+      if (!updated) {
+        print "default_datarepo: " repo
+        updated = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print "default_datarepo: " repo
+      }
+    }
+  ' "$config_file" > "$tmp_file"
+  mv "$tmp_file" "$config_file"
 }
 
 configure_git() {
