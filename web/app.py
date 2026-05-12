@@ -23,6 +23,8 @@ import time
 import atexit
 from contextlib import contextmanager, nullcontext
 import tarfile
+import math
+import hashlib
 from jinja2 import ChoiceLoader, FileSystemLoader
 
 # Prometheus metrics
@@ -1406,6 +1408,303 @@ def compute_dashboard_metrics(datarepo_path: Path, *, top_n: int = 5) -> dict:
     }
     return metrics
 
+
+def _coerce_int(value, default=0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+def _entity_lookup(entity: dict, *names: str):
+    """Read a field from top-level entity data or attrs aliases."""
+    attrs = entity.get('attrs') if isinstance(entity.get('attrs'), dict) else {}
+    for name in names:
+        if name in entity and entity.get(name) not in (None, ''):
+            return entity.get(name)
+        if name in attrs and attrs.get(name) not in (None, ''):
+            return attrs.get(name)
+    return None
+
+
+def _stock_bucket(total: int, reorder_min: int | None = None) -> str:
+    if reorder_min is not None and reorder_min > 0:
+        if total <= 0:
+            return 'critical'
+        if total < reorder_min:
+            return 'low'
+        return 'ok'
+    if total <= 0:
+        return 'critical'
+    if total <= 5:
+        return 'low'
+    return 'ok'
+
+
+def _all_part_inventory_rows(datarepo_path: Path) -> list[dict]:
+    summary = inventory_onhand_readonly(datarepo_path) or {}
+    summary_parts = summary.get('parts', []) if isinstance(summary, dict) else []
+    summary_by_sfid = {p.get('sfid'): p for p in summary_parts if isinstance(p, dict) and p.get('sfid')}
+    entities = list_entities(datarepo_path) or []
+    parts = [e for e in entities if str(e.get('sfid', '')).startswith('p_')]
+    rows = []
+    for ent in parts:
+        sfid = ent.get('sfid')
+        inv = summary_by_sfid.get(sfid) or {}
+        total = _coerce_int(inv.get('total'), 0)
+        reorder_raw = _entity_lookup(ent, 'reorder_min', 'min_stock', 'reorder_point')
+        reorder_min = None
+        if reorder_raw not in (None, ''):
+            reorder_min = max(0, _coerce_int(reorder_raw, 0))
+        vendor = _entity_lookup(ent, 'vendor', 'supplier', 'supplier_name')
+        mpn = _entity_lookup(ent, 'mpn', 'mfr_pn', 'manufacturer_part', 'manufacturer part')
+        manufacturer = _entity_lookup(ent, 'manufacturer', 'mfr')
+        bucket = _stock_bucket(total, reorder_min)
+        suggested_target = int(reorder_min) if reorder_min is not None and reorder_min > 0 else (5 if bucket in ('critical', 'low') else total)
+        rows.append({
+            'sfid': sfid,
+            'name': ent.get('name') or sfid,
+            'uom': inv.get('uom') or ent.get('uom') or 'ea',
+            'total': total,
+            'by_location': inv.get('by_location', {}) if isinstance(inv.get('by_location'), dict) else {},
+            'reorder_min': reorder_min,
+            'status_bucket': bucket,
+            'policy': str(ent.get('policy') or '').lower(),
+            'vendor': vendor,
+            'manufacturer': manufacturer,
+            'mpn': mpn,
+            'short_to_min': max(0, int(reorder_min or 0) - total),
+            'suggested_order_qty': max(0, int(suggested_target) - total),
+        })
+    return rows
+
+
+def compute_operational_report(datarepo_path: Path, *, top_n: int = 25) -> dict:
+    """Read-only operations dashboard view model."""
+    metrics = compute_dashboard_metrics(datarepo_path, top_n=5)
+    rows = _all_part_inventory_rows(datarepo_path)
+    low_rows = [r for r in rows if r['status_bucket'] in ('critical', 'low')]
+    purchase_rows = [
+        r for r in low_rows
+        if r.get('policy') == 'buy' or r.get('vendor') or r.get('mpn') or r.get('manufacturer')
+    ]
+    purchase_rows = [r for r in purchase_rows if int(r.get('suggested_order_qty', 0) or 0) > 0]
+    purchase_rows.sort(key=lambda r: (0 if r['status_bucket'] == 'critical' else 1, -r.get('short_to_min', 0), r.get('sfid') or ''))
+    low_rows.sort(key=lambda r: (0 if r['status_bucket'] == 'critical' else 1, r.get('total', 0), r.get('sfid') or ''))
+
+    missing_metadata = []
+    for row in rows:
+        missing = []
+        if not row.get('name'):
+            missing.append('name')
+        if not row.get('mpn'):
+            missing.append('mpn')
+        if not row.get('vendor') and not row.get('manufacturer'):
+            missing.append('supplier/manufacturer')
+        if missing:
+            missing_metadata.append({'sfid': row.get('sfid'), 'name': row.get('name'), 'missing': missing})
+
+    try:
+        validation = validate_repo(datarepo_path, include_entities=True, include_inventory=True, include_git=False)
+    except Exception as exc:
+        validation = {'errors': 0, 'warnings': 0, 'issues': [], 'error': str(exc)}
+
+    return {
+        'metrics': metrics,
+        'parts_count': len(rows),
+        'critical_count': sum(1 for r in rows if r['status_bucket'] == 'critical'),
+        'low_count': sum(1 for r in rows if r['status_bucket'] == 'low'),
+        'ok_count': sum(1 for r in rows if r['status_bucket'] == 'ok'),
+        'low_stock': low_rows[:top_n],
+        'purchase_rows': purchase_rows[:top_n],
+        'missing_metadata': missing_metadata[:top_n],
+        'validation': validation,
+    }
+
+
+def compute_build_readiness(datarepo_path: Path, sfid: str, *, build_qty: int = 1, location_sfid: str | None = None) -> dict:
+    """Read-only BOM shortage/kitting summary for a candidate build."""
+    build_qty = max(1, min(_coerce_int(build_qty, 1), 100000))
+    location_sfid = (location_sfid or '').strip() or None
+    rows = []
+    try:
+        nodes = ent_resolved_bom_view(datarepo_path, sfid, max_depth=None, level_offset=1)
+    except Exception as exc:
+        try:
+            app.logger.exception("Failed to compute build stock check for %s: %s", sfid, exc)
+        except Exception:
+            pass
+        return {
+            'sfid': sfid,
+            'build_qty': build_qty,
+            'location_sfid': location_sfid,
+            'can_build_qty': 0,
+            'shortage_count': 0,
+            'missing_revision_count': 1,
+            'rows': [],
+            'error': 'Unable to compute build stock check.',
+        }
+
+    def _node_required_each(node: dict) -> int:
+        gross = node.get('gross_qty')
+        return _coerce_int(gross if gross not in (None, '') else node.get('qty'), 0)
+
+    def _stock_snapshot(part_sfid: str) -> tuple[int, dict]:
+        try:
+            inv = inventory_onhand_readonly(datarepo_path, part=part_sfid) or {}
+            by_loc = inv.get('by_location', {}) if isinstance(inv.get('by_location'), dict) else {}
+            total = _coerce_int(by_loc.get(location_sfid), 0) if location_sfid else _coerce_int(inv.get('total'), 0)
+            return total, by_loc
+        except Exception:
+            return 0, {}
+
+    def _requires_released_revision(part_sfid: str, resolved_rev) -> bool:
+        if resolved_rev:
+            return False
+        try:
+            return bool(bom_list(datarepo_path, part_sfid))
+        except Exception:
+            return False
+
+    grouped: dict[tuple, list[dict]] = {}
+    alternates_count = 0
+    for node in nodes:
+        use = node.get('use')
+        if not isinstance(use, str) or not use.startswith('p_'):
+            continue
+        required_each = _node_required_each(node)
+        if required_each <= 0:
+            continue
+        if node.get('is_alt'):
+            alternates_count += 1
+        group_key = (
+            node.get('parent'),
+            node.get('bom_index'),
+            node.get('alternates_group'),
+            node.get('level'),
+            required_each,
+        )
+        onhand, by_location = _stock_snapshot(use)
+        required_total = required_each * build_qty
+        shortage = max(0, int(required_total) - int(onhand))
+        can_build_qty = int(math.floor(int(onhand) / int(required_each))) if required_each > 0 else None
+        grouped.setdefault(group_key, []).append({
+            'sfid': use,
+            'name': node.get('name') or use,
+            'rev': node.get('rev') or 'released',
+            'resolved_rev': node.get('resolved_rev'),
+            'required_each': required_each,
+            'required_total': required_total,
+            'onhand': onhand,
+            'by_location': by_location,
+            'shortage': shortage,
+            'can_build_qty': can_build_qty,
+            'is_alt': bool(node.get('is_alt')),
+            'missing_revision': _requires_released_revision(use, node.get('resolved_rev')),
+        })
+
+    missing_revisions = []
+    for candidates in grouped.values():
+        primary = next((c for c in candidates if not c.get('is_alt')), candidates[0])
+        best = max(
+            candidates,
+            key=lambda c: (
+                _coerce_int(c.get('can_build_qty'), 0),
+                -_coerce_int(c.get('shortage'), 0),
+                0 if not c.get('is_alt') else 1,
+            ),
+        )
+        entry = dict(primary)
+        if best is not primary:
+            entry.update({
+                'stock_sfid': best.get('sfid'),
+                'stock_name': best.get('name'),
+                'onhand': best.get('onhand'),
+                'by_location': best.get('by_location'),
+                'shortage': best.get('shortage'),
+                'can_build_qty': best.get('can_build_qty'),
+                'covered_by_alternate': best.get('shortage', 0) < primary.get('shortage', 0),
+            })
+        entry['alternates'] = [c for c in candidates if c.get('is_alt')]
+        if entry.get('missing_revision'):
+            missing_revisions.append(entry.get('sfid'))
+        rows.append(entry)
+
+    rows.sort(key=lambda r: (-int(r.get('shortage', 0)), r.get('sfid') or ''))
+    finite_can_build = [r['can_build_qty'] for r in rows if r.get('can_build_qty') is not None]
+    can_build_qty = min(finite_can_build) if finite_can_build else 0
+    return {
+        'sfid': sfid,
+        'build_qty': build_qty,
+        'location_sfid': location_sfid,
+        'can_build_qty': can_build_qty,
+        'shortage_count': sum(1 for r in rows if int(r.get('shortage', 0)) > 0),
+        'missing_revision_count': len(set(missing_revisions)),
+        'rows': rows,
+        'alternates_count': alternates_count,
+    }
+
+
+def _revision_artifacts_from_snapshot(datarepo_path: Path, sfid: str, rev: str) -> list[dict]:
+    rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / str(rev)
+    if not rev_dir.exists() or not rev_dir.is_dir():
+        return []
+    artifacts = []
+    for path in sorted(rev_dir.rglob('*')):
+        if not path.is_file() or path.name in {'meta.yml', '.gitkeep'}:
+            continue
+        rel = path.relative_to(rev_dir)
+        rel_str = str(rel).replace('\\', '/')
+        role = 'file'
+        if rel_str == 'entity.yml':
+            role = 'entity'
+        elif rel_str == 'bom_tree.yml':
+            role = 'bom-tree'
+        elif rel.parts and rel.parts[0] == 'refs':
+            role = 'ref'
+        suffix = path.suffix.lower()
+        if role == 'file':
+            if suffix in {'.step', '.stp', '.iges', '.igs', '.stl', '.dxf', '.dwg', '.3mf', '.obj'}:
+                role = 'cad-export'
+            elif suffix in {'.pdf', '.svg'}:
+                role = 'drawing'
+            elif suffix in {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff'}:
+                role = 'image'
+            elif suffix in {'.md', '.txt'}:
+                role = 'doc'
+        artifact = {'role': role, 'path': rel_str}
+        try:
+            h = hashlib.sha256()
+            with path.open('rb') as f:
+                for chunk in iter(lambda: f.read(8192), b''):
+                    h.update(chunk)
+            artifact['sha256'] = h.hexdigest()
+        except Exception:
+            pass
+        artifacts.append(artifact)
+    return artifacts
+
+
+def get_revision_manifest(datarepo_path: Path, sfid: str, rev: str) -> dict:
+    info = get_revisions(datarepo_path, sfid) or {}
+    revisions = info.get('revisions') if isinstance(info.get('revisions'), list) else []
+    for item in revisions:
+        if str(item.get('id') or item.get('rev') or '') == str(rev):
+            artifacts = item.get('artifacts') if isinstance(item.get('artifacts'), list) else []
+            if not artifacts:
+                artifacts = _revision_artifacts_from_snapshot(datarepo_path, sfid, rev)
+            return {
+                'sfid': sfid,
+                'rev': rev,
+                'status': item.get('status'),
+                'created_at': item.get('created_at') or item.get('generated_at'),
+                'released_at': item.get('released_at'),
+                'source_commit': item.get('source_commit'),
+                'artifact_count': len(artifacts),
+                'artifacts': artifacts,
+            }
+    raise FileNotFoundError(f"Revision '{rev}' not found for {sfid}")
+
 # -----------------------
 # Repository stats and validation
 # -----------------------
@@ -1597,13 +1896,16 @@ def index():
     try:
         datarepo_path = get_datarepo_path()
         metrics = compute_dashboard_metrics(datarepo_path, top_n=5)
+        report = compute_operational_report(datarepo_path, top_n=5)
         return render_template(
             'index.html',
             metrics=metrics,
+            report=report,
             datarepo_path=str(datarepo_path)
         )
     except Exception as e:
         return render_template('error.html', error=str(e))
+
 
 @app.route('/vision', methods=['GET'])
 def vision_page():
@@ -2002,9 +2304,17 @@ def entities_build(sfid):
                 flash(f"Failed to create build record: {e}", 'error')
                 return redirect(url_for('entities_build', sfid=sfid))
 
-        # GET: show form and optional preview if qty provided
+        # GET: show form plus a read-only stock check for one finished unit.
         l_sfid = (request.args.get('l_sfid') or '').strip()
         notes = (request.args.get('notes') or '').strip()
+        readiness_qty = 1
+        readiness_location = ''
+        readiness = compute_build_readiness(
+            datarepo_path,
+            sfid,
+            build_qty=readiness_qty,
+            location_sfid=readiness_location or None,
+        ) if is_part else None
         rev_selected = (request.args.get('rev') or ('released' if released_rev else '')).strip()
         # If no released pointer and no explicit selection, default to the latest revision id
         if not rev_selected and revisions:
@@ -2023,6 +2333,9 @@ def entities_build(sfid):
             l_sfid=l_sfid,
             notes=notes,
             rev_selected=rev_selected,
+            readiness=readiness,
+            readiness_qty=readiness_qty,
+            readiness_location=readiness_location,
             can_build=can_build,
             is_part=is_part,
         )
@@ -2624,6 +2937,31 @@ def api_revisions_get(sfid):
         return jsonify({'success': True, 'rev': info.get('rev'), 'revisions': info.get('revisions', [])})
     except Exception as e:
         return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/build-readiness', methods=['GET'])
+def api_build_readiness(sfid):
+    try:
+        datarepo_path = get_datarepo_path()
+        get_entity(datarepo_path, sfid)
+        if not str(sfid).startswith('p_'):
+            raise ValueError("Build readiness is only available for part entities ('p_*')")
+        build_qty = _coerce_int(request.args.get('build_qty'), 1)
+        location_sfid = (request.args.get('location_sfid') or '').strip() or None
+        return jsonify({'success': True, 'readiness': compute_build_readiness(datarepo_path, sfid, build_qty=build_qty, location_sfid=location_sfid)})
+    except FileNotFoundError as e:
+        return _api_exception_response(e, 404)
+    except Exception as e:
+        return _api_exception_response(e, 400)
+
+
+@app.route('/api/entities/<sfid>/revisions/<rev>/manifest', methods=['GET'])
+def api_revisions_manifest(sfid, rev):
+    try:
+        datarepo_path = get_datarepo_path()
+        return jsonify({'success': True, 'manifest': get_revision_manifest(datarepo_path, sfid, rev)})
+    except Exception as e:
+        return _api_exception_response(e, 404)
 
 @app.route('/api/entities/<sfid>/revisions/bump', methods=['POST'])
 def api_revisions_bump(sfid):

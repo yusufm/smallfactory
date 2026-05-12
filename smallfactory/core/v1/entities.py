@@ -610,7 +610,7 @@ def _build_bom_tree_nodes(
         if max_depth is not None and level > max_depth:
             return
         lines = _bom_list_at_rev(parent_sfid, parent_rev)
-        for line in lines or []:
+        for line_index, line in enumerate(lines or []):
             if not isinstance(line, dict):
                 continue
             child = str(line.get("use", "")).strip()
@@ -632,6 +632,7 @@ def _build_bom_tree_nodes(
                 "rev_spec": rev_spec,
                 "rev": child_resolved_rev,
                 "level": level,
+                "bom_index": line_index,
                 "is_alt": False,
                 "alternates_group": alt_group,
                 "gross_qty": cum,
@@ -653,6 +654,7 @@ def _build_bom_tree_nodes(
                     "rev_spec": rev_spec,
                     "rev": alt_resolved_rev,
                     "level": level,
+                    "bom_index": line_index,
                     "is_alt": True,
                     "alternates_group": alt_group,
                     "gross_qty": cum,
@@ -717,6 +719,7 @@ def resolved_bom_view(
                 "rev": n.get("rev_spec", "released"),
                 "resolved_rev": n.get("rev"),
                 "level": base_level + int(level_offset or 0),
+                "bom_index": n.get("bom_index"),
                 "is_alt": n.get("is_alt", False),
                 "alternates_group": n.get("alternates_group"),
                 "gross_qty": n.get("gross_qty"),
