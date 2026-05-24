@@ -168,6 +168,23 @@ def test_build_events_read_rejects_missing_id(tmp_path: Path):
         _ = get_entity(repo, "b_widget_008")
 
 
+def test_write_yaml_preserves_existing_file_when_dump_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    target = tmp_path / "entity.yml"
+    target.write_text("name: original\n", encoding="utf-8")
+
+    def _boom(data, stream, sort_keys=False):
+        stream.write("name: partial")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(entities_mod.yaml, "safe_dump", _boom)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        entities_mod._write_yaml(target, {"name": "updated"})
+
+    assert target.read_text(encoding="utf-8") == "name: original\n"
+    assert [p.name for p in target.parent.iterdir()] == ["entity.yml"]
+
+
 def test_build_events_read_skips_malformed_json_lines(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)

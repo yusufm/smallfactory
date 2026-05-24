@@ -61,9 +61,29 @@ def _read_yaml(p: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def _atomic_write_text_file(p: Path, writer) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=p.parent, delete=False, encoding="utf-8") as tf:
+            tmp_path = Path(tf.name)
+            writer(tf)
+            tf.flush()
+            os.fsync(tf.fileno())
+        if tmp_path is None:
+            raise RuntimeError(f"Failed to create temporary file for '{p.name}'")
+        tmp_path.replace(p)
+    except Exception:
+        if tmp_path is not None and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+        raise
+
+
 def _write_yaml(p: Path, data: dict) -> None:
-    with open(p, "w") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
+    _atomic_write_text_file(p, lambda f: yaml.safe_dump(data, f, sort_keys=False))
 
 
 def _read_events_jsonl(p: Path) -> List[dict]:
@@ -86,11 +106,11 @@ def _read_events_jsonl(p: Path) -> List[dict]:
 
 
 def _write_events_jsonl(p: Path, events: List[dict]) -> None:
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
+    def _write(f) -> None:
         for ev in events:
             f.write(json.dumps(ev, separators=(",", ":"), ensure_ascii=True))
             f.write("\n")
+    _atomic_write_text_file(p, _write)
 
 
 def _assert_mutations_allowed(datarepo_path: Path) -> None:
