@@ -33,7 +33,7 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTEN
 # Add the parent directory to Python path to import smallfactory modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config, DATAREPO_CONFIG_FILENAME, get_vision_provider
+from smallfactory.core.v1.config import get_datarepo_path, get_inventory_field_specs, get_entity_field_specs_for_sfid, get_stickers_default_fields, load_datarepo_config, DATAREPO_CONFIG_FILENAME, get_vision_provider, validate_sfid
 from smallfactory.core.v1.inventory import (
     inventory_post,
     inventory_onhand,
@@ -1650,8 +1650,23 @@ def compute_build_readiness(datarepo_path: Path, sfid: str, *, build_qty: int = 
     }
 
 
+def _resolve_revision_dir(datarepo_path: Path, sfid: str, rev: str) -> Path:
+    validate_sfid(sfid)
+    rev_str = str(rev).strip()
+    if rev_str in {'.', '..'} or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
+        raise ValueError("Invalid revision id")
+    revs_root = (datarepo_path / 'entities' / sfid / 'revisions').resolve()
+    rev_dir = (revs_root / rev_str).resolve()
+    if rev_dir.parent != revs_root:
+        raise ValueError("Invalid revision id")
+    return rev_dir
+
+
 def _revision_artifacts_from_snapshot(datarepo_path: Path, sfid: str, rev: str) -> list[dict]:
-    rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / str(rev)
+    try:
+        rev_dir = _resolve_revision_dir(datarepo_path, sfid, rev)
+    except ValueError:
+        return []
     if not rev_dir.exists() or not rev_dir.is_dir():
         return []
     artifacts = []
@@ -1691,16 +1706,20 @@ def _revision_artifacts_from_snapshot(datarepo_path: Path, sfid: str, rev: str) 
 
 
 def get_revision_manifest(datarepo_path: Path, sfid: str, rev: str) -> dict:
+    validate_sfid(sfid)
+    rev_str = str(rev).strip()
+    if rev_str in {'.', '..'} or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
+        raise ValueError("Invalid revision id")
     info = get_revisions(datarepo_path, sfid) or {}
     revisions = info.get('revisions') if isinstance(info.get('revisions'), list) else []
     for item in revisions:
-        if str(item.get('id') or item.get('rev') or '') == str(rev):
+        if str(item.get('id') or item.get('rev') or '') == rev_str:
             artifacts = item.get('artifacts') if isinstance(item.get('artifacts'), list) else []
             if not artifacts:
-                artifacts = _revision_artifacts_from_snapshot(datarepo_path, sfid, rev)
+                artifacts = _revision_artifacts_from_snapshot(datarepo_path, sfid, rev_str)
             return {
                 'sfid': sfid,
-                'rev': rev,
+                'rev': rev_str,
                 'status': item.get('status'),
                 'created_at': item.get('created_at') or item.get('generated_at'),
                 'released_at': item.get('released_at'),
@@ -1708,7 +1727,7 @@ def get_revision_manifest(datarepo_path: Path, sfid: str, rev: str) -> dict:
                 'artifact_count': len(artifacts),
                 'artifacts': artifacts,
             }
-    raise FileNotFoundError(f"Revision '{rev}' not found for {sfid}")
+    raise FileNotFoundError(f"Revision '{rev_str}' not found for {sfid}")
 
 # -----------------------
 # Repository stats and validation
@@ -3016,10 +3035,14 @@ def api_revisions_download(sfid, rev):
     """
     try:
         datarepo_path = get_datarepo_path()
+        validate_sfid(sfid)
         rev_str = str(rev).strip()
-        if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
+        if rev_str in {'.', '..'} or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", rev_str) is None:
             return jsonify({'success': False, 'error': 'Invalid revision id'}), 400
-        rev_dir = datarepo_path / 'entities' / sfid / 'revisions' / rev_str
+        revs_root = (datarepo_path / 'entities' / sfid / 'revisions').resolve()
+        rev_dir = (revs_root / rev_str).resolve()
+        if rev_dir.parent != revs_root:
+            return jsonify({'success': False, 'error': 'Invalid revision id'}), 400
         if not rev_dir.exists() or not rev_dir.is_dir():
             return jsonify({'success': False, 'error': 'Revision not found'}), 404
         # Create tar.gz in memory
@@ -4001,8 +4024,9 @@ def api_files_download(sfid):
         b = res.get('bytes') or b''
         mt = res.get('mimetype') or 'application/octet-stream'
         fn = res.get('filename') or 'download'
+        safe_fn = re.sub(r'[\r\n"\\]', '_', str(fn)) or 'download'
         return Response(b, mimetype=mt, headers={
-            'Content-Disposition': f'attachment; filename="{fn}"',
+            'Content-Disposition': f'attachment; filename="{safe_fn}"',
             'Content-Length': str(len(b)),
         })
     except FileNotFoundError:

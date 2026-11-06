@@ -102,3 +102,40 @@ def test_revision_download_endpoint_accepts_custom_label(web_mod):
     cd = r.headers.get("Content-Disposition", "")
     assert "attachment" in cd
     assert f"{sfid}_revA01.tar.gz" in cd
+
+
+@pytest.mark.parametrize("bad_rev", [".", "..", "rev/1", "rev\\1", "bad$rev"])
+def test_cut_revision_rejects_dot_and_traversal_labels(web_mod, bad_rev):
+    repo = web_mod.get_datarepo_path()
+    sfid = "p_dl_sec"
+    create_entity(repo, sfid, {"name": "Download Security Test"})
+    with pytest.raises(ValueError):
+        cut_revision(repo, sfid, rev=bad_rev, notes="bad rev")
+
+
+@pytest.mark.parametrize("bad_rev", ["%2e", "%2e%2e", "..%20", "rev\\1", "bad$rev"])
+def test_revision_endpoints_reject_dot_and_invalid_labels(web_mod, bad_rev):
+    mod = web_mod
+    app = mod.app
+    repo = mod.get_datarepo_path()
+    assert isinstance(repo, Path)
+
+    sfid = "p_dl_sec_http"
+    create_entity(repo, sfid, {"name": "Download Security HTTP Test"})
+
+    client = app.test_client()
+
+    r_dl = client.get(f"/api/entities/{sfid}/revisions/{bad_rev}/download")
+    assert r_dl.status_code == 400
+    assert r_dl.get_json().get("success") is False
+
+    r_mf = client.get(f"/api/entities/{sfid}/revisions/{bad_rev}/manifest")
+    assert r_mf.status_code in (400, 404)
+    assert r_mf.get_json().get("success") is False
+
+
+def test_revision_download_rejects_invalid_sfid(web_mod):
+    client = web_mod.app.test_client()
+    r = client.get("/api/entities/INVALID$SFID/revisions/1/download")
+    assert r.status_code == 400
+    assert r.get_json().get("success") is False

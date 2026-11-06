@@ -292,7 +292,7 @@ def _normalize_revision_label(rev: str | int) -> str:
     s = str(rev).strip()
     if not s:
         raise ValueError("Revision label is required")
-    if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s) is None:
+    if s in {".", ".."} or re.fullmatch(r"[A-Za-z0-9._-]{1,64}", s) is None:
         raise ValueError("Invalid revision label")
     return s
 

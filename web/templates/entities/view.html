@@ -907,15 +907,23 @@ function renderBomStaticRows(rows){
   if(!tbody) return;
   tbody.innerHTML = '';
   rows.forEach((r, idx) => {
-    const alts = (r.alternates||[]).map(a=>`<a href="/entities/${a}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">${a}</a>`).join('') || '<span class="text-gray-400">—</span>';
-    const altgrp = r.alternates_group ? `<span class=\"inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800\">${r.alternates_group}</span>` : '<span class="text-gray-400">—</span>';
+    const alts = (r.alternates||[]).map(a => {
+      const aStr = String(a || '');
+      return `<a href="/entities/${encodeURIComponent(aStr)}" class="inline-block mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono hover:bg-blue-100">${_escapeHtml(aStr)}</a>`;
+    }).join('') || '<span class="text-gray-400">—</span>';
+    const altgrp = r.alternates_group ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">${_escapeHtml(String(r.alternates_group))}</span>` : '<span class="text-gray-400">—</span>';
+    const useStr = String(r.use || '');
+    const useEsc = _escapeHtml(useStr);
+    const nameEsc = _escapeHtml(String(r.name || r.use || ''));
+    const qtyEsc = _escapeHtml(String(r.qty ?? 1));
+    const revEsc = _escapeHtml(String(r.rev || 'released'));
     tbody.insertAdjacentHTML('beforeend', `
       <tr class="odd:bg-gray-50 hover:bg-gray-50">
         <td class="px-3 py-1.5 text-gray-500">${idx}</td>
-        <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="/entities/${r.use}">${r.use}</a></td>
-        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
-        <td class="px-3 py-1.5 text-gray-900 text-right">${r.qty}</td>
-        <td class="px-3 py-1.5 text-gray-700">${r.rev||'released'}</td>
+        <td class="px-3 py-1.5 font-mono text-blue-700"><a class="hover:underline" href="/entities/${encodeURIComponent(useStr)}">${useEsc}</a></td>
+        <td class="px-3 py-1.5 text-gray-900">${nameEsc}</td>
+        <td class="px-3 py-1.5 text-gray-900 text-right">${qtyEsc}</td>
+        <td class="px-3 py-1.5 text-gray-700">${revEsc}</td>
         <td class="px-3 py-1.5">${alts}</td>
         <td class="px-3 py-1.5 text-gray-700">${altgrp}</td>
         <td class="px-3 py-1.5 text-gray-400">—</td>
@@ -929,14 +937,23 @@ function renderBomEditorRows(rows){
   tbody.innerHTML = '';
   rows.forEach((r, idx) => {
     const alts = (r.alternates||[]);
-    const altsHtml = alts.map((a, ai)=>`<span class="inline-flex items-center mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono">${a}<button type="button" class="ml-1 text-blue-700 hover:text-blue-900" title="Remove" onclick="bomAltRemove(${idx}, '${a}', ${ai})">×</button></span>`).join('');
+    const altsHtml = alts.map((a, ai) => {
+      const aStr = String(a || '');
+      const aArg = _escapeHtml(JSON.stringify(aStr));
+      return `<span class="inline-flex items-center mr-1 mb-1 px-2 py-0.5 rounded-full text-xs bg-blue-50 text-blue-700 font-mono">${_escapeHtml(aStr)}<button type="button" class="ml-1 text-blue-700 hover:text-blue-900" title="Remove" onclick="bomAltRemove(${idx}, ${aArg}, ${ai})">×</button></span>`;
+    }).join('');
+    const useEsc = _escapeHtml(String(r.use || ''));
+    const nameEsc = _escapeHtml(String(r.name || r.use || ''));
+    const qtyEsc = _escapeHtml(String(r.qty || 1));
+    const revEsc = _escapeHtml(String(r.rev || 'released'));
+    const altGrpEsc = _escapeHtml(String(r.alternates_group || ''));
     tbody.insertAdjacentHTML('beforeend', `
       <tr>
         <td class="px-3 py-1.5 text-gray-500">${idx}</td>
-        <td class="px-3 py-1.5 font-mono">${r.use}</td>
-        <td class="px-3 py-1.5 text-gray-900">${r.name||r.use}</td>
-        <td class="px-3 py-1.5"><input id="bom-edit-qty-${idx}" type="number" min="1" value="${r.qty||1}" class="w-20 border border-gray-300 rounded px-2 py-1 text-right"></td>
-        <td class="px-3 py-1.5"><input id="bom-edit-rev-${idx}" type="text" value="${r.rev||'released'}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5 font-mono">${useEsc}</td>
+        <td class="px-3 py-1.5 text-gray-900">${nameEsc}</td>
+        <td class="px-3 py-1.5"><input id="bom-edit-qty-${idx}" type="number" min="1" value="${qtyEsc}" class="w-20 border border-gray-300 rounded px-2 py-1 text-right"></td>
+        <td class="px-3 py-1.5"><input id="bom-edit-rev-${idx}" type="text" value="${revEsc}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
         <td class="px-3 py-1.5">
           <div class="flex flex-wrap">${altsHtml||'<span class=\"text-gray-400\">—</span>'}</div>
           <div class="mt-1 flex gap-1">
@@ -944,7 +961,7 @@ function renderBomEditorRows(rows){
             <button type="button" class="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onclick="bomAltAdd(${idx})">Add Alt</button>
           </div>
         </td>
-        <td class="px-3 py-1.5"><input id="bom-edit-altgrp-${idx}" type="text" value="${r.alternates_group||''}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
+        <td class="px-3 py-1.5"><input id="bom-edit-altgrp-${idx}" type="text" value="${altGrpEsc}" class="w-28 border border-gray-300 rounded px-2 py-1"></td>
         <td class="px-3 py-1.5">
           <div class="flex gap-2">
             <button type="button" class="px-2 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700" onclick="bomSave(${idx})">Save</button>
@@ -1350,20 +1367,22 @@ function renderRevisionsRows(list){
     return;
   }
   releases.forEach(r => {
-    const id = r.id||'—';
-    const ra = r.released_at||'—';
-    const st = (r && r.released_at) ? 'released' : (r && r.status ? r.status : '—');
-    const st_color = st == 'released' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800';
-    const ca = r.created_at||'—';
+    const idRaw = String(r.id||'—');
+    const id = _escapeHtml(idRaw);
+    const ra = _escapeHtml(String(r.released_at||'—'));
+    const stRaw = (r && r.released_at) ? 'released' : (r && r.status ? String(r.status) : '—');
+    const st = _escapeHtml(stRaw);
+    const st_color = stRaw == 'released' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800';
+    const ca = _escapeHtml(String(r.created_at||'—'));
     const source = r.source_commit || '—';
     const artifacts = Array.isArray(r.artifacts) ? r.artifacts.length : 0;
     const notesRaw = r.notes ? String(r.notes) : '';
     const notesHtml = notesRaw ? _nl2br(_escapeHtml(notesRaw)) : '';
-    const actions = (id && id !== '—')
-      ? `<a class="text-gray-400 hover:text-blue-700 mr-3" href="/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(id)}/manifest" title="View manifest" aria-label="View manifest" target="_blank" rel="noopener noreferrer">
+    const actions = (idRaw && idRaw !== '—')
+      ? `<a class="text-gray-400 hover:text-blue-700 mr-3" href="/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(idRaw)}/manifest" title="View manifest" aria-label="View manifest" target="_blank" rel="noopener noreferrer">
            <i class="fas fa-list"></i>
          </a>
-         <a class="text-gray-400 hover:text-blue-700" href="/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(id)}/download" title="Download revision" aria-label="Download revision" download>
+         <a class="text-gray-400 hover:text-blue-700" href="/api/entities/${encodeURIComponent(SFID)}/revisions/${encodeURIComponent(idRaw)}/download" title="Download revision" aria-label="Download revision" download>
            <i class="fas fa-download"></i>
          </a>`
       : '<span class="text-gray-400">—</span>';
